@@ -29,7 +29,7 @@ If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is 
 
 ### Triage labels
 
-评估任务或更新状态时，使用默认的五个分流标签；先读取 `docs/agents/triage-labels.md`。
+对新收到、尚未进入执行阶段的任务进行分流时，使用默认的五个分流标签；先读取 `docs/agents/triage-labels.md`。任务进入执行阶段后，状态按 `docs/agents/issue-tracker.md` 的生命周期更新。
 
 ### Domain docs
 

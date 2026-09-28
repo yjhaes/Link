@@ -1,4 +1,4 @@
-Status: ready-for-human
+Status: resolved
 Type: task
 Blocked by: 01 — 创建并访问永久短链接
 
@@ -23,4 +23,4 @@ Blocked by: 01 — 创建并访问永久短链接
 - 创建时逐个直接插入最多四个短码候选；只有 MySQL 错误码 `1062` 且冲突键为 `PRIMARY` 时才重试。
 - 后续候选插入成功时返回其短码和 `201`；四次主键冲突后返回 `SHORT_CODE_GENERATION_FAILED`，未创建额外映射。
 - 其他数据库错误不重试，由统一处理器返回不含 SQL 或异常文本的 `INTERNAL_ERROR`，并设置 `Cache-Control: no-store`。
-- 使用可控候选码覆盖重试成功、四次冲突耗尽和其他唯一约束错误；连接本机 MySQL 9.5 的隔离临时数据库运行完整 API 集成测试，19 项全部通过。
+- 使用可控候选码覆盖重试成功、四次冲突耗尽和其他唯一约束错误；连接本机 MySQL 9.5 的隔离临时数据库运行 API 集成测试 19 项及 service 单元测试 3 项，共 22 项全部通过。

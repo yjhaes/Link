@@ -45,7 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(ShortLinkApiTest.ClockConfiguration.class)
+@Import(ShortLinkApiTest.ControlledTimeAndShortCodeConfiguration.class)
 class ShortLinkApiTest {
 
     private static final String ORIGINAL_URL = "https://example.com/article?id=17#summary";
@@ -484,7 +484,7 @@ class ShortLinkApiTest {
     }
 
     @TestConfiguration
-    static class ClockConfiguration {
+    static class ControlledTimeAndShortCodeConfiguration {
 
         @Bean
         @Primary
