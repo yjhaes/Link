@@ -3,84 +3,167 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f7f6f2">
-  <meta name="description" content="把长网址变成容易分享的短链接。">
-  <title>Link · 简单分享每一个链接</title>
+  <meta name="theme-color" content="#f5f8f8">
+  <meta name="description" content="创建、复制并打开短链接。">
+  <title>Link · 短链接工作台</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <div class="page-shell">
-    <header class="site-header">
-      <a class="brand" href="/" aria-label="Link 首页">
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Link 短链接工作台">
         <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" fill="none"><path d="M12.3 10.4 9.2 13.5a5 5 0 0 0 7.1 7.1l3.1-3.1M19.7 21.6l3.1-3.1a5 5 0 0 0-7.1-7.1l-3.1 3.1M12.4 19.6l7.2-7.2" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M13.2 18.8 18.8 13.2M11.1 21a4.1 4.1 0 0 1-5.8-5.8l4.1-4.1a4.1 4.1 0 0 1 5.8 0m5.7-.1a4.1 4.1 0 0 1 5.8 5.8l-4.1 4.1a4.1 4.1 0 0 1-5.8 0" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
         </span>
-        <span>Link<span class="brand-dot">.</span></span>
+        <span class="brand-name">Link<span>.</span></span>
       </a>
-      <span class="header-note"><span class="status-dot" aria-hidden="true"></span> 让分享更轻松</span>
+      <div class="topbar-context">
+        <span class="context-rule" aria-hidden="true"></span>
+        <span>短链接工作台</span>
+      </div>
+      <div class="endpoint-note"><span class="endpoint-method">POST</span><code>/api/links</code></div>
     </header>
 
-    <main>
-      <section class="hero" aria-labelledby="page-title">
-        <div class="eyebrow"><span class="eyebrow-line"></span> 一切从一个链接开始</div>
-        <h1 id="page-title">好内容，<br><span>值得更短的链接。</span></h1>
-        <p class="hero-copy">粘贴你的长网址，几秒钟生成一个简洁的短链接。复制、分享，就是这么简单。</p>
+    <main class="workspace">
+      <section class="page-intro" aria-labelledby="page-title">
+        <div class="intro-copy">
+          <p class="intro-kicker">链接工具</p>
+          <h1 id="page-title">让长链接，短一点。</h1>
+          <p class="intro-description">提交网址，选择有效期限，生成后即可复制或打开。</p>
+        </div>
+        <div class="flow-mark" aria-label="创建短链接后通过短码跳转">
+          <span class="flow-url">原始网址</span>
+          <span class="flow-connector" aria-hidden="true"></span>
+          <code>/s/{code}</code>
+        </div>
+      </section>
 
-        <div class="form-card">
-          <div class="card-heading">
-            <span class="card-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
-            <div>
-              <h2>缩短你的链接</h2>
-              <p>输入完整网址，即刻生成</p>
+      <div class="workbench">
+        <section class="panel create-panel" aria-labelledby="create-title">
+          <div class="panel-heading">
+            <div class="panel-heading-copy">
+              <span class="panel-index" aria-hidden="true">A</span>
+              <div>
+                <h2 id="create-title">创建短链接</h2>
+                <p>每次创建都会生成一条新的映射</p>
+              </div>
             </div>
+            <span class="api-route"><span>POST</span> /api/links</span>
           </div>
 
           <form id="link-form" novalidate>
-            <label for="original-url">原始链接</label>
-            <div class="input-row">
-              <input id="original-url" name="originalUrl" type="url" inputmode="url" autocomplete="url" spellcheck="false" maxlength="4096" placeholder="https://example.com/your-long-link" aria-describedby="url-hint form-message" required>
+            <div class="field-group">
+              <label for="original-url">原始网址</label>
+              <input
+                id="original-url"
+                name="originalUrl"
+                type="url"
+                inputmode="url"
+                autocomplete="url"
+                spellcheck="false"
+                maxlength="4096"
+                placeholder="https://example.com/article?id=17"
+                aria-describedby="url-hint form-error"
+                required>
+              <p id="url-hint" class="field-hint">请输入完整的 HTTP 或 HTTPS 网址，最多 4096 个字符。</p>
+            </div>
+
+            <fieldset class="field-group expiration-group">
+              <legend>有效期限</legend>
+              <div class="expiration-options">
+                <label class="choice-option" for="expiry-permanent">
+                  <input id="expiry-permanent" name="expiry-mode" type="radio" value="permanent" checked>
+                  <span class="choice-indicator" aria-hidden="true"></span>
+                  <span class="choice-copy"><strong>永久有效</strong><small>不会自动过期</small></span>
+                </label>
+                <label class="choice-option" for="expiry-limited">
+                  <input id="expiry-limited" name="expiry-mode" type="radio" value="limited">
+                  <span class="choice-indicator" aria-hidden="true"></span>
+                  <span class="choice-copy"><strong>限时有效</strong><small>按分钟设置</small></span>
+                </label>
+              </div>
+              <div id="duration-field" class="duration-field" hidden>
+                <label for="valid-minutes">有效分钟数</label>
+                <div class="duration-input-wrap">
+                  <input id="valid-minutes" name="validMinutes" type="number" inputmode="numeric" min="1" max="5256000" step="1" placeholder="例如 60" disabled aria-describedby="duration-hint form-error">
+                  <span>分钟</span>
+                </div>
+                <p id="duration-hint" class="field-hint">请输入 1 至 5,256,000 之间的整数。</p>
+              </div>
+            </fieldset>
+
+            <p id="form-error" class="form-error" role="alert" hidden></p>
+            <div class="form-actions">
               <button id="submit-button" class="primary-button" type="submit">
                 <span class="button-label">生成短链接</span>
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
+              <span class="action-note">无需注册</span>
             </div>
-            <p id="url-hint" class="field-hint">支持以 http:// 或 https:// 开头的网址</p>
-            <p id="form-message" class="form-message" role="alert" hidden></p>
           </form>
+        </section>
 
-          <div id="result" class="result" aria-live="polite" hidden>
-            <div class="result-heading"><span class="success-icon" aria-hidden="true">✓</span> 你的短链接已生成</div>
-            <div class="result-row">
-              <a id="short-url" href="#" target="_blank" rel="noopener noreferrer"></a>
-              <button id="copy-button" class="copy-button" type="button" aria-label="复制短链接">
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.5"/></svg>
-                <span>复制</span>
-              </button>
+        <section id="result-panel" class="panel result-panel" aria-labelledby="result-title" aria-live="polite">
+          <div class="panel-heading result-panel-heading">
+            <div class="panel-heading-copy">
+              <span class="panel-index result-index" aria-hidden="true">B</span>
+              <div>
+                <h2 id="result-title">生成结果</h2>
+                <p id="result-subtitle">短链接会显示在这里</p>
+              </div>
             </div>
-            <p id="copy-message" class="copy-message" role="status" aria-live="polite"></p>
+            <span id="result-state" class="result-state"><span class="state-dot" aria-hidden="true"></span>等待生成</span>
           </div>
-        </div>
 
-        <p class="hero-footnote"><span aria-hidden="true">✦</span> 无需注册 · 永久有效 · 免费使用</p>
-      </section>
+          <div id="empty-result" class="empty-result">
+            <div class="empty-route" aria-hidden="true"><span>/s/</span><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <p>创建后即可复制并分享</p>
+          </div>
 
-      <section class="how-it-works" aria-labelledby="how-title">
-        <div class="section-header">
-          <div><span class="section-kicker">简单三步</span><h2 id="how-title">分享，从未如此轻松。</h2></div>
-          <p>从冗长的网址到清爽的分享体验，<br>只需要几秒钟。</p>
-        </div>
-        <div class="steps">
-          <div class="step"><span class="step-number">01</span><span class="step-icon" aria-hidden="true">↗</span><h3>粘贴链接</h3><p>把想分享的网址粘贴到上方输入框。</p></div>
-          <div class="step"><span class="step-number">02</span><span class="step-icon" aria-hidden="true">✳</span><h3>一键生成</h3><p>点击按钮，立即得到专属短链接。</p></div>
-          <div class="step"><span class="step-number">03</span><span class="step-icon" aria-hidden="true">➜</span><h3>轻松分享</h3><p>复制短链接，发送给任何人。</p></div>
-        </div>
-      </section>
+          <div id="created-result" class="created-result" hidden>
+            <div class="short-link-block">
+              <span class="result-label">短链接</span>
+              <a id="short-url" class="short-url" href="#" target="_blank" rel="noopener noreferrer"></a>
+              <div class="result-actions">
+                <button id="copy-button" class="copy-button" type="button">
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.5"/></svg>
+                  <span id="copy-label">复制短链接</span>
+                </button>
+                <a id="open-link" class="open-link" href="#" target="_blank" rel="noopener noreferrer">
+                  打开短链接
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M11 4h5v5m0-5-7 7M14 11v4a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>
+              </div>
+              <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
+            </div>
+
+            <dl class="result-details">
+              <div class="detail-row">
+                <dt>短码</dt>
+                <dd><code id="short-code">—</code></dd>
+              </div>
+              <div class="detail-row">
+                <dt>有效期限</dt>
+                <dd id="expires-at">—</dd>
+              </div>
+              <div class="detail-row original-row">
+                <dt>原始网址</dt>
+                <dd id="original-url-result"></dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+      </div>
+
+      <footer class="page-footer">
+        <span>创建 <code>POST /api/links</code></span>
+        <span class="footer-divider" aria-hidden="true"></span>
+        <span>访问 <code>GET /s/{code}</code></span>
+      </footer>
     </main>
-
-    <footer class="site-footer"><span class="footer-brand">Link<span class="brand-dot">.</span></span><span>让每一次分享，都更简单。</span></footer>
   </div>
 </body>
 </html>
