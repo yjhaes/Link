@@ -1,6 +1,7 @@
 package com.example.shortlink.shortlink.service;
 
 import com.example.shortlink.common.error.InvalidRequestException;
+import com.example.shortlink.common.error.LinkDisabledException;
 import com.example.shortlink.common.error.LinkExpiredException;
 import com.example.shortlink.common.error.LinkNotFoundException;
 import com.example.shortlink.shortlink.persistence.ShortLinkEntity;
@@ -82,6 +83,9 @@ public class ShortLinkService {
         if (entity.getExpiresAt() != null
                 && !LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).isBefore(entity.getExpiresAt())) {
             throw new LinkExpiredException();
+        }
+        if (!entity.isEnabled()) {
+            throw new LinkDisabledException();
         }
         return entity.getOriginalUrl();
     }
