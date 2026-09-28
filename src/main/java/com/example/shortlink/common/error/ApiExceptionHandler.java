@@ -7,6 +7,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -23,6 +24,11 @@ public class ApiExceptionHandler {
                 ? exception.getMessage()
                 : "Request body is invalid.";
         return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleUnmappedRoute(NoResourceFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found.");
     }
 
     @ExceptionHandler(Exception.class)

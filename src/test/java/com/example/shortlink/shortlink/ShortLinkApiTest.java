@@ -89,6 +89,14 @@ class ShortLinkApiTest {
                 .andExpect(header().string("Cache-Control", "no-store"));
     }
 
+    @Test
+    void visitingAnUnmappedRouteRemainsANotFoundResponse() throws Exception {
+        mockMvc.perform(get("/unmapped"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
     private String createPermanentLink() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
