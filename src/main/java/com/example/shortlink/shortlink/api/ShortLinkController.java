@@ -1,6 +1,7 @@
 package com.example.shortlink.shortlink.api;
 
 import com.example.shortlink.shortlink.service.ShortLinkService;
+import com.example.shortlink.shortlink.service.CreatedShortLink;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -28,12 +29,12 @@ public class ShortLinkController {
 
     @PostMapping("/api/links")
     public ResponseEntity<CreateLinkResponse> create(@Valid @RequestBody CreateLinkRequest request) {
-        String shortCode = shortLinkService.createPermanent(request.originalUrl());
-        String shortUrl = baseUrl + "/s/" + shortCode;
+        CreatedShortLink createdLink = shortLinkService.create(request.originalUrl(), request.validMinutes());
+        String shortUrl = baseUrl + "/s/" + createdLink.shortCode();
         CreateLinkResponse response = new CreateLinkResponse(
-                shortCode,
+                createdLink.shortCode(),
                 shortUrl,
-                null);
+                createdLink.expiresAt());
 
         return ResponseEntity.created(URI.create(shortUrl)).body(response);
     }

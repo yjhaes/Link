@@ -17,6 +17,11 @@ public class ApiExceptionHandler {
         return error(HttpStatus.NOT_FOUND, "LINK_NOT_FOUND", "Short link not found.");
     }
 
+    @ExceptionHandler(LinkExpiredException.class)
+    public ResponseEntity<ApiError> handleExpired(LinkExpiredException exception) {
+        return error(HttpStatus.GONE, "LINK_EXPIRED", "Short link has expired.");
+    }
+
     @ExceptionHandler({InvalidRequestException.class, MethodArgumentNotValidException.class,
             HttpMessageNotReadableException.class})
     public ResponseEntity<ApiError> handleInvalidRequest(Exception exception) {
