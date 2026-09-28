@@ -13,14 +13,14 @@ public class ValidMinutesDeserializer extends JsonDeserializer<Integer> {
     @Override
     public Integer deserialize(JsonParser parser, DeserializationContext context) throws IOException {
         JsonToken token = parser.currentToken();
-        if (token != JsonToken.VALUE_NUMBER_INT && token != JsonToken.VALUE_NUMBER_FLOAT) {
-            throw JsonMappingException.from(parser, "validMinutes must be a number.");
+        if (token != JsonToken.VALUE_NUMBER_INT) {
+            throw JsonMappingException.from(parser, "validMinutes must be an integer.");
         }
 
         try {
-            return parser.getDecimalValue().intValueExact();
+            return parser.getBigIntegerValue().intValueExact();
         } catch (ArithmeticException exception) {
-            throw JsonMappingException.from(parser, "validMinutes must be a whole number.", exception);
+            throw JsonMappingException.from(parser, "validMinutes is outside the integer range.", exception);
         }
     }
 }

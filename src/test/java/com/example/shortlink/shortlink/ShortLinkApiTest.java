@@ -124,7 +124,7 @@ class ShortLinkApiTest {
 
     @Test
     void aLinkRedirectsBeforeExpiryAndReturnsGoneAtAndAfterExpiry() throws Exception {
-        String code = createExpiringLink(1);
+        String code = createLink(1);
         Instant expiresAt = BASE_TIME.truncatedTo(ChronoUnit.MILLIS).plus(Duration.ofMinutes(1));
 
         clock.setInstant(expiresAt.minusMillis(1));
@@ -181,7 +181,7 @@ class ShortLinkApiTest {
 
     @Test
     void invalidValidMinutesReturnTheStandardInvalidRequestBody() throws Exception {
-        for (String invalidValue : new String[]{"0", "-1", "1.5", "5256001"}) {
+        for (String invalidValue : new String[]{"0", "-1", "1.5", "1.0", "1e0", "5256001"}) {
             mockMvc.perform(post("/api/links")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
@@ -196,8 +196,8 @@ class ShortLinkApiTest {
 
     @Test
     void submittingTheSameOriginalUrlTwiceCreatesDifferentMappings() throws Exception {
-        String firstCode = createPermanentLink();
-        String secondCode = createPermanentLink();
+        String firstCode = createLink(null);
+        String secondCode = createLink(null);
 
         assertThat(firstCode).isNotEqualTo(secondCode);
     }
@@ -219,25 +219,14 @@ class ShortLinkApiTest {
                 .andExpect(header().string("Cache-Control", "no-store"));
     }
 
-    private String createPermanentLink() throws Exception {
+    private String createLink(Integer validMinutes) throws Exception {
+        var request = objectMapper.createObjectNode().put("originalUrl", ORIGINAL_URL);
+        if (validMinutes != null) {
+            request.put("validMinutes", validMinutes);
+        }
         MvcResult result = mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsBytes(
-                                objectMapper.createObjectNode().put("originalUrl", ORIGINAL_URL))))
-                .andExpect(status().isCreated())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsByteArray())
-                .path("shortCode")
-                .asText();
-    }
-
-    private String createExpiringLink(int validMinutes) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/links")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.createObjectNode()
-                                .put("originalUrl", ORIGINAL_URL)
-                                .put("validMinutes", validMinutes)
-                                .toString()))
+                        .content(request.toString()))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsByteArray())
