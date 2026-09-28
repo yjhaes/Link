@@ -150,15 +150,8 @@ class ShortLinkApiTest {
     void disablingAnUnexpiredLinkReturnsForbiddenWithoutCachingTheFailure() throws Exception {
         String code = createLink(15);
 
-        assertThat(jdbcTemplate.update(
-                "UPDATE short_link SET enabled = FALSE WHERE short_code = ?", code))
-                .isEqualTo(1);
-
-        mockMvc.perform(get("/s/" + code))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("LINK_DISABLED"))
-                .andExpect(jsonPath("$.message").isNotEmpty())
-                .andExpect(header().string("Cache-Control", "no-store"));
+        setEnabled(code, false);
+        assertDisabled(code);
 
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM short_link WHERE short_code = ? AND enabled = FALSE",
@@ -171,12 +164,9 @@ class ShortLinkApiTest {
     void reEnablingAnUnexpiredLinkRestoresItsExistingShortCode() throws Exception {
         String code = createLink(15);
 
-        assertThat(jdbcTemplate.update(
-                "UPDATE short_link SET enabled = FALSE WHERE short_code = ?", code))
-                .isEqualTo(1);
-        assertThat(jdbcTemplate.update(
-                "UPDATE short_link SET enabled = TRUE WHERE short_code = ?", code))
-                .isEqualTo(1);
+        setEnabled(code, false);
+        assertDisabled(code);
+        setEnabled(code, true);
 
         mockMvc.perform(get("/s/" + code))
                 .andExpect(status().isFound())
@@ -195,9 +185,7 @@ class ShortLinkApiTest {
         String code = createLink(1);
         Instant expiresAt = BASE_TIME.truncatedTo(ChronoUnit.MILLIS).plus(Duration.ofMinutes(1));
 
-        assertThat(jdbcTemplate.update(
-                "UPDATE short_link SET enabled = FALSE WHERE short_code = ?", code))
-                .isEqualTo(1);
+        setEnabled(code, false);
         clock.setInstant(expiresAt);
 
         mockMvc.perform(get("/s/" + code))
@@ -205,9 +193,7 @@ class ShortLinkApiTest {
                 .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
                 .andExpect(header().string("Cache-Control", "no-store"));
 
-        assertThat(jdbcTemplate.update(
-                "UPDATE short_link SET enabled = TRUE WHERE short_code = ?", code))
-                .isEqualTo(1);
+        setEnabled(code, true);
 
         mockMvc.perform(get("/s/" + code))
                 .andExpect(status().isGone())
@@ -307,6 +293,20 @@ class ShortLinkApiTest {
         return objectMapper.readTree(result.getResponse().getContentAsByteArray())
                 .path("shortCode")
                 .asText();
+    }
+
+    private void setEnabled(String code, boolean enabled) {
+        assertThat(jdbcTemplate.update(
+                "UPDATE short_link SET enabled = ? WHERE short_code = ?", enabled, code))
+                .isEqualTo(1);
+    }
+
+    private void assertDisabled(String code) throws Exception {
+        mockMvc.perform(get("/s/" + code))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("LINK_DISABLED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(header().string("Cache-Control", "no-store"));
     }
 
     @TestConfiguration
