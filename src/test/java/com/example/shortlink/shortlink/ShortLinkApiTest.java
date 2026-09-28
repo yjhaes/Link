@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -92,6 +93,66 @@ class ShortLinkApiTest {
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", ORIGINAL_URL))
                 .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
+    void validLocalAndUnreachableUrisAreStoredAndRedirectedExactlyAsSubmitted() throws Exception {
+        List<String> originalUrls = List.of(
+                "http://localhost:8080/a%2Fb?x=one&x=two#section",
+                "https://192.168.1.14/internal/page?next=%2Fhome#top",
+                "http://does-not-exist.invalid:1/unreachable?raw=%7e#fragment");
+
+        for (String originalUrl : originalUrls) {
+            createAndAssertOriginalUrlRoundTrip(originalUrl);
+        }
+    }
+
+    @Test
+    void acceptsTheMaximumUrlLengthAndRejectsOneCharacterMore() throws Exception {
+        String prefix = "https://localhost/";
+        String maximumUrl = prefix + "a".repeat(4096 - prefix.length());
+        assertThat(maximumUrl).hasSize(4096);
+
+        createAndAssertOriginalUrlRoundTrip(maximumUrl);
+
+        String tooLongUrl = maximumUrl + "a";
+        assertInvalidRequest(objectMapper.createObjectNode().put("originalUrl", tooLongUrl).toString());
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void invalidOriginalUrlsReturnTheStandardUncachedInvalidRequest() throws Exception {
+        List<String> invalidUrls = List.of(
+                " https://example.com/path",
+                "https://example.com/path ",
+                "https://exa mple.com/path",
+                "https://example.com/a\tb",
+                "https://example.com/%ZZ",
+                "https://example.com:65536/path",
+                "https://example.com:999999999999999999999/path",
+                "https:///path",
+                "http:/example.com/path",
+                "ftp://example.com/path",
+                "https://user:password@example.com/path",
+                "https://example.com/路径",
+                "https://example.com/a" + (char) 1 + "b");
+
+        for (String originalUrl : invalidUrls) {
+            assertInvalidRequest(objectMapper.createObjectNode()
+                    .put("originalUrl", originalUrl)
+                    .toString());
+        }
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isZero();
+    }
+
+    @Test
+    void missingUrlAndMalformedJsonReturnTheStandardUncachedInvalidRequest() throws Exception {
+        for (String body : new String[]{"{}", "{\"originalUrl\":null}", "{\"originalUrl\":\"\"}", "{"}) {
+            assertInvalidRequest(body);
+        }
+        assertInvalidRequest("");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isZero();
     }
 
     @Test
@@ -243,15 +304,10 @@ class ShortLinkApiTest {
     @Test
     void invalidValidMinutesReturnTheStandardInvalidRequestBody() throws Exception {
         for (String invalidValue : new String[]{"0", "-1", "1.5", "1.0", "1e0", "5256001"}) {
-            mockMvc.perform(post("/api/links")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("""
-                                    {"originalUrl":"https://example.com/article?id=17#summary","validMinutes":%s}
-                                    """.formatted(invalidValue)))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
-                    .andExpect(jsonPath("$.message").isNotEmpty());
+            String request = """
+                    {"originalUrl":"https://example.com/article?id=17#summary","validMinutes":%s}
+                    """.formatted(invalidValue);
+            assertInvalidRequest(request);
         }
     }
 
@@ -293,6 +349,39 @@ class ShortLinkApiTest {
         return objectMapper.readTree(result.getResponse().getContentAsByteArray())
                 .path("shortCode")
                 .asText();
+    }
+
+    private void createAndAssertOriginalUrlRoundTrip(String originalUrl) throws Exception {
+        String request = objectMapper.createObjectNode()
+                .put("originalUrl", originalUrl)
+                .toString();
+        MvcResult creation = mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String code = objectMapper.readTree(creation.getResponse().getContentAsByteArray())
+                .path("shortCode")
+                .asText();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT original_url FROM short_link WHERE short_code = ?", String.class, code))
+                .isEqualTo(originalUrl);
+        mockMvc.perform(get("/s/" + code))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", originalUrl))
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    private void assertInvalidRequest(String body) throws Exception {
+        mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(header().string("Cache-Control", "no-store"));
     }
 
     private void setEnabled(String code, boolean enabled) {
