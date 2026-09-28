@@ -1,6 +1,6 @@
 # Short Link
 
-一个用于 Java 后端实习项目的短链接服务。当前实现覆盖匿名创建永久与限时短链接、MySQL 持久化、302 跳转和过期判断。
+一个用于 Java 后端实习项目的短链接服务。当前实现覆盖匿名创建永久与限时短链接、MySQL 持久化、302 跳转，以及到期和禁用状态判断。
 
 ## 技术栈
 
@@ -60,7 +60,16 @@ Content-Type: application/json
 
 成功返回 `201 Created`，JSON 中包含 `shortCode`、`shortUrl` 和 `expiresAt`；永久链接的 `expiresAt` 为 `null`。响应 `Location` 指向新短链接。
 
-访问未过期的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
+访问未过期且启用的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`；未过期但已禁用时返回 `403 LINK_DISABLED`。过期判断优先于禁用状态。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
+
+维护者可直接在 MySQL 中禁用或重新启用映射，不提供对应 API：
+
+```sql
+UPDATE short_link SET enabled = FALSE WHERE short_code = 'abc12345';
+UPDATE short_link SET enabled = TRUE WHERE short_code = 'abc12345';
+```
+
+禁用不会删除映射或释放短码；重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。
 
 ## 测试
 
@@ -73,4 +82,4 @@ $env:MYSQL_TEST_PASSWORD = '<本地测试数据库密码>'
 .\mvnw.cmd test
 ```
 
-集成测试通过 HTTP 接口验证永久与限时创建、MySQL 持久化、有效期边界、302 跳转和错误响应。
+集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。

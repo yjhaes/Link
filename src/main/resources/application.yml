@@ -4,7 +4,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/short_link?serverTimezone=UTC}
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    password: ${DB_PASSWORD:123456}
   sql:
     init:
       mode: always

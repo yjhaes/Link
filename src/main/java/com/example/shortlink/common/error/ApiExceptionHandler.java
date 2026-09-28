@@ -22,6 +22,11 @@ public class ApiExceptionHandler {
         return error(HttpStatus.GONE, "LINK_EXPIRED", "Short link has expired.");
     }
 
+    @ExceptionHandler(LinkDisabledException.class)
+    public ResponseEntity<ApiError> handleDisabled(LinkDisabledException exception) {
+        return error(HttpStatus.FORBIDDEN, "LINK_DISABLED", "Short link is disabled.");
+    }
+
     @ExceptionHandler({InvalidRequestException.class, MethodArgumentNotValidException.class,
             HttpMessageNotReadableException.class})
     public ResponseEntity<ApiError> handleInvalidRequest(Exception exception) {

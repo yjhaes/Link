@@ -147,6 +147,67 @@ class ShortLinkApiTest {
     }
 
     @Test
+    void disablingAnUnexpiredLinkReturnsForbiddenWithoutCachingTheFailure() throws Exception {
+        String code = createLink(15);
+
+        setEnabled(code, false);
+        assertDisabled(code);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM short_link WHERE short_code = ? AND enabled = FALSE",
+                Integer.class,
+                code))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void reEnablingAnUnexpiredLinkRestoresItsExistingShortCode() throws Exception {
+        String code = createLink(15);
+
+        setEnabled(code, false);
+        assertDisabled(code);
+        setEnabled(code, true);
+
+        mockMvc.perform(get("/s/" + code))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", ORIGINAL_URL))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM short_link WHERE short_code = ? AND enabled = TRUE",
+                Integer.class,
+                code))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void expiryTakesPriorityForDisabledLinksAndReEnablingCannotRestoreThem() throws Exception {
+        String code = createLink(1);
+        Instant expiresAt = BASE_TIME.truncatedTo(ChronoUnit.MILLIS).plus(Duration.ofMinutes(1));
+
+        setEnabled(code, false);
+        clock.setInstant(expiresAt);
+
+        mockMvc.perform(get("/s/" + code))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        setEnabled(code, true);
+
+        mockMvc.perform(get("/s/" + code))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM short_link WHERE short_code = ? AND enabled = TRUE",
+                Integer.class,
+                code))
+                .isEqualTo(1);
+    }
+
+    @Test
     void omittedAndNullValidMinutesBothCreatePermanentLinks() throws Exception {
         MvcResult creation = mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -232,6 +293,20 @@ class ShortLinkApiTest {
         return objectMapper.readTree(result.getResponse().getContentAsByteArray())
                 .path("shortCode")
                 .asText();
+    }
+
+    private void setEnabled(String code, boolean enabled) {
+        assertThat(jdbcTemplate.update(
+                "UPDATE short_link SET enabled = ? WHERE short_code = ?", enabled, code))
+                .isEqualTo(1);
+    }
+
+    private void assertDisabled(String code) throws Exception {
+        mockMvc.perform(get("/s/" + code))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("LINK_DISABLED"))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(header().string("Cache-Control", "no-store"));
     }
 
     @TestConfiguration
