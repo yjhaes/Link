@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: short-link
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/short_link?serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  sql:
+    init:
+      mode: always
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+short-link:
+  base-url: ${SHORT_LINK_BASE_URL:http://localhost:8080}
