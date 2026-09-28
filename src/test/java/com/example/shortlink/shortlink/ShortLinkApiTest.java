@@ -1,5 +1,6 @@
 package com.example.shortlink.shortlink;
 
+import com.example.shortlink.shortlink.service.ShortCodeGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,7 +26,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -60,10 +63,14 @@ class ShortLinkApiTest {
     @Autowired
     private ControllableClock clock;
 
+    @Autowired
+    private ControllableShortCodeGenerator shortCodeGenerator;
+
     @BeforeEach
     void clearMappings() {
         jdbcTemplate.update("DELETE FROM short_link");
         clock.reset(BASE_TIME);
+        shortCodeGenerator.reset();
     }
 
     @Test
@@ -93,6 +100,75 @@ class ShortLinkApiTest {
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", ORIGINAL_URL))
                 .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
+    void creationRetriesAfterAnExistingShortCodeAndReturnsTheSuccessfulCandidate() throws Exception {
+        insertMapping("aaaa0001", "https://occupied.example/");
+        shortCodeGenerator.enqueueCandidates("aaaa0001", "bbbb0002");
+
+        mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalUrl":"https://example.com/article?id=17#summary"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.shortCode").value("bbbb0002"))
+                .andExpect(jsonPath("$.shortUrl").value("http://short.local/s/bbbb0002"))
+                .andExpect(header().string("Location", "http://short.local/s/bbbb0002"));
+
+        assertThat(shortCodeGenerator.callCount()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM short_link WHERE short_code = 'bbbb0002'", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void creationStopsAfterFourPrimaryKeyCollisionsWithoutCreatingAMapping() throws Exception {
+        List<String> occupiedCodes = List.of("aaaa0001", "bbbb0002", "cccc0003", "dddd0004");
+        for (String code : occupiedCodes) {
+            insertMapping(code, "https://occupied.example/" + code);
+        }
+        shortCodeGenerator.enqueueCandidates(occupiedCodes.toArray(String[]::new));
+
+        mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalUrl":"https://example.com/article?id=17#summary"}
+                                """))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("SHORT_CODE_GENERATION_FAILED"))
+                .andExpect(jsonPath("$.message").value(
+                        "A unique short code could not be generated. Please try again."))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        assertThat(shortCodeGenerator.callCount()).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(4);
+    }
+
+    @Test
+    void aDifferentUniqueConstraintFailureIsNotRetriedOrExposed() throws Exception {
+        jdbcTemplate.execute(
+                "CREATE UNIQUE INDEX uq_test_original_url_prefix ON short_link (original_url(16))");
+        try {
+            insertMapping("aaaa0001", ORIGINAL_URL);
+            shortCodeGenerator.enqueueCandidates("bbbb0002", "cccc0003");
+
+            mockMvc.perform(post("/api/links")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"originalUrl":"https://example.com/article?id=17#summary"}
+                                    """))
+                    .andExpect(status().isInternalServerError())
+                    .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                    .andExpect(jsonPath("$.message").value("An unexpected error occurred."))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+
+            assertThat(shortCodeGenerator.callCount()).isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(1);
+        } finally {
+            jdbcTemplate.execute("DROP INDEX uq_test_original_url_prefix ON short_link");
+        }
     }
 
     @Test
@@ -390,6 +466,15 @@ class ShortLinkApiTest {
                 .isEqualTo(1);
     }
 
+    private void insertMapping(String code, String originalUrl) {
+        jdbcTemplate.update(
+                "INSERT INTO short_link (short_code, original_url, created_at, expires_at, enabled) " +
+                        "VALUES (?, ?, ?, NULL, TRUE)",
+                code,
+                originalUrl,
+                LocalDateTime.ofInstant(BASE_TIME, ZoneOffset.UTC));
+    }
+
     private void assertDisabled(String code) throws Exception {
         mockMvc.perform(get("/s/" + code))
                 .andExpect(status().isForbidden())
@@ -405,6 +490,37 @@ class ShortLinkApiTest {
         @Primary
         ControllableClock controllableClock() {
             return new ControllableClock(BASE_TIME, ZoneOffset.UTC);
+        }
+
+        @Bean
+        @Primary
+        ControllableShortCodeGenerator controllableShortCodeGenerator() {
+            return new ControllableShortCodeGenerator();
+        }
+    }
+
+    static final class ControllableShortCodeGenerator extends ShortCodeGenerator {
+
+        private final Queue<String> candidates = new ArrayDeque<>();
+        private int calls;
+
+        synchronized void reset() {
+            candidates.clear();
+            calls = 0;
+        }
+
+        synchronized void enqueueCandidates(String... shortCodes) {
+            candidates.addAll(List.of(shortCodes));
+        }
+
+        synchronized int callCount() {
+            return calls;
+        }
+
+        @Override
+        public synchronized String generate() {
+            calls++;
+            return candidates.isEmpty() ? super.generate() : candidates.remove();
         }
     }
 

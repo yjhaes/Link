@@ -4,22 +4,27 @@ import com.example.shortlink.common.error.InvalidRequestException;
 import com.example.shortlink.common.error.LinkDisabledException;
 import com.example.shortlink.common.error.LinkExpiredException;
 import com.example.shortlink.common.error.LinkNotFoundException;
+import com.example.shortlink.common.error.ShortCodeGenerationException;
 import com.example.shortlink.shortlink.persistence.ShortLinkEntity;
 import com.example.shortlink.shortlink.persistence.ShortLinkMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 
 @Service
 public class ShortLinkService {
 
     private static final int MAX_VALID_MINUTES = 5_256_000;
+    private static final int MAX_SHORT_CODE_INSERT_ATTEMPTS = 4;
 
     private final ShortLinkMapper shortLinkMapper;
     private final ShortCodeGenerator shortCodeGenerator;
@@ -59,16 +64,69 @@ public class ShortLinkService {
                 ? null
                 : createdAtInstant.plus(validMinutes, ChronoUnit.MINUTES);
         ShortLinkEntity entity = new ShortLinkEntity();
-        entity.setShortCode(shortCodeGenerator.generate());
         entity.setOriginalUrl(originalUrl);
         entity.setCreatedAt(createdAt);
         entity.setExpiresAt(expiresAtInstant == null
                 ? null
                 : LocalDateTime.ofInstant(expiresAtInstant, ZoneOffset.UTC));
         entity.setEnabled(true);
-        shortLinkMapper.insert(entity);
+        insertWithCollisionRetries(entity);
 
         return new CreatedShortLink(entity.getShortCode(), expiresAtInstant);
+    }
+
+    private void insertWithCollisionRetries(ShortLinkEntity entity) {
+        for (int attempt = 1; attempt <= MAX_SHORT_CODE_INSERT_ATTEMPTS; attempt++) {
+            entity.setShortCode(shortCodeGenerator.generate());
+            try {
+                shortLinkMapper.insert(entity);
+                return;
+            } catch (DuplicateKeyException exception) {
+                if (!isShortCodePrimaryKeyCollision(exception)) {
+                    throw exception;
+                }
+                if (attempt == MAX_SHORT_CODE_INSERT_ATTEMPTS) {
+                    throw new ShortCodeGenerationException();
+                }
+            }
+        }
+    }
+
+    private boolean isShortCodePrimaryKeyCollision(DuplicateKeyException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sqlException && isPrimaryKeyDuplicate(sqlException)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isPrimaryKeyDuplicate(SQLException exception) {
+        for (SQLException current = exception; current != null; current = current.getNextException()) {
+            if (current.getErrorCode() == 1062 && namesPrimaryKey(current.getMessage())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean namesPrimaryKey(String message) {
+        if (message == null) {
+            return false;
+        }
+
+        String lowerCaseMessage = message.toLowerCase(Locale.ROOT);
+        int keyNameStart = lowerCaseMessage.lastIndexOf("for key ");
+        if (keyNameStart < 0) {
+            return false;
+        }
+
+        String keyName = lowerCaseMessage.substring(keyNameStart + "for key ".length())
+                .replace("'", "")
+                .replace("`", "")
+                .replace("\"", "")
+                .trim();
+        return keyName.equals("primary") || keyName.endsWith(".primary");
     }
 
     public String findOriginalUrl(String code) {

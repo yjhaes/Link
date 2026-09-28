@@ -36,6 +36,14 @@ public class ApiExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", message);
     }
 
+    @ExceptionHandler(ShortCodeGenerationException.class)
+    public ResponseEntity<ApiError> handleShortCodeGenerationFailure(ShortCodeGenerationException exception) {
+        return error(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "SHORT_CODE_GENERATION_FAILED",
+                "A unique short code could not be generated. Please try again.");
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleUnmappedRoute(NoResourceFoundException exception) {
         return error(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", "Resource not found.");
