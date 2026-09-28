@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap');
+
+:root{font-family:'DM Sans','Noto Sans SC',sans-serif;color:#222c27;background:#f7f6f2;font-synthesis:none}
+*{box-sizing:border-box}
+body{margin:0;min-width:320px}
+button,input{font:inherit}
+button{cursor:pointer}
+a{color:inherit}
+.page-shell{max-width:1440px;min-height:100vh;margin:auto;padding:0 7.6%}
+.site-header{height:96px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e9e9e3}
+.brand{text-decoration:none;display:inline-flex;align-items:center;gap:10px;font-size:26px;font-weight:800;letter-spacing:-1.6px}
+.brand-mark{width:33px;height:33px;display:grid;place-items:center;border-radius:10px;background:#d9ede0;color:#238555}
+.brand-mark svg{width:25px;height:25px}
+.brand-dot{color:#37a46b}
+.header-note{display:flex;align-items:center;gap:9px;color:#777d78;font-size:13px;font-weight:500}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#40ad72;box-shadow:0 0 0 4px #e5f3e9}
+.hero{position:relative;text-align:center;padding:104px 0 106px;overflow:hidden}
+.hero:before,.hero:after{content:"";position:absolute;z-index:-1;border:1px solid #e6eee5;border-radius:50%;pointer-events:none}
+.hero:before{width:520px;height:520px;left:-305px;top:28px}
+.hero:after{width:610px;height:610px;right:-420px;top:75px}
+.eyebrow{display:flex;justify-content:center;align-items:center;gap:12px;color:#379b69;font-size:13px;font-weight:700;letter-spacing:2px}
+.eyebrow-line{width:24px;height:1px;background:#62ba85}
+h1{margin:24px 0 20px;font-size:clamp(43px,5.4vw,72px);line-height:1.2;letter-spacing:-3px;font-weight:800}
+h1 span{color:#329767}
+.hero-copy{max-width:530px;margin:0 auto;color:#858b87;font-size:16px;line-height:1.9}
+.form-card{max-width:742px;margin:51px auto 0;padding:31px;text-align:left;background:#fff;border:1px solid #eceee9;border-radius:18px;box-shadow:0 18px 50px rgba(29,56,40,.055),0 3px 10px rgba(29,56,40,.025)}
+.card-heading{display:flex;align-items:center;gap:13px;margin-bottom:29px}
+.card-icon{width:40px;height:40px;flex:none;display:grid;place-items:center;color:#278856;background:#e9f5ed;border-radius:11px}
+.card-icon svg{width:22px;height:22px}
+.card-heading h2{font-size:17px;line-height:1.3;margin:0 0 4px;font-weight:700}
+.card-heading p{font-size:12px;color:#9aa09b;margin:0}
+label{display:block;margin-bottom:10px;font-size:13px;font-weight:700;color:#47524b}
+.input-row{display:flex;gap:10px}
+input{min-width:0;flex:1;height:52px;padding:0 16px;border:1px solid #dfe4df;border-radius:9px;background:#fff;outline:none;color:#253b2d;font-size:14px;transition:border-color .2s,box-shadow .2s}
+input::placeholder{color:#b5bab6}
+input:focus{border-color:#56ab79;box-shadow:0 0 0 3px #e1f2e6}
+.primary-button{height:52px;display:inline-flex;align-items:center;justify-content:center;gap:14px;flex:none;padding:0 20px;border:0;border-radius:9px;color:#fff;background:#329a66;font-size:13px;font-weight:700;box-shadow:0 4px 8px rgba(42,144,92,.16);transition:background .2s,transform .2s}
+.primary-button:hover{background:#287f54;transform:translateY(-1px)}
+.primary-button:disabled{opacity:.7;cursor:wait;transform:none}
+.primary-button svg{width:18px;height:18px}
+.field-hint{margin:10px 0 0;color:#a2a9a2;font-size:11px}
+.form-message{margin:13px 0 0;color:#b43e3e;font-size:13px}
+.result{margin-top:25px;padding:18px;background:#f1f9f3;border:1px solid #d8ebdd;border-radius:11px}
+.result-heading{display:flex;align-items:center;gap:8px;color:#267b4c;font-size:13px;font-weight:700;margin-bottom:12px}
+.success-icon{width:18px;height:18px;display:grid;place-items:center;background:#3aa46c;color:#fff;border-radius:50%;font-size:12px}
+.result-row{display:flex;align-items:center;gap:8px}
+.result-row a{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#256d48;font-size:16px;font-weight:700;text-decoration:none}
+.result-row a:hover{text-decoration:underline}
+.copy-button{display:flex;align-items:center;gap:6px;padding:8px 11px;border:1px solid #c9e3d0;border-radius:7px;background:#fff;color:#287b4f;font-size:12px;font-weight:700}
+.copy-button:hover{background:#e8f5eb}
+.copy-button svg{width:16px;height:16px}
+.copy-message{min-height:0;margin:0;color:#31865a;font-size:12px}
+.copy-message:not(:empty){margin-top:9px}
+.hero-footnote{display:flex;justify-content:center;align-items:center;gap:8px;margin:23px 0 0;color:#a2aaa3;font-size:12px}
+.hero-footnote span{color:#5cad79}
+.how-it-works{border-top:1px solid #e9e9e3;padding:66px 0 87px}
+.section-header{display:flex;justify-content:space-between;align-items:end;gap:30px}
+.section-kicker{color:#389668;font-size:12px;font-weight:700;letter-spacing:2px}
+.section-header h2{margin:12px 0 0;font-size:30px;letter-spacing:-1px}
+.section-header p{margin:0 0 3px;color:#9ba19d;font-size:13px;line-height:1.8;text-align:right}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:17px;margin-top:32px}
+.step{position:relative;min-height:170px;padding:23px 25px;background:#fff;border:1px solid #eceee9;border-radius:13px}
+.step-number{position:absolute;right:24px;top:22px;color:#e4eae4;font-size:26px;font-weight:800;letter-spacing:-1px}
+.step-icon{display:grid;place-items:center;width:31px;height:31px;margin-bottom:19px;color:#3d9a68;background:#eaf4ed;border-radius:8px;font-size:19px;font-weight:700}
+.step h3{margin:0 0 8px;font-size:15px}
+.step p{margin:0;color:#9aa19b;font-size:12px;line-height:1.7}
+.site-footer{display:flex;justify-content:space-between;align-items:center;min-height:76px;border-top:1px solid #e9e9e3;color:#a0a5a0;font-size:12px}
+.footer-brand{color:#425348;font-size:19px;font-weight:800;letter-spacing:-1px}
+[hidden]{display:none!important}
+@media(max-width:700px){.page-shell{padding:0 20px}.site-header{height:72px}.header-note{font-size:11px}.hero{padding:76px 0 78px}h1{letter-spacing:-2px}.hero-copy{font-size:14px}.form-card{margin-top:38px;padding:21px}.input-row{flex-direction:column}.primary-button{width:100%}.section-header{display:block}.section-header h2{font-size:25px}.section-header p{text-align:left;margin-top:11px}.steps{grid-template-columns:1fr}.step{min-height:138px}.how-it-works{padding:52px 0 65px}.site-footer{gap:15px}}
