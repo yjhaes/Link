@@ -1,7 +1,5 @@
 package com.example.shortlink.shortlink.api;
 
-import com.example.shortlink.common.error.InvalidRequestException;
-import com.example.shortlink.shortlink.service.ShortLink;
 import com.example.shortlink.shortlink.service.ShortLinkService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,13 +28,10 @@ public class ShortLinkController {
 
     @PostMapping("/api/links")
     public ResponseEntity<CreateLinkResponse> create(@Valid @RequestBody CreateLinkRequest request) {
-        if (request.validMinutes() != null) {
-            throw new InvalidRequestException("validMinutes is not supported in this version.");
-        }
-        ShortLink shortLink = shortLinkService.createPermanent(request.originalUrl());
-        String shortUrl = baseUrl + "/s/" + shortLink.shortCode();
+        String shortCode = shortLinkService.createPermanent(request.originalUrl());
+        String shortUrl = baseUrl + "/s/" + shortCode;
         CreateLinkResponse response = new CreateLinkResponse(
-                shortLink.shortCode(),
+                shortCode,
                 shortUrl,
                 null);
 
@@ -45,9 +40,9 @@ public class ShortLinkController {
 
     @GetMapping("/s/{code}")
     public ResponseEntity<Void> redirect(@PathVariable String code) {
-        ShortLink shortLink = shortLinkService.findByCode(code);
+        String originalUrl = shortLinkService.findOriginalUrl(code);
         return ResponseEntity.status(302)
-                .header(HttpHeaders.LOCATION, shortLink.originalUrl())
+                .header(HttpHeaders.LOCATION, originalUrl)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .build();
     }

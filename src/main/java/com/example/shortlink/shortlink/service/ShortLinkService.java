@@ -29,7 +29,7 @@ public class ShortLinkService {
         this.clock = clock;
     }
 
-    public ShortLink createPermanent(String originalUrl) {
+    public String createPermanent(String originalUrl) {
         if (originalUrl == null || originalUrl.isBlank()) {
             throw new InvalidRequestException("originalUrl is required.");
         }
@@ -54,10 +54,10 @@ public class ShortLinkService {
         entity.setEnabled(true);
         shortLinkMapper.insert(entity);
 
-        return toDomain(entity);
+        return entity.getShortCode();
     }
 
-    public ShortLink findByCode(String code) {
+    public String findOriginalUrl(String code) {
         if (code == null || !code.matches("[a-z0-9]{8}")) {
             throw new LinkNotFoundException();
         }
@@ -66,7 +66,7 @@ public class ShortLinkService {
         if (entity == null) {
             throw new LinkNotFoundException();
         }
-        return toDomain(entity);
+        return entity.getOriginalUrl();
     }
 
     private void validateHttpUri(String originalUrl) {
@@ -84,14 +84,5 @@ public class ShortLinkService {
         } catch (URISyntaxException exception) {
             throw new InvalidRequestException("originalUrl is not a valid URI.");
         }
-    }
-
-    private ShortLink toDomain(ShortLinkEntity entity) {
-        return new ShortLink(
-                entity.getShortCode(),
-                entity.getOriginalUrl(),
-                entity.getCreatedAt(),
-                entity.getExpiresAt(),
-                entity.isEnabled());
     }
 }
