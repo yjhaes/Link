@@ -33,16 +33,19 @@ public class ShortLinkService {
     private final ShortCodeIdIssuer shortCodeIdIssuer;
     private final PermutedShortCodeEncoder shortCodeEncoder;
     private final Clock clock;
+    private final RedirectCache redirectCache;
 
     public ShortLinkService(
             ShortLinkMapper shortLinkMapper,
             ShortCodeIdIssuer shortCodeIdIssuer,
             PermutedShortCodeEncoder shortCodeEncoder,
-            Clock clock) {
+            Clock clock,
+            RedirectCache redirectCache) {
         this.shortLinkMapper = shortLinkMapper;
         this.shortCodeIdIssuer = shortCodeIdIssuer;
         this.shortCodeEncoder = shortCodeEncoder;
         this.clock = clock;
+        this.redirectCache = redirectCache;
     }
 
     public CreatedShortLink create(String originalUrl, Integer validMinutes) {
@@ -150,6 +153,15 @@ public class ShortLinkService {
             throw new LinkNotFoundException();
         }
 
+        try {
+            var cachedOriginalUrl = redirectCache.findPermanent(code);
+            if (cachedOriginalUrl.isPresent()) {
+                return cachedOriginalUrl.get();
+            }
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Redirect cache lookup failed for short code {}; falling back to MySQL.", code, exception);
+        }
+
         ShortLinkEntity entity = shortLinkMapper.selectById(code);
         if (entity == null) {
             throw new LinkNotFoundException();
@@ -160,6 +172,15 @@ public class ShortLinkService {
         }
         if (!entity.isEnabled()) {
             throw new LinkDisabledException();
+        }
+
+        if (entity.getExpiresAt() == null) {
+            try {
+                redirectCache.storePermanent(code, entity.getOriginalUrl());
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Redirect cache write failed for short code {}; returning the MySQL result.", code,
+                        exception);
+            }
         }
         return entity.getOriginalUrl();
     }
