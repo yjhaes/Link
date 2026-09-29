@@ -1,0 +1,37 @@
+---
+status: accepted
+---
+
+# 阶段 3：短链接跳转使用 Redis Cache Aside
+
+短链接跳转读多写少，而当前每次跳转都按短码查询 MySQL。采用 Cache Aside：MySQL 保存权威的短链接映射，Redis 只保存实际访问过、仍可跳转的映射副本；Redis 故障时回退到 MySQL。缓存提供加速，不承担持久化或业务有效期判定。
+
+## 缓存结构与有效期
+
+- Key 为 `shortlink:redirect:v1:{shortCode}`，短码保持原有大小写，不做规范化；`v1` 隔离将来可能改变的 Value 格式。
+- Value 为一个 Redis String，内容是仅含 `originalUrl` 与 `expiresAt` 的序列化对象；永久链接的 `expiresAt` 为 `null`。不缓存数据库实体的 `shortCode`、`createdAt` 或 `enabled`：短码已在 Key 中，创建时间不参与跳转，只允许已启用映射进入缓存。
+- 永久链接的缓存 TTL 上限为可配置的 5 分钟。限时链接使用 `min(5 分钟, expiresAt - 当前时间)`；剩余时间不大于零，或无法形成正的毫秒 TTL 时，不写入缓存。用带 `PX` 的单次 `SET` 同时写入 Value 和 TTL，避免已写入但尚无 TTL 的中间状态。
+- 每次缓存命中仍由应用比较 `expiresAt` 与当前时间；到期当刻返回现有的 `410 LINK_EXPIRED`，并尽力删除该 Key。Redis TTL 用于缓存清理和限制旧值存活，不替代业务过期判断。
+
+## 读取与回填
+
+1. 先校验短码格式，再尝试读取 Redis。有效缓存命中且未到期时返回原始 URL，控制器维持现有 `302`、`Location` 与 `Cache-Control: no-store`。
+2. Redis 未命中、读取失败、超时或 Value 无法解析时，查询 MySQL；对损坏的缓存尽力删除。Redis 操作使用短且有界的超时，不能让缓存故障长期阻塞跳转。
+3. MySQL 查询后沿用现有顺序：不存在返回 `404`，已过期返回 `410`，未过期但已禁用返回 `403`。这些结果、格式错误的短码及数据库读取错误均不回填缓存。
+4. 仅在 MySQL 查到未过期且已启用的映射后，重新计算剩余有效期，尝试同步回填，再返回 `302`。Redis 写入失败或超时仍按 MySQL 结果返回；创建短链接时不预热缓存。
+
+## 变更与一致性边界
+
+- 当前没有修改原始 URL、修改过期时间、删除映射或应用内启用／禁用接口。阶段 3 以原始 URL 和过期时间创建后不变为前提，只设计启用状态的变更；若将来增加删除或修改，同样应在数据库提交后删除对应 Key。
+- 将来的应用内启用／禁用操作先提交 MySQL，再删除 Redis Key；不直接把新状态写入缓存。MySQL 变更成功而 Redis 删除失败时，数据库变更仍算成功，应记录可观察的错误，有限 TTL 作为兜底。Redis 与 MySQL 不组成原子事务。
+- 目前维护者可直接修改 MySQL 的 `enabled`，这种操作绕过应用失效逻辑。应用内变更入口建成前，直接改库时必须同时删除对应 Key；若漏删，旧值可能一直存在到缓存 TTL 结束。
+- 允许一种并发竞态：请求 A 从 MySQL 读到旧的已启用状态后暂停，请求 B 禁用映射、提交并删除 Key，随后 A 回填旧值。旧缓存最多再存活它被回填时设置的 TTL；因此“5 分钟”严格说从最后一次旧值回填开始，并非无条件从禁用提交时刻开始。业务过期仍由缓存对象中的 `expiresAt` 独立检查。
+- 当前接受上述有界不一致；不为此引入延迟双删、跨 MySQL/Redis 的分布式事务、版本令牌、分布式锁或变更日志。延迟第二次删除可缩短部分竞态窗口，但旧回填仍可能发生在第二次删除之后。热门 Key 同时过期时暂不增加单 Key 并发合并，先观察实际数据库压力。
+
+## 验证与面试说明
+
+- 服务层测试验证：miss 查 MySQL 且仅对可跳转映射回填；hit 不查 MySQL；缓存命中在到期边界返回 `410`；Redis 读写失败时回退或继续返回 MySQL 结果；禁用提交后尝试删 Key，删除失败不撤销已提交的数据库变更。
+- 使用 Docker/Testcontainers 的真实 MySQL 与 Redis 做少量集成测试，核对 Key 大小写、Value 序列化、实际 TTL、首次 miss 与后续 hit、过期和禁用失效。证明 hit 应观察 MySQL 查询次数或受控持久层调用，不能只断言两次响应都为 `302`。测试之间清理 Redis Key 与数据库数据；现有直接 SQL 切换 `enabled` 的测试不能单独证明应用会删除缓存。
+- 面试重点：为何选按需加载的 Cache Aside；为何 Value 仅含跳转所需字段而业务过期仍逐次检查；TTL 如何同时限制缓存寿命与旧值窗口；为何数据库提交后删缓存、为何仍有并发回填竞态；Redis 故障如何降级，以及如何用真实 Redis 与 MySQL 证明 hit/miss。有限 TTL 不能被描述为强一致保证。
+
+参考：[Redis Cache Aside](https://redis.io/docs/latest/develop/use-cases/cache-aside/)、[Redis `SET` 与过期选项](https://redis.io/docs/latest/commands/set/)、[Testcontainers JUnit 5 Quickstart](https://java.testcontainers.org/quickstart/junit_5_quickstart/)。
