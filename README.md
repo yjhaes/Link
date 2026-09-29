@@ -8,6 +8,7 @@
 - Spring Boot 3.5.16
 - MyBatis-Plus 3.5.17
 - MySQL
+- Redis，用于缓存已访问的永久短链接；Redis 不可用时跳转会回退到 MySQL
 - Maven 3.9.16（通过 Maven Wrapper 固定）
 
 ## 初始化数据库
@@ -22,6 +23,8 @@ CREATE DATABASE short_link_test CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 应用启动时会执行版本控制中的 `schema.sql`。表使用短码作主键，映射记录中的到期时间允许为空。
 
 通过环境变量提供连接信息；默认开发地址为 `localhost:3306/short_link`，用户名默认为 `root`，密码默认为空。需要密码时设置 `DB_PASSWORD`，不要把真实凭据提交到仓库。
+
+跳转缓存默认连接 `localhost:6379`，可通过 `REDIS_HOST` 和 `REDIS_PORT` 配置 Redis 地址。缓存 TTL 默认 5 分钟，可通过 `SHORT_LINK_REDIRECT_CACHE_TTL` 调整。
 
 ## 网页
 
@@ -73,7 +76,7 @@ UPDATE short_link SET enabled = TRUE WHERE short_code = 'abc12345';
 
 ## 测试
 
-测试连接真实 MySQL。确保测试数据库可用，并按需设置测试连接变量：
+`ShortLinkApiTest` 连接真实 MySQL。确保测试数据库可用，并按需设置测试连接变量：
 
 ```powershell
 $env:MYSQL_TEST_URL = 'jdbc:mysql://localhost:3306/short_link_test?serverTimezone=UTC'
@@ -82,4 +85,4 @@ $env:MYSQL_TEST_PASSWORD = '<本地测试数据库密码>'
 .\mvnw.cmd test
 ```
 
-集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。
+`RedisRedirectIntegrationTest` 使用 Docker/Testcontainers 启动 MySQL 8.4 与 Redis 7.2，验证缓存值、TTL、重复跳转和大小写隔离。完整测试集需要 Docker 可用。其他集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。

@@ -3,6 +3,7 @@ package com.example.shortlink.shortlink;
 import com.example.shortlink.LinkApplication;
 import com.example.shortlink.shortlink.service.CreatedShortLink;
 import com.example.shortlink.shortlink.service.PermutedShortCodeEncoder;
+import com.example.shortlink.shortlink.service.RedirectCache;
 import com.example.shortlink.shortlink.service.ShortLinkService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +38,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -705,6 +707,21 @@ class ShortLinkApiTest {
 
     @TestConfiguration
     static class ControlledTimeConfiguration {
+
+        @Bean
+        @Primary
+        RedirectCache redirectCache() {
+            return new RedirectCache() {
+                @Override
+                public Optional<String> findPermanent(String shortCode) {
+                    return Optional.empty();
+                }
+
+                @Override
+                public void storePermanent(String shortCode, String originalUrl) {
+                }
+            };
+        }
 
         @Bean
         @Primary

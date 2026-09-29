@@ -5,6 +5,12 @@ spring:
     url: ${DB_URL:jdbc:mysql://localhost:3306/short_link?serverTimezone=UTC}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      connect-timeout: 200ms
+      timeout: 200ms
   sql:
     init:
       mode: always
@@ -15,3 +21,5 @@ mybatis-plus:
 
 short-link:
   base-url: ${SHORT_LINK_BASE_URL:http://localhost:8080}
+  redirect-cache:
+    ttl: ${SHORT_LINK_REDIRECT_CACHE_TTL:5m}
