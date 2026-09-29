@@ -1,10 +1,13 @@
 package com.example.shortlink.shortlink.service;
 
+import java.time.Instant;
 import java.util.Optional;
 
 public interface RedirectCache {
 
-    Optional<String> findPermanent(String shortCode);
+    Optional<RedirectCacheEntry> find(String shortCode);
 
-    void storePermanent(String shortCode, String originalUrl);
+    void store(String shortCode, String originalUrl, Instant expiresAt);
+
+    void delete(String shortCode);
 }

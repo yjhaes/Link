@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
+import java.util.Optional;
 
 @Service
 public class ShortLinkService {
@@ -153,34 +154,44 @@ public class ShortLinkService {
             throw new LinkNotFoundException();
         }
 
+        Optional<RedirectCacheEntry> cachedRedirect;
         try {
-            var cachedOriginalUrl = redirectCache.findPermanent(code);
-            if (cachedOriginalUrl.isPresent()) {
-                return cachedOriginalUrl.get();
-            }
+            cachedRedirect = redirectCache.find(code);
         } catch (RuntimeException exception) {
             LOGGER.warn("Redirect cache lookup failed for short code {}; falling back to MySQL.", code, exception);
+            cachedRedirect = Optional.empty();
+        }
+        if (cachedRedirect.isPresent()) {
+            RedirectCacheEntry cacheEntry = cachedRedirect.get();
+            if (cacheEntry.expiresAt() != null && !clock.instant().isBefore(cacheEntry.expiresAt())) {
+                try {
+                    redirectCache.delete(code);
+                } catch (RuntimeException exception) {
+                    LOGGER.warn("Could not delete expired redirect cache entry for short code {}.", code, exception);
+                }
+                throw new LinkExpiredException();
+            }
+            return cacheEntry.originalUrl();
         }
 
         ShortLinkEntity entity = shortLinkMapper.selectById(code);
         if (entity == null) {
             throw new LinkNotFoundException();
         }
-        if (entity.getExpiresAt() != null
-                && !LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).isBefore(entity.getExpiresAt())) {
+        Instant expiresAt = entity.getExpiresAt() == null
+                ? null
+                : entity.getExpiresAt().toInstant(ZoneOffset.UTC);
+        if (expiresAt != null && !clock.instant().isBefore(expiresAt)) {
             throw new LinkExpiredException();
         }
         if (!entity.isEnabled()) {
             throw new LinkDisabledException();
         }
 
-        if (entity.getExpiresAt() == null) {
-            try {
-                redirectCache.storePermanent(code, entity.getOriginalUrl());
-            } catch (RuntimeException exception) {
-                LOGGER.warn("Redirect cache write failed for short code {}; returning the MySQL result.", code,
-                        exception);
-            }
+        try {
+            redirectCache.store(code, entity.getOriginalUrl(), expiresAt);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Redirect cache write failed for short code {}; returning the MySQL result.", code, exception);
         }
         return entity.getOriginalUrl();
     }

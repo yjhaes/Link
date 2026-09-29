@@ -25,8 +25,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +39,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(classes = LinkApplication.class)
@@ -151,6 +154,69 @@ class RedisRedirectIntegrationTest {
     }
 
     @Test
+    void expiringRedirectStoresItsBusinessExpiryAndRemainingTtlAndLaterHitsAvoidMySql() throws Exception {
+        String shortCode = "Tm12";
+        LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC)
+                .plusMinutes(1)
+                .truncatedTo(ChronoUnit.MILLIS);
+        insertExpiringMapping(shortCode, ORIGINAL_URL, expiresAt);
+
+        assertRedirect(shortCode, ORIGINAL_URL);
+
+        String key = cacheKey(shortCode);
+        JsonNode cacheValue = objectMapper.readTree(redisTemplate.opsForValue().get(key));
+        Instant expectedExpiry = expiresAt.toInstant(ZoneOffset.UTC);
+        assertThat(cacheValue.size()).isEqualTo(2);
+        assertThat(cacheValue.path("originalUrl").asText()).isEqualTo(ORIGINAL_URL);
+        assertThat(cacheValue.path("expiresAt").asText()).isEqualTo(expectedExpiry.toString());
+
+        Long ttlMillis = redisTemplate.getExpire(key, TimeUnit.MILLISECONDS);
+        long remainingMillis = Duration.between(Instant.now(), expectedExpiry).toMillis();
+        assertThat(ttlMillis).isPositive();
+        assertThat(ttlMillis).isLessThanOrEqualTo(CACHE_TTL_MILLIS);
+        assertThat(ttlMillis).isBetween(remainingMillis - 10_000L, remainingMillis + 1_000L);
+        verify(shortLinkMapper).selectById(shortCode);
+
+        clearInvocations(shortLinkMapper);
+        assertRedirect(shortCode, ORIGINAL_URL);
+        verify(shortLinkMapper, never()).selectById(shortCode);
+    }
+
+    @Test
+    void expiringRedirectTtlDoesNotExceedTheConfiguredMaximum() throws Exception {
+        String shortCode = "Cp12";
+        LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC)
+                .plusMinutes(10)
+                .truncatedTo(ChronoUnit.MILLIS);
+        insertExpiringMapping(shortCode, ORIGINAL_URL, expiresAt);
+
+        assertRedirect(shortCode, ORIGINAL_URL);
+
+        Long ttlMillis = redisTemplate.getExpire(cacheKey(shortCode), TimeUnit.MILLISECONDS);
+        assertThat(ttlMillis).isBetween(CACHE_TTL_MILLIS - 10_000L, CACHE_TTL_MILLIS);
+    }
+
+    @Test
+    void expiredCacheHitReturnsGoneAndDeletesTheKeyWithoutReadingMySql() throws Exception {
+        String shortCode = "Ex12";
+        Instant expiresAt = Instant.now().minusSeconds(1);
+        String value = objectMapper.createObjectNode()
+                .put("originalUrl", ORIGINAL_URL)
+                .put("expiresAt", expiresAt.toString())
+                .toString();
+        redisTemplate.opsForValue().set(cacheKey(shortCode), value, Duration.ofMinutes(5));
+        clearInvocations(shortLinkMapper);
+
+        mockMvc.perform(get("/s/" + shortCode))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        assertThat(redisTemplate.hasKey(cacheKey(shortCode))).isFalse();
+        verify(shortLinkMapper, never()).selectById(shortCode);
+    }
+
+    @Test
     void malformedCacheValueFallsBackToMySqlAndReplacesTheEntry() throws Exception {
         String shortCode = "Bad1";
         insertMapping(shortCode, ORIGINAL_URL);
@@ -177,6 +243,16 @@ class RedisRedirectIntegrationTest {
                 shortCode,
                 originalUrl,
                 LocalDateTime.now(ZoneOffset.UTC));
+    }
+
+    private void insertExpiringMapping(String shortCode, String originalUrl, LocalDateTime expiresAt) {
+        jdbcTemplate.update(
+                "INSERT INTO short_link (short_code, original_url, created_at, expires_at, enabled) " +
+                        "VALUES (?, ?, ?, ?, TRUE)",
+                shortCode,
+                originalUrl,
+                LocalDateTime.now(ZoneOffset.UTC),
+                expiresAt);
     }
 
     private String cacheKey(String shortCode) {

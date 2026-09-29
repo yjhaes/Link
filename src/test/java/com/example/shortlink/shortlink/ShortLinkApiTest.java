@@ -4,6 +4,7 @@ import com.example.shortlink.LinkApplication;
 import com.example.shortlink.shortlink.service.CreatedShortLink;
 import com.example.shortlink.shortlink.service.PermutedShortCodeEncoder;
 import com.example.shortlink.shortlink.service.RedirectCache;
+import com.example.shortlink.shortlink.service.RedirectCacheEntry;
 import com.example.shortlink.shortlink.service.ShortLinkService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -713,12 +714,16 @@ class ShortLinkApiTest {
         RedirectCache redirectCache() {
             return new RedirectCache() {
                 @Override
-                public Optional<String> findPermanent(String shortCode) {
+                public Optional<RedirectCacheEntry> find(String shortCode) {
                     return Optional.empty();
                 }
 
                 @Override
-                public void storePermanent(String shortCode, String originalUrl) {
+                public void store(String shortCode, String originalUrl, Instant expiresAt) {
+                }
+
+                @Override
+                public void delete(String shortCode) {
                 }
             };
         }
