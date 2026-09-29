@@ -65,14 +65,33 @@ Content-Type: application/json
 
 访问未过期且启用的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`；未过期但已禁用时返回 `403 LINK_DISABLED`。过期判断优先于禁用状态。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
 
-维护者可直接在 MySQL 中禁用或重新启用映射，不提供对应 API：
+维护者可直接在 MySQL 中禁用或重新启用映射；当前没有对应的公开 API。每次维护都必须先提交 MySQL 状态变更，再删除同一短码的 Redis Key。禁用示例：
 
 ```sql
-UPDATE short_link SET enabled = FALSE WHERE short_code = 'abc12345';
-UPDATE short_link SET enabled = TRUE WHERE short_code = 'abc12345';
+START TRANSACTION;
+UPDATE short_link SET enabled = FALSE WHERE short_code = 'Ab12';
+COMMIT;
 ```
 
-禁用不会删除映射或释放短码；重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。
+MySQL 提交后，在连接同一 Redis 实例的终端删除缓存：
+
+```sh
+redis-cli DEL 'shortlink:redirect:v1:Ab12'
+```
+
+重新启用时同样先提交 MySQL，再执行 `DEL`：
+
+```sql
+START TRANSACTION;
+UPDATE short_link SET enabled = TRUE WHERE short_code = 'Ab12';
+COMMIT;
+```
+
+Redis 对 `DEL` 返回 `1` 表示已删除 Key，返回 `0` 表示 Key 当时不存在；两者都表示命令执行成功。若 Redis 命令失败或无法连接，记录并报告缓存失效失败，Redis 恢复后重试删除。MySQL 状态变更已经提交，不要因此回滚或反向修改 MySQL。
+
+禁用不会删除映射或释放短码；重新启用同一映射后，短码可恢复跳转。重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。若旧缓存没有被删除，它可继续提供旧跳转，直到自己的 TTL 到期；默认 TTL 上限为 5 分钟，若部署覆盖 `SHORT_LINK_REDIRECT_CACHE_TTL`，上限按配置变化。并发请求可能在删除后用先前读到的启用状态回填旧值，该回填的 TTL 从回填时重新计算，默认最多 5 分钟。因此此维护流程有界但不保证强一致，不能承诺禁用提交后所有并发访问立即返回 `403 LINK_DISABLED`。
+
+将来若增加应用内启用、禁用、删除映射或修改原始 URL／有效时长的操作，也必须在对应的 MySQL 事务提交后删除短码对应的 Redis Key；本项目当前不增加这些接口。
 
 ## 测试
 
@@ -85,4 +104,4 @@ $env:MYSQL_TEST_PASSWORD = '<本地测试数据库密码>'
 .\mvnw.cmd test
 ```
 
-`RedisRedirectIntegrationTest` 使用 Docker/Testcontainers 启动 MySQL 8.4 与 Redis 7.2，验证缓存值、TTL、重复跳转和大小写隔离。完整测试集需要 Docker 可用。其他集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。
+`RedisRedirectIntegrationTest` 使用 Docker/Testcontainers 启动 MySQL 8.4 与 Redis 7.2，验证缓存值、TTL、重复跳转、大小写隔离，以及 MySQL 提交后显式删除预热 Key 对禁用和重新启用跳转的影响；每个测试前都会清理 Redis。完整测试集需要 Docker 可用。其他集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。

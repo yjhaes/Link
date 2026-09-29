@@ -154,6 +154,47 @@ class RedisRedirectIntegrationTest {
     }
 
     @Test
+    void committedDisableAndReenableTakeEffectAfterDeletingThePrewarmedKey() throws Exception {
+        String shortCode = "Md12";
+        String key = cacheKey(shortCode);
+        insertMapping(shortCode, ORIGINAL_URL);
+
+        assertRedirect(shortCode, ORIGINAL_URL);
+        assertThat(redisTemplate.hasKey(key)).isTrue();
+
+        assertThat(jdbcTemplate.update(
+                "UPDATE short_link SET enabled = FALSE WHERE short_code = ?", shortCode))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT enabled FROM short_link WHERE short_code = ?", Integer.class, shortCode))
+                .isZero();
+        assertThat(redisTemplate.hasKey(key)).isTrue();
+        assertThat(redisTemplate.delete(key)).isTrue();
+        assertThat(redisTemplate.hasKey(key)).isFalse();
+
+        clearInvocations(shortLinkMapper);
+        mockMvc.perform(get("/s/" + shortCode))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("LINK_DISABLED"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        verify(shortLinkMapper).selectById(shortCode);
+        assertThat(redisTemplate.hasKey(key)).isFalse();
+
+        assertThat(jdbcTemplate.update(
+                "UPDATE short_link SET enabled = TRUE WHERE short_code = ?", shortCode))
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT enabled FROM short_link WHERE short_code = ?", Integer.class, shortCode))
+                .isEqualTo(1);
+        redisTemplate.delete(key);
+
+        assertRedirect(shortCode, ORIGINAL_URL);
+        assertThat(redisTemplate.hasKey(key)).isTrue();
+        verify(shortLinkMapper, times(2)).selectById(shortCode);
+    }
+
+    @Test
     void expiringRedirectStoresItsBusinessExpiryAndRemainingTtlAndLaterHitsAvoidMySql() throws Exception {
         String shortCode = "Tm12";
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC)
