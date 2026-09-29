@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 01 — 让 4 至 8 位 Base62 短码可保存并跳转
 
