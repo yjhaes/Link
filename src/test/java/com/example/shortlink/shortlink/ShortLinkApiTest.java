@@ -1,14 +1,20 @@
 package com.example.shortlink.shortlink;
 
+import com.example.shortlink.LinkApplication;
+import com.example.shortlink.shortlink.service.CreatedShortLink;
 import com.example.shortlink.shortlink.service.PermutedShortCodeEncoder;
+import com.example.shortlink.shortlink.service.ShortLinkService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -489,12 +495,54 @@ class ShortLinkApiTest {
     }
 
     @Test
+    void separateApplicationContextsShareMySqlIssuedIdsWithoutDuplicateShortCodes() throws Exception {
+        long issuedCountBefore = issuedCount();
+
+        try (ConfigurableApplicationContext firstInstance = startSeparateApplicationInstance();
+             ConfigurableApplicationContext secondInstance = startSeparateApplicationInstance()) {
+            ShortLinkService firstService = firstInstance.getBean(ShortLinkService.class);
+            ShortLinkService secondService = secondInstance.getBean(ShortLinkService.class);
+            List<Callable<CreatedShortLink>> requests = IntStream.range(0, CONCURRENT_CREATION_COUNT)
+                    .<Callable<CreatedShortLink>>mapToObj(index -> () -> {
+                        ShortLinkService service = index % 2 == 0 ? firstService : secondService;
+                        return service.create("https://example.com/multi-instance/" + index, null);
+                    })
+                    .toList();
+            ExecutorService executor = Executors.newFixedThreadPool(8);
+
+            try {
+                List<Future<CreatedShortLink>> results = executor.invokeAll(requests);
+                Set<String> shortCodes = new HashSet<>();
+                for (Future<CreatedShortLink> result : results) {
+                    String shortCode = result.get().shortCode();
+                    assertThat(shortCode).matches("[0-9a-zA-Z]{4,8}");
+                    shortCodes.add(shortCode);
+                }
+
+                assertThat(shortCodes).hasSize(CONCURRENT_CREATION_COUNT);
+                assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class))
+                        .isEqualTo(CONCURRENT_CREATION_COUNT);
+                assertThat(issuedCount()).isEqualTo(issuedCountBefore + CONCURRENT_CREATION_COUNT);
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    private ConfigurableApplicationContext startSeparateApplicationInstance() {
+        return new SpringApplicationBuilder(LinkApplication.class)
+                .profiles("test")
+                .web(WebApplicationType.NONE)
+                .run("--spring.sql.init.mode=never", "--spring.main.banner-mode=off");
+    }
+
+    @Test
     void shortCodeColumnIsVariableLengthCaseSensitiveAndRequired() {
         assertShortCodeColumnIsVariableLengthCaseSensitiveAndRequired();
     }
 
     @Test
-    void sqlIssuedIdsStayInAnAppendOnlyTableSeparateFromShortLinkMappings() {
+    void sqlIssuedIdsUseASeparateAutoIncrementTable() {
         List<String> mappingColumns = jdbcTemplate.queryForList(
                 "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " +
                         "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'short_link' " +
