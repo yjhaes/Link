@@ -1,14 +1,20 @@
 package com.example.shortlink.shortlink;
 
-import com.example.shortlink.shortlink.service.ShortCodeGenerator;
+import com.example.shortlink.LinkApplication;
+import com.example.shortlink.shortlink.service.CreatedShortLink;
+import com.example.shortlink.shortlink.service.PermutedShortCodeEncoder;
+import com.example.shortlink.shortlink.service.ShortLinkService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -29,11 +35,16 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.IntStream;
 import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,11 +60,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(ShortLinkApiTest.ControlledTimeAndShortCodeConfiguration.class)
+@Import(ShortLinkApiTest.ControlledTimeConfiguration.class)
 class ShortLinkApiTest {
 
     private static final String ORIGINAL_URL = "https://example.com/article?id=17#summary";
     private static final Instant BASE_TIME = Instant.parse("2026-09-28T12:00:00.987654321Z");
+    private static final int CONCURRENT_CREATION_COUNT = 16;
 
     @Autowired
     private MockMvc mockMvc;
@@ -71,17 +83,18 @@ class ShortLinkApiTest {
     private ControllableClock clock;
 
     @Autowired
-    private ControllableShortCodeGenerator shortCodeGenerator;
+    private ControllablePermutedShortCodeEncoder shortCodeEncoder;
 
     @BeforeEach
     void clearMappings() {
         jdbcTemplate.update("DELETE FROM short_link");
         clock.reset(BASE_TIME);
-        shortCodeGenerator.reset();
+        shortCodeEncoder.reset();
     }
 
     @Test
     void creatingAPermanentLinkReturnsAUsableRedirect() throws Exception {
+        long issuedCountBefore = issuedCount();
         MvcResult creation = mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -89,7 +102,7 @@ class ShortLinkApiTest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.shortCode", matchesPattern("[a-z0-9]{8}")))
+                .andExpect(jsonPath("$.shortCode", matchesPattern("[0-9a-zA-Z]{4,8}")))
                 .andExpect(jsonPath("$.expiresAt").value(nullValue()))
                 .andReturn();
 
@@ -102,6 +115,7 @@ class ShortLinkApiTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM short_link WHERE short_code = ? AND expires_at IS NULL", Integer.class, code))
                 .isEqualTo(1);
+        assertThat(issuedCount()).isEqualTo(issuedCountBefore + 1);
 
         mockMvc.perform(get(URI.create(shortUrl).getRawPath()))
                 .andExpect(status().isFound())
@@ -111,32 +125,40 @@ class ShortLinkApiTest {
 
     @Test
     void creationRetriesAfterAnExistingShortCodeAndReturnsTheSuccessfulCandidate() throws Exception {
-        insertMapping("aaaa0001", "https://occupied.example/");
-        shortCodeGenerator.enqueueCandidates("aaaa0001", "bbbb0002");
+        String occupiedCode = "aaaa0001";
+        insertMapping(occupiedCode, "https://occupied.example/");
+        shortCodeEncoder.forceCode(occupiedCode, 1);
+        long issuedCountBefore = issuedCount();
 
-        mockMvc.perform(post("/api/links")
+        MvcResult creation = mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"originalUrl":"https://example.com/article?id=17#summary"}
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.shortCode").value("bbbb0002"))
-                .andExpect(jsonPath("$.shortUrl").value("http://short.local/s/bbbb0002"))
-                .andExpect(header().string("Location", "http://short.local/s/bbbb0002"));
+                .andReturn();
 
-        assertThat(shortCodeGenerator.callCount()).isEqualTo(2);
+        String successfulCode = objectMapper.readTree(creation.getResponse().getContentAsByteArray())
+                .path("shortCode")
+                .asText();
+        assertThat(objectMapper.readTree(creation.getResponse().getContentAsByteArray())
+                .path("shortUrl").asText()).isEqualTo("http://short.local/s/" + successfulCode);
+        assertThat(creation.getResponse().getHeader("Location"))
+                .isEqualTo("http://short.local/s/" + successfulCode);
+        assertThat(issuedCount()).isEqualTo(issuedCountBefore + 2);
+        assertThat(successfulCode).isEqualTo(shortCodeEncoder.encode(latestIssuedId()));
+        assertThat(successfulCode).isNotEqualTo(occupiedCode);
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM short_link WHERE short_code = 'bbbb0002'", Integer.class)).isEqualTo(1);
+                "SELECT COUNT(*) FROM short_link WHERE short_code = ?", Integer.class, successfulCode)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(2);
     }
 
     @Test
-    void creationStopsAfterFourPrimaryKeyCollisionsWithoutCreatingAMapping() throws Exception {
-        List<String> occupiedCodes = List.of("aaaa0001", "bbbb0002", "cccc0003", "dddd0004");
-        for (String code : occupiedCodes) {
-            insertMapping(code, "https://occupied.example/" + code);
-        }
-        shortCodeGenerator.enqueueCandidates(occupiedCodes.toArray(String[]::new));
+    void creationStopsAfterTwoPrimaryKeyCollisionsWithoutCreatingAMapping() throws Exception {
+        String occupiedCode = "aaaa0001";
+        insertMapping(occupiedCode, "https://occupied.example/" + occupiedCode);
+        shortCodeEncoder.forceCode(occupiedCode, 2);
+        long issuedCountBefore = issuedCount();
 
         mockMvc.perform(post("/api/links")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -149,17 +171,17 @@ class ShortLinkApiTest {
                         "A unique short code could not be generated. Please try again."))
                 .andExpect(header().string("Cache-Control", "no-store"));
 
-        assertThat(shortCodeGenerator.callCount()).isEqualTo(4);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(4);
+        assertThat(issuedCount()).isEqualTo(issuedCountBefore + 2);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(1);
     }
 
     @Test
-    void aDifferentUniqueConstraintFailureIsNotRetriedOrExposed() throws Exception {
+    void aDifferentUniqueConstraintFailureLeavesItsIssuedIdUnusedAndDoesNotRetry() throws Exception {
         jdbcTemplate.execute(
                 "CREATE UNIQUE INDEX uq_test_original_url_prefix ON short_link (original_url(16))");
+        long issuedCountBefore = issuedCount();
         try {
             insertMapping("aaaa0001", ORIGINAL_URL);
-            shortCodeGenerator.enqueueCandidates("bbbb0002", "cccc0003");
 
             mockMvc.perform(post("/api/links")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -171,10 +193,68 @@ class ShortLinkApiTest {
                     .andExpect(jsonPath("$.message").value("An unexpected error occurred."))
                     .andExpect(header().string("Cache-Control", "no-store"));
 
-            assertThat(shortCodeGenerator.callCount()).isEqualTo(1);
-            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isEqualTo(1);
+            assertThat(issuedCount()).isEqualTo(issuedCountBefore + 1);
+            long failedId = latestIssuedId();
+            String unusedCode = shortCodeEncoder.encode(failedId);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM short_link WHERE short_code = ?", Integer.class, unusedCode)).isZero();
         } finally {
             jdbcTemplate.execute("DROP INDEX uq_test_original_url_prefix ON short_link");
+        }
+
+        long failedId = latestIssuedId();
+        MvcResult successfulCreation = mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalUrl":"https://after-failure.example/path"}
+                                """))
+                .andExpect(status().isCreated())
+                .andReturn();
+        long successfulId = latestIssuedId();
+        String failedCode = shortCodeEncoder.encode(failedId);
+        String successfulCode = shortCodeEncoder.encode(successfulId);
+
+        assertThat(successfulId).isGreaterThan(failedId);
+        assertThat(objectMapper.readTree(successfulCreation.getResponse().getContentAsByteArray())
+                .path("shortCode").asText()).isEqualTo(successfulCode);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM short_link WHERE short_code = ?", Integer.class, failedCode)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM short_link WHERE short_code = ?", Integer.class, successfulCode)).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentCreationsOnTheSharedMySqlPrimaryUseDistinctShortCodes() throws Exception {
+        long issuedCountBefore = issuedCount();
+        List<Callable<MvcResult>> requests = IntStream.range(0, CONCURRENT_CREATION_COUNT)
+                .<Callable<MvcResult>>mapToObj(index -> () -> mockMvc.perform(post("/api/links")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.createObjectNode()
+                                        .put("originalUrl", "https://example.com/concurrent/" + index)
+                                        .toString()))
+                        .andReturn())
+                .toList();
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+
+        try {
+            List<Future<MvcResult>> results = executor.invokeAll(requests);
+            Set<String> shortCodes = new HashSet<>();
+            for (Future<MvcResult> result : results) {
+                MvcResult creation = result.get();
+                assertThat(creation.getResponse().getStatus()).isEqualTo(201);
+                String code = objectMapper.readTree(creation.getResponse().getContentAsByteArray())
+                        .path("shortCode")
+                        .asText();
+                assertThat(code).matches("[0-9a-zA-Z]{4,8}");
+                shortCodes.add(code);
+            }
+
+            assertThat(shortCodes).hasSize(CONCURRENT_CREATION_COUNT);
+            assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class))
+                    .isEqualTo(CONCURRENT_CREATION_COUNT);
+            assertThat(issuedCount()).isEqualTo(issuedCountBefore + CONCURRENT_CREATION_COUNT);
+        } finally {
+            executor.shutdownNow();
         }
     }
 
@@ -415,8 +495,70 @@ class ShortLinkApiTest {
     }
 
     @Test
+    void separateApplicationContextsShareMySqlIssuedIdsWithoutDuplicateShortCodes() throws Exception {
+        long issuedCountBefore = issuedCount();
+
+        try (ConfigurableApplicationContext firstInstance = startSeparateApplicationInstance();
+             ConfigurableApplicationContext secondInstance = startSeparateApplicationInstance()) {
+            ShortLinkService firstService = firstInstance.getBean(ShortLinkService.class);
+            ShortLinkService secondService = secondInstance.getBean(ShortLinkService.class);
+            List<Callable<CreatedShortLink>> requests = IntStream.range(0, CONCURRENT_CREATION_COUNT)
+                    .<Callable<CreatedShortLink>>mapToObj(index -> () -> {
+                        ShortLinkService service = index % 2 == 0 ? firstService : secondService;
+                        return service.create("https://example.com/multi-instance/" + index, null);
+                    })
+                    .toList();
+            ExecutorService executor = Executors.newFixedThreadPool(8);
+
+            try {
+                List<Future<CreatedShortLink>> results = executor.invokeAll(requests);
+                Set<String> shortCodes = new HashSet<>();
+                for (Future<CreatedShortLink> result : results) {
+                    String shortCode = result.get().shortCode();
+                    assertThat(shortCode).matches("[0-9a-zA-Z]{4,8}");
+                    shortCodes.add(shortCode);
+                }
+
+                assertThat(shortCodes).hasSize(CONCURRENT_CREATION_COUNT);
+                assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class))
+                        .isEqualTo(CONCURRENT_CREATION_COUNT);
+                assertThat(issuedCount()).isEqualTo(issuedCountBefore + CONCURRENT_CREATION_COUNT);
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    private ConfigurableApplicationContext startSeparateApplicationInstance() {
+        return new SpringApplicationBuilder(LinkApplication.class)
+                .profiles("test")
+                .web(WebApplicationType.NONE)
+                .run("--spring.sql.init.mode=never", "--spring.main.banner-mode=off");
+    }
+
+    @Test
     void shortCodeColumnIsVariableLengthCaseSensitiveAndRequired() {
         assertShortCodeColumnIsVariableLengthCaseSensitiveAndRequired();
+    }
+
+    @Test
+    void sqlIssuedIdsUseASeparateAutoIncrementTable() {
+        List<String> mappingColumns = jdbcTemplate.queryForList(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " +
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'short_link' " +
+                        "ORDER BY ORDINAL_POSITION",
+                String.class);
+        var issuedIdColumn = jdbcTemplate.queryForMap(
+                "SELECT DATA_TYPE, COLUMN_TYPE, COLUMN_KEY, EXTRA FROM INFORMATION_SCHEMA.COLUMNS " +
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'short_code_issuance' " +
+                        "AND COLUMN_NAME = 'id'");
+
+        assertThat(mappingColumns).containsExactly(
+                "short_code", "original_url", "created_at", "expires_at", "enabled");
+        assertThat(issuedIdColumn.get("DATA_TYPE").toString()).isEqualToIgnoringCase("bigint");
+        assertThat(issuedIdColumn.get("COLUMN_TYPE").toString()).isEqualToIgnoringCase("bigint");
+        assertThat(issuedIdColumn.get("COLUMN_KEY")).isEqualTo("PRI");
+        assertThat(issuedIdColumn.get("EXTRA").toString()).containsIgnoringCase("auto_increment");
     }
 
     @Test
@@ -543,6 +685,16 @@ class ShortLinkApiTest {
                 LocalDateTime.ofInstant(BASE_TIME, ZoneOffset.UTC));
     }
 
+    private long issuedCount() {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_code_issuance", Long.class);
+    }
+
+    private long latestIssuedId() {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM short_code_issuance ORDER BY id DESC LIMIT 1",
+                Long.class);
+    }
+
     private void assertDisabled(String code) throws Exception {
         mockMvc.perform(get("/s/" + code))
                 .andExpect(status().isForbidden())
@@ -552,7 +704,7 @@ class ShortLinkApiTest {
     }
 
     @TestConfiguration
-    static class ControlledTimeAndShortCodeConfiguration {
+    static class ControlledTimeConfiguration {
 
         @Bean
         @Primary
@@ -562,33 +714,33 @@ class ShortLinkApiTest {
 
         @Bean
         @Primary
-        ControllableShortCodeGenerator controllableShortCodeGenerator() {
-            return new ControllableShortCodeGenerator();
+        ControllablePermutedShortCodeEncoder controllablePermutedShortCodeEncoder() {
+            return new ControllablePermutedShortCodeEncoder();
         }
     }
 
-    static final class ControllableShortCodeGenerator extends ShortCodeGenerator {
+    static final class ControllablePermutedShortCodeEncoder extends PermutedShortCodeEncoder {
 
-        private final Queue<String> candidates = new ArrayDeque<>();
-        private int calls;
+        private String forcedCode;
+        private int remainingForcedEncodes;
 
         synchronized void reset() {
-            candidates.clear();
-            calls = 0;
+            forcedCode = null;
+            remainingForcedEncodes = 0;
         }
 
-        synchronized void enqueueCandidates(String... shortCodes) {
-            candidates.addAll(List.of(shortCodes));
-        }
-
-        synchronized int callCount() {
-            return calls;
+        synchronized void forceCode(String code, int times) {
+            forcedCode = code;
+            remainingForcedEncodes = times;
         }
 
         @Override
-        public synchronized String generate() {
-            calls++;
-            return candidates.isEmpty() ? super.generate() : candidates.remove();
+        public synchronized String encode(long id) {
+            if (remainingForcedEncodes > 0) {
+                remainingForcedEncodes--;
+                return forcedCode;
+            }
+            return super.encode(id);
         }
     }
 

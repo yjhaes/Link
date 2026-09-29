@@ -7,6 +7,8 @@ import com.example.shortlink.common.error.LinkNotFoundException;
 import com.example.shortlink.common.error.ShortCodeGenerationException;
 import com.example.shortlink.shortlink.persistence.ShortLinkEntity;
 import com.example.shortlink.shortlink.persistence.ShortLinkMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -23,19 +25,23 @@ import java.util.Locale;
 @Service
 public class ShortLinkService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ShortLinkService.class);
     private static final int MAX_VALID_MINUTES = 5_256_000;
-    private static final int MAX_SHORT_CODE_INSERT_ATTEMPTS = 4;
+    private static final int MAX_SHORT_CODE_INSERT_ATTEMPTS = 2;
 
     private final ShortLinkMapper shortLinkMapper;
-    private final ShortCodeGenerator shortCodeGenerator;
+    private final ShortCodeIdIssuer shortCodeIdIssuer;
+    private final PermutedShortCodeEncoder shortCodeEncoder;
     private final Clock clock;
 
     public ShortLinkService(
             ShortLinkMapper shortLinkMapper,
-            ShortCodeGenerator shortCodeGenerator,
+            ShortCodeIdIssuer shortCodeIdIssuer,
+            PermutedShortCodeEncoder shortCodeEncoder,
             Clock clock) {
         this.shortLinkMapper = shortLinkMapper;
-        this.shortCodeGenerator = shortCodeGenerator;
+        this.shortCodeIdIssuer = shortCodeIdIssuer;
+        this.shortCodeEncoder = shortCodeEncoder;
         this.clock = clock;
     }
 
@@ -77,7 +83,14 @@ public class ShortLinkService {
 
     private void insertWithCollisionRetries(ShortLinkEntity entity) {
         for (int attempt = 1; attempt <= MAX_SHORT_CODE_INSERT_ATTEMPTS; attempt++) {
-            entity.setShortCode(shortCodeGenerator.generate());
+            long issuedId = shortCodeIdIssuer.issue();
+            try {
+                entity.setShortCode(shortCodeEncoder.encode(issuedId));
+            } catch (IllegalArgumentException exception) {
+                LOGGER.error("Could not encode issued short-code ID {}.", issuedId, exception);
+                throw new ShortCodeGenerationException();
+            }
+
             try {
                 shortLinkMapper.insert(entity);
                 return;
@@ -86,8 +99,11 @@ public class ShortLinkService {
                     throw exception;
                 }
                 if (attempt == MAX_SHORT_CODE_INSERT_ATTEMPTS) {
+                    LOGGER.error("Short-code primary-key collision persisted after issuing a replacement ID.",
+                            exception);
                     throw new ShortCodeGenerationException();
                 }
+                LOGGER.warn("Short-code primary-key collision for issued ID {}; retrying once.", issuedId, exception);
             }
         }
     }
