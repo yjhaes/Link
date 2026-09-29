@@ -12,8 +12,11 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.DatabasePopulatorUtils;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -31,6 +34,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.sql.DataSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -56,6 +60,9 @@ class ShortLinkApiTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -409,6 +416,22 @@ class ShortLinkApiTest {
 
     @Test
     void shortCodeColumnIsVariableLengthCaseSensitiveAndRequired() {
+        assertShortCodeColumnIsVariableLengthCaseSensitiveAndRequired();
+    }
+
+    @Test
+    void schemaInitializationMigratesAnExistingFixedLengthShortCodeColumn() {
+        jdbcTemplate.execute(
+                "ALTER TABLE short_link MODIFY COLUMN short_code " +
+                        "CHAR(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL");
+        DatabasePopulatorUtils.execute(
+                new ResourceDatabasePopulator(new ClassPathResource("schema.sql")),
+                dataSource);
+
+        assertShortCodeColumnIsVariableLengthCaseSensitiveAndRequired();
+    }
+
+    private void assertShortCodeColumnIsVariableLengthCaseSensitiveAndRequired() {
         var shortCodeColumn = jdbcTemplate.queryForMap(
                 "SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE, COLLATION_NAME " +
                         "FROM INFORMATION_SCHEMA.COLUMNS " +
@@ -436,21 +459,16 @@ class ShortLinkApiTest {
         insertMapping("Ab3dE9f", "https://seven.example/");
         insertMapping("A1b2Cd3E", "https://eight.example/");
 
-        mockMvc.perform(get("/s/A1b2"))
+        assertRedirectsTo("A1b2", "https://four-uppercase.example/");
+        assertRedirectsTo("a1b2", "https://four-lowercase.example/");
+        assertRedirectsTo("Ab3dE9f", "https://seven.example/");
+        assertRedirectsTo("A1b2Cd3E", "https://eight.example/");
+    }
+
+    private void assertRedirectsTo(String shortCode, String originalUrl) throws Exception {
+        mockMvc.perform(get("/s/" + shortCode))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://four-uppercase.example/"))
-                .andExpect(header().string("Cache-Control", "no-store"));
-        mockMvc.perform(get("/s/a1b2"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://four-lowercase.example/"))
-                .andExpect(header().string("Cache-Control", "no-store"));
-        mockMvc.perform(get("/s/Ab3dE9f"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://seven.example/"))
-                .andExpect(header().string("Cache-Control", "no-store"));
-        mockMvc.perform(get("/s/A1b2Cd3E"))
-                .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://eight.example/"))
+                .andExpect(header().string("Location", originalUrl))
                 .andExpect(header().string("Cache-Control", "no-store"));
     }
 
