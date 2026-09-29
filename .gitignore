@@ -5,3 +5,8 @@ target/
 .classpath
 .project
 .settings/
+
+# Local indexes, editor state, and personal planning prompts
+.codegraph/
+.obsidian/
+docs/阶段文档.md
