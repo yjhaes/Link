@@ -95,7 +95,7 @@ Redis 对 `DEL` 返回 `1` 表示已删除 Key，返回 `0` 表示 Key 当时不
 
 ## 测试
 
-`ShortLinkApiTest` 连接真实 MySQL。确保测试数据库可用，并按需设置测试连接变量：
+`ShortLinkApiTest` 连接真实 MySQL。默认测试库为本机 `short_link_test`，用户名为 `root`，密码为 `123456`；其他环境可按需设置测试连接变量：
 
 ```powershell
 $env:MYSQL_TEST_URL = 'jdbc:mysql://localhost:3306/short_link_test?serverTimezone=UTC'
