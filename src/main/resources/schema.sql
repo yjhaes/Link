@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS short_link
 (
-    short_code  CHAR(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+    short_code  VARCHAR(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     original_url VARCHAR(4096) NOT NULL,
     created_at  DATETIME(3) NOT NULL,
     expires_at  DATETIME(3) NULL,
@@ -9,3 +9,6 @@ CREATE TABLE IF NOT EXISTS short_link
 ) ENGINE = InnoDB
   DEFAULT CHARACTER SET = utf8mb4
   COLLATE = utf8mb4_bin;
+
+ALTER TABLE short_link
+    MODIFY COLUMN short_code VARCHAR(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL;

@@ -130,7 +130,7 @@ public class ShortLinkService {
     }
 
     public String findOriginalUrl(String code) {
-        if (code == null || !code.matches("[a-z0-9]{8}")) {
+        if (code == null || !code.matches("[A-Za-z0-9]{4,8}")) {
             throw new LinkNotFoundException();
         }
 

@@ -397,10 +397,60 @@ class ShortLinkApiTest {
 
     @Test
     void visitingAnUnknownCodeReturnsNotFoundWithoutCachingTheFailure() throws Exception {
-        mockMvc.perform(get("/s/missing1"))
+        assertNotFound("missing1");
+    }
+
+    @Test
+    void invalidShortCodeLengthsAndCharactersReturnNotFoundWithoutCachingFailures() throws Exception {
+        for (String code : List.of("abc", "abcdefghi", "ab_c", "ab-c")) {
+            assertNotFound(code);
+        }
+    }
+
+    @Test
+    void shortCodeColumnIsVariableLengthCaseSensitiveAndRequired() {
+        var shortCodeColumn = jdbcTemplate.queryForMap(
+                "SELECT DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE, COLLATION_NAME " +
+                        "FROM INFORMATION_SCHEMA.COLUMNS " +
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'short_link' " +
+                        "AND COLUMN_NAME = 'short_code'");
+
+        assertThat(shortCodeColumn.get("DATA_TYPE").toString()).isEqualToIgnoringCase("varchar");
+        assertThat(((Number) shortCodeColumn.get("CHARACTER_MAXIMUM_LENGTH")).intValue()).isEqualTo(8);
+        assertThat(shortCodeColumn.get("IS_NULLABLE")).isEqualTo("NO");
+        assertThat(shortCodeColumn.get("COLLATION_NAME")).isEqualTo("utf8mb4_bin");
+    }
+
+    private void assertNotFound(String code) throws Exception {
+        mockMvc.perform(get("/s/" + code))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    @Test
+    void savedFourToEightCharacterBase62CodesRedirectWithCaseSensitiveLookup() throws Exception {
+        insertMapping("A1b2", "https://four-uppercase.example/");
+        insertMapping("a1b2", "https://four-lowercase.example/");
+        insertMapping("Ab3dE9f", "https://seven.example/");
+        insertMapping("A1b2Cd3E", "https://eight.example/");
+
+        mockMvc.perform(get("/s/A1b2"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://four-uppercase.example/"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        mockMvc.perform(get("/s/a1b2"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://four-lowercase.example/"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        mockMvc.perform(get("/s/Ab3dE9f"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://seven.example/"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        mockMvc.perform(get("/s/A1b2Cd3E"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://eight.example/"))
                 .andExpect(header().string("Cache-Control", "no-store"));
     }
 
