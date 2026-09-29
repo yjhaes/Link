@@ -25,7 +25,7 @@ class RedisRedirectCacheTest {
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 Duration.ofMinutes(5));
 
-        cache.store("Ab12", "https://example.com/", NOW.plusNanos(999_999));
+        cache.store("Ab12", new RedirectCacheEntry("https://example.com/", NOW.plusNanos(999_999)));
 
         verifyNoInteractions(redisTemplate);
     }
@@ -39,7 +39,7 @@ class RedisRedirectCacheTest {
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 Duration.ofMinutes(5));
 
-        cache.store("Ab12", "https://example.com/", NOW.minusNanos(1));
+        cache.store("Ab12", new RedirectCacheEntry("https://example.com/", NOW.minusNanos(1)));
 
         verifyNoInteractions(redisTemplate);
     }

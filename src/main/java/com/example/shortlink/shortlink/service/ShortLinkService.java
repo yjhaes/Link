@@ -163,7 +163,7 @@ public class ShortLinkService {
         }
         if (cachedRedirect.isPresent()) {
             RedirectCacheEntry cacheEntry = cachedRedirect.get();
-            if (cacheEntry.expiresAt() != null && !clock.instant().isBefore(cacheEntry.expiresAt())) {
+            if (isExpired(cacheEntry.expiresAt())) {
                 try {
                     redirectCache.delete(code);
                 } catch (RuntimeException exception) {
@@ -181,7 +181,7 @@ public class ShortLinkService {
         Instant expiresAt = entity.getExpiresAt() == null
                 ? null
                 : entity.getExpiresAt().toInstant(ZoneOffset.UTC);
-        if (expiresAt != null && !clock.instant().isBefore(expiresAt)) {
+        if (isExpired(expiresAt)) {
             throw new LinkExpiredException();
         }
         if (!entity.isEnabled()) {
@@ -189,11 +189,15 @@ public class ShortLinkService {
         }
 
         try {
-            redirectCache.store(code, entity.getOriginalUrl(), expiresAt);
+            redirectCache.store(code, new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt));
         } catch (RuntimeException exception) {
             LOGGER.warn("Redirect cache write failed for short code {}; returning the MySQL result.", code, exception);
         }
         return entity.getOriginalUrl();
+    }
+
+    private boolean isExpired(Instant expiresAt) {
+        return expiresAt != null && !clock.instant().isBefore(expiresAt);
     }
 
     private void validateHttpUri(String originalUrl) {

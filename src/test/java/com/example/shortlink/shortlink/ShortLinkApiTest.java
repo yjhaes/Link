@@ -719,7 +719,7 @@ class ShortLinkApiTest {
                 }
 
                 @Override
-                public void store(String shortCode, String originalUrl, Instant expiresAt) {
+                public void store(String shortCode, RedirectCacheEntry entry) {
                 }
 
                 @Override

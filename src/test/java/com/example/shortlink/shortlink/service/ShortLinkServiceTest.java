@@ -21,8 +21,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -90,7 +88,8 @@ class ShortLinkServiceTest {
 
         assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkExpiredException.class);
-        verify(redirectCache, never()).store("Ab12", "https://expired.example/", BASE_TIME);
+        verify(redirectCache, never()).store(
+                "Ab12", new RedirectCacheEntry("https://expired.example/", BASE_TIME));
     }
 
     @Test
@@ -103,7 +102,7 @@ class ShortLinkServiceTest {
 
         assertThat(originalUrl).isEqualTo("https://mysql.example/");
         verify(shortLinkMapper).selectById("Ab12");
-        verify(redirectCache).store("Ab12", "https://mysql.example/", null);
+        verify(redirectCache).store("Ab12", new RedirectCacheEntry("https://mysql.example/", null));
     }
 
     @Test
@@ -116,7 +115,8 @@ class ShortLinkServiceTest {
         String originalUrl = shortLinkService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://timed.example/");
-        verify(redirectCache).store("Ab12", "https://timed.example/", expiresAt.toInstant(ZoneOffset.UTC));
+        verify(redirectCache).store("Ab12", new RedirectCacheEntry(
+                "https://timed.example/", expiresAt.toInstant(ZoneOffset.UTC)));
     }
 
     @Test
@@ -137,7 +137,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.selectById("Ab12"))
                 .thenReturn(redirectableMapping("Ab12", "https://mysql.example/", null, true));
         org.mockito.Mockito.doThrow(new IllegalStateException("Redis unavailable"))
-                .when(redirectCache).store("Ab12", "https://mysql.example/", null);
+                .when(redirectCache).store("Ab12", new RedirectCacheEntry("https://mysql.example/", null));
 
         String originalUrl = shortLinkService.findOriginalUrl("Ab12");
 
@@ -161,14 +161,14 @@ class ShortLinkServiceTest {
 
         assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkExpiredException.class);
-        verify(redirectCache, never()).store(
-                eq("Ab12"), eq("https://expired.example/"), any(Instant.class));
+        verify(redirectCache, never()).store("Ab12", new RedirectCacheEntry(
+                "https://expired.example/", BASE_TIME));
 
         when(shortLinkMapper.selectById("Ab12"))
                 .thenReturn(redirectableMapping("Ab12", "https://disabled.example/", null, false));
         assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkDisabledException.class);
-        verify(redirectCache, never()).store("Ab12", "https://disabled.example/", null);
+        verify(redirectCache, never()).store("Ab12", new RedirectCacheEntry("https://disabled.example/", null));
     }
 
     @Test
@@ -179,7 +179,7 @@ class ShortLinkServiceTest {
         assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkNotFoundException.class);
 
-        verify(redirectCache, never()).store(anyString(), anyString(), nullable(Instant.class));
+        verify(redirectCache, never()).store(anyString(), any(RedirectCacheEntry.class));
     }
 
     @Test

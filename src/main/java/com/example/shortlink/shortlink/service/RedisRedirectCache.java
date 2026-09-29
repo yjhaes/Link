@@ -72,7 +72,9 @@ public class RedisRedirectCache implements RedirectCache {
     }
 
     @Override
-    public void store(String shortCode, String originalUrl, Instant expiresAt) {
+    public void store(String shortCode, RedirectCacheEntry entry) {
+        String originalUrl = entry.originalUrl();
+        Instant expiresAt = entry.expiresAt();
         long entryTtlMillis = ttlMillisFor(expiresAt);
         if (entryTtlMillis < 1) {
             return;
