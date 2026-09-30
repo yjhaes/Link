@@ -197,15 +197,19 @@ public class ShortLinkService {
         if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.EXPIRED) {
             throw new LinkExpiredException();
         }
-        if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.REDIRECT) {
+        if (cachedRedirect != null && (cachedRedirect.status() == RedirectCacheRead.Status.REDIRECT
+                || cachedRedirect.status() == RedirectCacheRead.Status.DISABLED)) {
             RedirectCacheEntry cacheEntry = cachedRedirect.entry();
-            if (isExpired(cacheEntry.expiresAt())) {
+            if (isExpired(cacheEntry == null ? null : cacheEntry.expiresAt())) {
                 try {
                     redirectCache.storeIfVersion(code, cachedRedirect.generation(), RedirectCacheRead.Status.EXPIRED, null);
                 } catch (RuntimeException exception) {
                     LOGGER.warn("Could not cache expired redirect result for short code {}.", code, exception);
                 }
                 throw new LinkExpiredException();
+            }
+            if (cachedRedirect.status() == RedirectCacheRead.Status.DISABLED) {
+                throw new LinkDisabledException();
             }
             return cacheEntry.originalUrl();
         }
@@ -223,6 +227,8 @@ public class ShortLinkService {
             throw new LinkExpiredException();
         }
         if (!entity.isEnabled()) {
+            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.DISABLED,
+                    new RedirectCacheEntry(null, expiresAt));
             throw new LinkDisabledException();
         }
 

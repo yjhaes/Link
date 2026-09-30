@@ -399,7 +399,7 @@ class RedisRedirectIntegrationTest {
     }
 
     @Test
-    void committedDisableAndReenableTakeEffectAfterDeletingThePrewarmedKey() throws Exception {
+    void committedDisableAndReenableTakeEffectAfterControlledCoordination() throws Exception {
         String shortCode = "Md12";
         String key = cacheKey(shortCode);
         insertMapping(shortCode, ORIGINAL_URL);
@@ -414,8 +414,8 @@ class RedisRedirectIntegrationTest {
                 "SELECT enabled FROM short_link WHERE short_code = ?", Integer.class, shortCode))
                 .isZero();
         assertThat(redisTemplate.hasKey(key)).isTrue();
-        assertThat(redisTemplate.delete(key)).isTrue();
-        assertThat(redisTemplate.hasKey(key)).isFalse();
+        shortLinkService.recoverCacheCoordination(shortCode);
+        assertThat(redirectCache.find(shortCode).status()).isEqualTo(RedirectCacheRead.Status.PLACEHOLDER);
 
         clearInvocations(shortLinkMapper);
         mockMvc.perform(get("/s/" + shortCode))
@@ -425,7 +425,7 @@ class RedisRedirectIntegrationTest {
 
         verify(shortLinkMapper).selectById(shortCode);
         JsonNode placeholder = objectMapper.readTree(redisTemplate.opsForValue().get(key));
-        assertThat(placeholder.path("status").asText()).isEqualTo("PLACEHOLDER");
+        assertThat(placeholder.path("status").asText()).isEqualTo("DISABLED");
 
         assertThat(jdbcTemplate.update(
                 "UPDATE short_link SET enabled = TRUE WHERE short_code = ?", shortCode))
@@ -433,11 +433,12 @@ class RedisRedirectIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT enabled FROM short_link WHERE short_code = ?", Integer.class, shortCode))
                 .isEqualTo(1);
-        redisTemplate.delete(key);
+        shortLinkService.recoverCacheCoordination(shortCode);
+        clearInvocations(shortLinkMapper);
 
         assertRedirect(shortCode, ORIGINAL_URL);
         assertThat(redisTemplate.hasKey(key)).isTrue();
-        verify(shortLinkMapper, times(2)).selectById(shortCode);
+        verify(shortLinkMapper).selectById(shortCode);
     }
 
     @Test
@@ -703,6 +704,129 @@ class RedisRedirectIntegrationTest {
         assertThat(freshEntry.path("status").asText()).isEqualTo("PLACEHOLDER");
     }
 
+    @Test
+    void disabledMissHitKeepsExpiryAndDoesNotRenewTtl() throws Exception {
+        String code = "Dis1";
+        insertExpiringMapping(code, ORIGINAL_URL, LocalDateTime.now(ZoneOffset.UTC).plusMinutes(1));
+        jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = ?", code);
+        Long previous = null;
+        for (int request = 0; request < 2; request++) {
+            mockMvc.perform(get("/s/" + code)).andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("LINK_DISABLED"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+            Long ttl = redisTemplate.getExpire(cacheKey(code), TimeUnit.MILLISECONDS);
+            assertThat(ttl).isBetween(13_000L, 15_000L);
+            if (previous != null) assertThat(ttl).isLessThanOrEqualTo(previous);
+            previous = ttl;
+        }
+        verify(shortLinkMapper).selectById(code);
+        RedirectCacheRead cached = redirectCache.find(code);
+        assertThat(cached.status()).isEqualTo(RedirectCacheRead.Status.DISABLED);
+        assertThat(cached.entry().expiresAt()).isNotNull();
+        assertThat(cached.entry().originalUrl()).isNull();
+        redisTemplate.expire(cacheKey(code), Duration.ofMillis(50));
+        await().atMost(Duration.ofSeconds(2)).until(() -> !redisTemplate.hasKey(cacheKey(code)));
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isForbidden());
+        verify(shortLinkMapper, times(2)).selectById(code);
+    }
+
+    @Test
+    void disabledCachedSnapshotExpiresToGoneWithoutMySql() throws Exception {
+        String code = "Dis2";
+        insertMapping(code, ORIGINAL_URL);
+        jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = ?", code);
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isForbidden());
+        RedirectCacheRead read = redirectCache.find(code);
+        // Preserve a disabled result beyond its business deadline to exercise the HTTP hit boundary.
+        assertThat(redirectCache.storeIfVersion(code, read.generation(), RedirectCacheRead.Status.DISABLED,
+                new RedirectCacheEntry(null, Instant.now().minusSeconds(1)))).isTrue();
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("LINK_EXPIRED"));
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isGone());
+        verify(shortLinkMapper).selectById(code);
+        assertThat(redirectCache.find(code).status()).isEqualTo(RedirectCacheRead.Status.EXPIRED);
+    }
+
+    @Test
+    void reenableInIndependentInstanceRejectsLateDisabledRefill() throws Exception {
+        String code = "Dis3";
+        insertMapping(code, ORIGINAL_URL);
+        jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = ?", code);
+        CountDownLatch snapshotRead = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        AtomicReference<Boolean> accepted = new AtomicReference<>();
+        var query = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        doAnswer(invocation -> {
+            Object snapshot = query.answer(invocation);
+            if (first.getAndSet(false)) {
+                assertThat(((ShortLinkEntity) snapshot).isEnabled()).isFalse();
+                snapshotRead.countDown();
+                if (!resume.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Old query timed out");
+            }
+            return snapshot;
+        }).when(shortLinkMapper).selectById(code);
+        doAnswer(invocation -> {
+            Boolean stored = (Boolean) invocation.callRealMethod();
+            accepted.set(stored);
+            return stored;
+        }).when(redirectCache).storeIfVersion(eq(code), anyString(), eq(RedirectCacheRead.Status.DISABLED), any());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (ConfigurableApplicationContext maintainer = independentCreator()) {
+            Future<Integer> old = executor.submit(() -> mockMvc.perform(get("/s/" + code))
+                    .andReturn().getResponse().getStatus());
+            assertThat(snapshotRead.await(5, TimeUnit.SECONDS)).isTrue();
+            maintainer.getBean(JdbcTemplate.class).update(
+                    "UPDATE short_link SET enabled = true WHERE short_code = ?", code);
+            maintainer.getBean(ShortLinkService.class).recoverCacheCoordination(code);
+            assertRedirect(code, ORIGINAL_URL);
+            resume.countDown();
+            assertThat(old.get(5, TimeUnit.SECONDS)).isEqualTo(403);
+            assertThat(accepted.get()).isFalse();
+            assertRedirect(code, ORIGINAL_URL);
+        } finally {
+            resume.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void maintenanceRetryOnlyCoordinatesCurrentCommittedState() throws Exception {
+        String code = "Dis4";
+        insertMapping(code, ORIGINAL_URL);
+        jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = ?", code);
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isForbidden());
+        long mappings = mappingCount();
+        long issuances = issuanceCount();
+        jdbcTemplate.update("UPDATE short_link SET enabled = true WHERE short_code = ?", code);
+        doThrow(new IllegalStateException("Redis unavailable")).when(redirectCache).replaceVersion(code);
+        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination(code)).isInstanceOf(IllegalStateException.class);
+        assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?", Boolean.class, code)).isTrue();
+        // A later committed maintenance change must survive recovery of the earlier attempt.
+        jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = ?", code);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new IllegalStateException("Applied, response lost");
+        }).when(redirectCache).replaceVersion(code);
+        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination(code)).isInstanceOf(IllegalStateException.class);
+        doCallRealMethod().when(redirectCache).replaceVersion(code);
+        shortLinkService.recoverCacheCoordination(code);
+        shortLinkService.recoverCacheCoordination(code);
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isForbidden());
+        assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?", Boolean.class, code)).isFalse();
+        jdbcTemplate.update("UPDATE short_link SET enabled = true WHERE short_code = ?", code);
+        shortLinkService.recoverCacheCoordination(code);
+        assertRedirect(code, ORIGINAL_URL);
+        jdbcTemplate.update("UPDATE short_link SET enabled = false, expires_at = ? WHERE short_code = ?",
+                LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1), code);
+        shortLinkService.recoverCacheCoordination(code);
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isGone());
+        jdbcTemplate.update("UPDATE short_link SET enabled = true WHERE short_code = ?", code);
+        shortLinkService.recoverCacheCoordination(code);
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isGone());
+        assertThat(mappingCount()).isEqualTo(mappings);
+        assertThat(issuanceCount()).isEqualTo(issuances);
+    }
     private void assertRedirect(String shortCode, String originalUrl) throws Exception {
         mockMvc.perform(get("/s/" + shortCode))
                 .andExpect(status().isFound())

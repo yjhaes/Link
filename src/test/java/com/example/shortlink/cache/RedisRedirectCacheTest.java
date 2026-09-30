@@ -26,6 +26,23 @@ class RedisRedirectCacheTest {
     private static final Instant NOW = Instant.parse("2026-09-28T12:00:00Z");
 
     @Test
+    void disabledTtlUsesIndependentMaximumAndKeepsBusinessExpiry() {
+        for (double random : new double[]{0, 1}) {
+            StringRedisTemplate redis = mock(StringRedisTemplate.class);
+            AtomicLong ttl = new AtomicLong();
+            doAnswer(invocation -> {
+                ttl.set(Long.parseLong(invocation.getArgument(4)));
+                return 1L;
+            }).when(redis).execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString());
+            RedisRedirectCache cache = new RedisRedirectCache(redis, new ObjectMapper(),
+                    Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofSeconds(1), Duration.ofSeconds(30),
+                    Duration.ofMinutes(5), Duration.ofSeconds(15), () -> random);
+            assertThat(cache.storeIfVersion("Dis1", "00000000-0000-0000-0000-000000000001",
+                    RedirectCacheRead.Status.DISABLED, new RedirectCacheEntry(null, NOW.plusMillis(1)))).isTrue();
+            assertThat(ttl.get()).isEqualTo(random == 0 ? 15_000L : 13_500L);
+        }
+    }
+    @Test
     void notFoundTtlUsesItsOwnConfiguredMaximumAndBothJitterEndpoints() {
         assertNotFoundTtl(Duration.ofSeconds(30), 0, 30_000L);
         assertNotFoundTtl(Duration.ofSeconds(30), 1, 27_000L);
