@@ -194,13 +194,16 @@ public class ShortLinkService {
         if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.NOT_FOUND) {
             throw new LinkNotFoundException();
         }
+        if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.EXPIRED) {
+            throw new LinkExpiredException();
+        }
         if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.REDIRECT) {
             RedirectCacheEntry cacheEntry = cachedRedirect.entry();
             if (isExpired(cacheEntry.expiresAt())) {
                 try {
-                    redirectCache.deleteIfVersion(code, cachedRedirect.generation());
+                    redirectCache.storeIfVersion(code, cachedRedirect.generation(), RedirectCacheRead.Status.EXPIRED, null);
                 } catch (RuntimeException exception) {
-                    LOGGER.warn("Could not delete expired redirect cache entry for short code {}.", code, exception);
+                    LOGGER.warn("Could not cache expired redirect result for short code {}.", code, exception);
                 }
                 throw new LinkExpiredException();
             }
@@ -216,6 +219,7 @@ public class ShortLinkService {
                 ? null
                 : entity.getExpiresAt().toInstant(ZoneOffset.UTC);
         if (isExpired(expiresAt)) {
+            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.EXPIRED, null);
             throw new LinkExpiredException();
         }
         if (!entity.isEnabled()) {

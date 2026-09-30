@@ -485,7 +485,7 @@ class RedisRedirectIntegrationTest {
     }
 
     @Test
-    void expiredCacheHitReturnsGoneAndDeletesTheKeyWithoutReadingMySql() throws Exception {
+    void expiredSnapshotBecomesGoneWithoutReadingMySql() throws Exception {
         String shortCode = "Ex12";
         Instant expiresAt = Instant.now().minusSeconds(1);
         String value = objectMapper.createObjectNode()
@@ -503,7 +503,8 @@ class RedisRedirectIntegrationTest {
                 .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
                 .andExpect(header().string("Cache-Control", "no-store"));
 
-        assertThat(redisTemplate.hasKey(cacheKey(shortCode))).isFalse();
+        assertThat(redirectCache.find(shortCode).status()).isEqualTo(RedirectCacheRead.Status.EXPIRED);
+        mockMvc.perform(get("/s/" + shortCode)).andExpect(status().isGone());
         verify(shortLinkMapper, never()).selectById(shortCode);
     }
 
@@ -591,6 +592,57 @@ class RedisRedirectIntegrationTest {
             if (outcomes[index] == RedirectCacheRead.Status.DISABLED) {
                 assertThat(cached.entry().expiresAt()).isEqualTo(result.expiresAt());
             }
+        }
+    }
+
+    @Test
+    void expiredMappingMissAndHitReuseGoneUntilCacheNaturallyExpires() throws Exception {
+        String shortCode = "Gone";
+        insertMapping(shortCode, ORIGINAL_URL);
+        jdbcTemplate.update("UPDATE short_link SET expires_at = ?, enabled = false WHERE short_code = ?",
+                LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1), shortCode);
+        Long previousTtl = null;
+        for (int request = 0; request < 2; request++) {
+            mockMvc.perform(get("/s/" + shortCode))
+                    .andExpect(status().isGone())
+                    .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+            Long ttl = redisTemplate.getExpire(cacheKey(shortCode), TimeUnit.MILLISECONDS);
+            assertThat(ttl).isBetween(269_000L, 300_000L);
+            if (previousTtl != null) {
+                assertThat(ttl).isLessThanOrEqualTo(previousTtl);
+            }
+            previousTtl = ttl;
+        }
+        verify(shortLinkMapper).selectById(shortCode);
+        JsonNode result = objectMapper.readTree(redisTemplate.opsForValue().get(cacheKey(shortCode)));
+        assertThat(result.path("status").asText()).isEqualTo("EXPIRED");
+        assertThat(result.path("originalUrl").isNull()).isTrue();
+        redisTemplate.expire(cacheKey(shortCode), Duration.ofMillis(50));
+        await().atMost(Duration.ofSeconds(2)).until(() -> !redisTemplate.hasKey(cacheKey(shortCode)));
+        mockMvc.perform(get("/s/" + shortCode))
+                .andExpect(status().isGone()).andExpect(jsonPath("$.code").value("LINK_EXPIRED"));
+        verify(shortLinkMapper, times(2)).selectById(shortCode);
+        assertThat(redirectCache.find(shortCode).status()).isEqualTo(RedirectCacheRead.Status.EXPIRED);
+    }
+
+    @Test
+    void expirationUpdateCannotOverwriteReplacedOrReinitializedVersion() throws Exception {
+        for (boolean reinitialize : new boolean[]{false, true}) {
+            String shortCode = reinitialize ? "Rein" : "Repl";
+            RedirectCacheRead original = redirectCache.find(shortCode);
+            assertThat(redirectCache.storeIfVersion(shortCode, original.generation(),
+                    RedirectCacheRead.Status.REDIRECT, new RedirectCacheEntry(ORIGINAL_URL, null))).isTrue();
+            if (reinitialize) {
+                redisTemplate.delete(cacheKey(shortCode));
+                redirectCache.find(shortCode);
+            } else {
+                redirectCache.replaceVersion(shortCode);
+            }
+            RedirectCacheRead current = redirectCache.find(shortCode);
+            assertThat(redirectCache.storeIfVersion(shortCode, original.generation(),
+                    RedirectCacheRead.Status.EXPIRED, null)).isFalse();
+            assertThat(redirectCache.find(shortCode)).isEqualTo(current);
         }
     }
 

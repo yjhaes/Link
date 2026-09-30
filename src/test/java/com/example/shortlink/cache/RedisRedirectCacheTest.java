@@ -33,6 +33,25 @@ class RedisRedirectCacheTest {
     }
 
     private void assertNotFoundTtl(Duration maximum, double randomValue, long expectedMillis) {
+        assertResultTtl(RedirectCacheRead.Status.NOT_FOUND, Duration.ofMinutes(5), maximum,
+                Duration.ofMinutes(5), randomValue, expectedMillis);
+    }
+
+    @Test
+    void expiredTtlIsIndependentOfPositiveTtlAndUsesBothJitterEndpoints() {
+        assertExpiredTtl(Duration.ofMinutes(5), 0, 300_000L);
+        assertExpiredTtl(Duration.ofMinutes(5), 1, 270_000L);
+        assertExpiredTtl(Duration.ofSeconds(10), 1, 9_000L);
+    }
+
+    private void assertExpiredTtl(Duration maximum, double randomValue, long expectedMillis) {
+        assertResultTtl(RedirectCacheRead.Status.EXPIRED, Duration.ofSeconds(1), Duration.ofSeconds(30),
+                maximum, randomValue, expectedMillis);
+    }
+
+    private void assertResultTtl(RedirectCacheRead.Status status, Duration positiveMaximum,
+                                 Duration notFoundMaximum, Duration expiredMaximum,
+                                 double randomValue, long expectedMillis) {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
         AtomicLong actualMillis = new AtomicLong();
         doAnswer(invocation -> {
@@ -40,10 +59,10 @@ class RedisRedirectCacheTest {
             return 1L;
         }).when(redisTemplate).execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString());
         RedisRedirectCache cache = new RedisRedirectCache(redisTemplate, new ObjectMapper(),
-                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofMinutes(5), maximum, () -> randomValue);
-
-        assertThat(cache.storeIfVersion("Nope", "00000000-0000-0000-0000-000000000001",
-                RedirectCacheRead.Status.NOT_FOUND, null)).isTrue();
+                Clock.fixed(NOW, ZoneOffset.UTC), positiveMaximum, notFoundMaximum,
+                expiredMaximum, () -> randomValue);
+        assertThat(cache.storeIfVersion("Exp1", "00000000-0000-0000-0000-000000000001",
+                status, null)).isTrue();
         assertThat(actualMillis.get()).isEqualTo(expectedMillis);
     }
 
