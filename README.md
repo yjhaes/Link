@@ -91,7 +91,7 @@ applicationContext.getBean(ShortLinkService.class).recoverCacheCoordination("Ab1
 
 访问未过期且启用的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`；未过期但已禁用时返回 `403 LINK_DISABLED`。过期判断优先于禁用状态。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
 
-维护者可直接在 MySQL 中禁用或重新启用映射；当前没有对应的公开 API。每次维护都必须先提交 MySQL 状态变更，再删除同一短码的 Redis Key。禁用示例：
+维护者可直接在 MySQL 中禁用或重新启用映射；当前没有对应的公开 API。每次维护都必须先确认 MySQL 状态变更已提交，再在受信任内部应用上下文调用同一短码的 `recoverCacheCoordination`，正常返回后才报告维护完成。禁用示例：
 
 ```sql
 START TRANSACTION;
@@ -99,13 +99,13 @@ UPDATE short_link SET enabled = FALSE WHERE short_code = 'Ab12';
 COMMIT;
 ```
 
-MySQL 提交后，在连接同一 Redis 实例的终端删除缓存：
+MySQL 提交后，在连接同一 MySQL 主写库及 Redis 的内部维护代码中协调缓存：
 
-```sh
-redis-cli DEL 'shortlink:redirect:v2:Ab12'
+```java
+applicationContext.getBean(ShortLinkService.class).recoverCacheCoordination("Ab12");
 ```
 
-重新启用时同样先提交 MySQL，再执行 `DEL`：
+重新启用时同样先提交 MySQL，再调用上述协调入口：
 
 ```sql
 START TRANSACTION;
@@ -113,9 +113,9 @@ UPDATE short_link SET enabled = TRUE WHERE short_code = 'Ab12';
 COMMIT;
 ```
 
-Redis 对 `DEL` 返回 `1` 表示已删除 Key，返回 `0` 表示 Key 当时不存在；两者都表示命令执行成功。若 Redis 命令失败或无法连接，记录并报告缓存协调失败，Redis 恢复后重试协调。MySQL 状态变更已经提交，不要因此回滚或反向修改 MySQL。
+若协调入口异常返回，记录并报告缓存协调未确认，Redis 恢复后按同一短码重试。MySQL 状态变更已经提交，不要因此回滚或反向修改 MySQL，也不要用简单手工删除 Key 替代该受控完成步骤。
 
-禁用不会删除映射或释放短码；重新启用同一映射后，短码可恢复跳转。重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。完成 MySQL 提交并确认缓存协调后，新请求会加载当前数据库状态。轮换版本或删除缓存 Key 后，先前查询不能再用旧版本回填；与维护操作重叠的请求仍可能按之前读到的快照完成。
+禁用不会删除映射或释放短码；重新启用同一映射后，短码可恢复跳转。重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。完成 MySQL 提交并确认缓存版本轮换后，新请求会加载当前数据库状态；先前查询不能再用旧版本回填，与维护操作重叠的请求仍可能按之前读到的快照完成。
 
 将来若增加应用内启用、禁用、删除映射或修改原始 URL／有效时长的操作，也必须在对应的 MySQL 事务提交后轮换该短码的缓存版本；本项目当前不增加这些接口。
 

@@ -209,17 +209,7 @@ public class ShortLinkService {
 
         ShortLinkEntity entity = shortLinkMapper.selectById(code);
         if (entity == null) {
-            if (cachedRedirect != null
-                    && (cachedRedirect.status() == RedirectCacheRead.Status.MISS
-                    || cachedRedirect.status() == RedirectCacheRead.Status.PLACEHOLDER)) {
-                try {
-                    redirectCache.storeIfVersion(code, cachedRedirect.generation(),
-                            RedirectCacheRead.Status.NOT_FOUND, null);
-                } catch (RuntimeException exception) {
-                    LOGGER.warn("Not-found cache write failed for short code {}; returning the MySQL result.",
-                            code, exception);
-                }
-            }
+            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.NOT_FOUND, null);
             throw new LinkNotFoundException();
         }
         Instant expiresAt = entity.getExpiresAt() == null
@@ -232,20 +222,23 @@ public class ShortLinkService {
             throw new LinkDisabledException();
         }
 
-        if (cachedRedirect != null
-                && (cachedRedirect.status() == RedirectCacheRead.Status.MISS
-                || cachedRedirect.status() == RedirectCacheRead.Status.PLACEHOLDER)) {
+        cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.REDIRECT,
+                new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt));
+        return entity.getOriginalUrl();
+    }
+
+    private void cacheResultIfVersion(
+            String code, RedirectCacheRead read, RedirectCacheRead.Status status, RedirectCacheEntry entry) {
+        if (read != null
+                && (read.status() == RedirectCacheRead.Status.MISS
+                || read.status() == RedirectCacheRead.Status.PLACEHOLDER)) {
             try {
-                redirectCache.storeIfVersion(
-                        code,
-                        cachedRedirect.generation(),
-                        RedirectCacheRead.Status.REDIRECT,
-                        new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt));
+                redirectCache.storeIfVersion(code, read.generation(), status, entry);
             } catch (RuntimeException exception) {
-                LOGGER.warn("Redirect cache write failed for short code {}; returning the MySQL result.", code, exception);
+                LOGGER.warn("Redirect cache write failed for short code {} and result {}; returning the MySQL result.",
+                        code, status, exception);
             }
         }
-        return entity.getOriginalUrl();
     }
 
     private boolean isExpired(Instant expiresAt) {
