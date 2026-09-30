@@ -77,6 +77,7 @@ public class RedisRedirectCache implements RedirectCache {
     private final DoubleSupplier jitterSource;
     private final long ttlMillis;
     private final long notFoundTtlMillis;
+    private final long expiredTtlMillis;
 
     @Autowired
     public RedisRedirectCache(
@@ -84,13 +85,14 @@ public class RedisRedirectCache implements RedirectCache {
             ObjectMapper objectMapper,
             Clock clock,
             @Value("${short-link.redirect-cache.ttl:5m}") Duration ttl,
-            @Value("${short-link.redirect-cache.not-found-ttl:30s}") Duration notFoundTtl) {
-        this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, () -> ThreadLocalRandom.current().nextDouble());
+            @Value("${short-link.redirect-cache.not-found-ttl:30s}") Duration notFoundTtl,
+            @Value("${short-link.redirect-cache.expired-ttl:5m}") Duration expiredTtl) {
+        this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, expiredTtl, () -> ThreadLocalRandom.current().nextDouble());
     }
 
     public RedisRedirectCache(
             StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock, Duration ttl) {
-        this(redisTemplate, objectMapper, clock, ttl, Duration.ofSeconds(30));
+        this(redisTemplate, objectMapper, clock, ttl, Duration.ofSeconds(30), Duration.ofMinutes(5));
     }
 
     RedisRedirectCache(
@@ -100,13 +102,20 @@ public class RedisRedirectCache implements RedirectCache {
             Duration ttl,
             Duration notFoundTtl,
             DoubleSupplier jitterSource) {
+        this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, Duration.ofMinutes(5), jitterSource);
+    }
+
+    RedisRedirectCache(
+            StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock,
+            Duration ttl, Duration notFoundTtl, Duration expiredTtl, DoubleSupplier jitterSource) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.jitterSource = jitterSource;
         this.ttlMillis = ttl.toMillis();
         this.notFoundTtlMillis = notFoundTtl.toMillis();
-        if (ttlMillis < 1 || notFoundTtlMillis < 1) {
+        this.expiredTtlMillis = expiredTtl.toMillis();
+        if (ttlMillis < 1 || notFoundTtlMillis < 1 || expiredTtlMillis < 1) {
             throw new IllegalArgumentException("Redirect cache TTL must be at least one millisecond.");
         }
     }
@@ -193,7 +202,11 @@ public class RedisRedirectCache implements RedirectCache {
 
     private long ttlMillisFor(RedirectCacheRead.Status status, RedirectCacheEntry entry) {
         long configuredTtlMillis = jitteredTtlMillis(
-                status == RedirectCacheRead.Status.NOT_FOUND ? notFoundTtlMillis : ttlMillis);
+                switch (status) {
+                    case NOT_FOUND -> notFoundTtlMillis;
+                    case EXPIRED -> expiredTtlMillis;
+                    default -> ttlMillis;
+                });
         if (status != RedirectCacheRead.Status.REDIRECT || entry.expiresAt() == null) {
             return configuredTtlMillis;
         }
