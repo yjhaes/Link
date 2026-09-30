@@ -26,6 +26,8 @@ CREATE DATABASE short_link_test CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 跳转缓存默认连接 `localhost:6379`，可通过 `REDIS_HOST` 和 `REDIS_PORT` 配置 Redis 地址。正值缓存 TTL 上限默认 5 分钟，可通过 `SHORT_LINK_REDIRECT_CACHE_TTL` 调整；每次写入会随机缩短 0%～10%，命中不会续期。
 
+不存在短码的 `404` 结果也会缓存，上限默认 30 秒，可通过 `SHORT_LINK_NOT_FOUND_CACHE_TTL` 配置；默认写入 TTL 为 27～30 秒，命中不续期。成功查库后才能建立该结果，查询错误仍返回 `500`。持续更换不同的合法短码仍可能逐码回源，每个条目及协调占位均有有限 TTL。
+
 ## 网页
 
 启动应用后访问 `http://localhost:8080/`，可在页面中输入原始网址，选择永久有效或按分钟设置期限，生成后查看短码和到期时间，并复制或打开短链接。页面由 Spring Boot 直接提供，无需额外的前端构建步骤。若应用对外使用其他地址，请设置 `SHORT_LINK_BASE_URL`，使生成的短链接指向可访问的服务地址。
@@ -63,9 +65,33 @@ Content-Type: application/json
 
 成功返回 `201 Created`，JSON 中包含 `shortCode`、`shortUrl` 和 `expiresAt`；永久链接的 `expiresAt` 为 `null`。响应 `Location` 指向新短链接。
 
+`201` 表示 MySQL 创建已确认提交，且 Redis 缓存版本轮换和旧结果清除已确认。缓存可保留无原始 URL 的有限期占位，不预热原始 URL。收到 `201` 后才开始的请求会按新映射使用；与创建重叠的旧请求仍允许按之前的查询快照返回 `404`，但其旧版本回填会被拒绝。
+
+数据库创建已确认提交，但缓存协调失败或超时时，返回专门的 `503` 和 `Cache-Control: no-store`：
+
+```json
+{
+  "code": "CREATE_CACHE_COORDINATION_UNCONFIRMED",
+  "message": "Database creation committed; cache coordination unconfirmed.",
+  "shortCode": "Ab12"
+}
+```
+
+这表示映射已经保存，缓存协调尚未确认。服务日志带有同一短码，供维护者定位。数据库失败或提交未确认继续返回普通 `500`，不能据此宣称映射已保存。Redis 响应超时也可能发生在命令已执行之后。
+
+维护者在连接同一 MySQL 主写库与 Redis 的受信任内部应用上下文中调用恢复入口：
+
+```java
+applicationContext.getBean(ShortLinkService.class).recoverCacheCoordination("Ab12");
+```
+
+该入口不暴露为公开 HTTP API，需由维护代码取得 Spring 管理的服务实例。它确认映射存在后，仅轮换缓存版本并清除结果，正常返回表示协调已确认；异常表示需按同一短码重试。重复调用安全，不再次发号、不插入映射，也不按旧请求改写启用状态。数据库状态已变更时也可复用这一协调步骤，必须先确认 SQL 已提交。
+
+创建接口没有请求幂等键。网络响应完全丢失后重复 `POST /api/links` 仍可能创建另一条独立映射；收到上述 `503` 时应保留短码并恢复协调，不能把重复 POST 当作协调重试。网页会展示已保存短码及恢复提示。
+
 访问未过期且启用的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`；未过期但已禁用时返回 `403 LINK_DISABLED`。过期判断优先于禁用状态。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
 
-维护者可直接在 MySQL 中禁用或重新启用映射；当前没有对应的公开 API。每次维护都必须先提交 MySQL 状态变更，再删除同一短码的 Redis Key。禁用示例：
+维护者可直接在 MySQL 中禁用或重新启用映射；当前没有对应的公开 API。每次维护都必须先确认 MySQL 状态变更已提交，再在受信任内部应用上下文调用同一短码的 `recoverCacheCoordination`，正常返回后才报告维护完成。禁用示例：
 
 ```sql
 START TRANSACTION;
@@ -73,13 +99,13 @@ UPDATE short_link SET enabled = FALSE WHERE short_code = 'Ab12';
 COMMIT;
 ```
 
-MySQL 提交后，在连接同一 Redis 实例的终端删除缓存：
+MySQL 提交后，在连接同一 MySQL 主写库及 Redis 的内部维护代码中协调缓存：
 
-```sh
-redis-cli DEL 'shortlink:redirect:v2:Ab12'
+```java
+applicationContext.getBean(ShortLinkService.class).recoverCacheCoordination("Ab12");
 ```
 
-重新启用时同样先提交 MySQL，再执行 `DEL`：
+重新启用时同样先提交 MySQL，再调用上述协调入口：
 
 ```sql
 START TRANSACTION;
@@ -87,9 +113,9 @@ UPDATE short_link SET enabled = TRUE WHERE short_code = 'Ab12';
 COMMIT;
 ```
 
-Redis 对 `DEL` 返回 `1` 表示已删除 Key，返回 `0` 表示 Key 当时不存在；两者都表示命令执行成功。若 Redis 命令失败或无法连接，记录并报告缓存协调失败，Redis 恢复后重试协调。MySQL 状态变更已经提交，不要因此回滚或反向修改 MySQL。
+若协调入口异常返回，记录并报告缓存协调未确认，Redis 恢复后按同一短码重试。MySQL 状态变更已经提交，不要因此回滚或反向修改 MySQL，也不要用简单手工删除 Key 替代该受控完成步骤。
 
-禁用不会删除映射或释放短码；重新启用同一映射后，短码可恢复跳转。重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。完成 MySQL 提交并确认缓存协调后，新请求会加载当前数据库状态。轮换版本或删除缓存 Key 后，先前查询不能再用旧版本回填；与维护操作重叠的请求仍可能按之前读到的快照完成。
+禁用不会删除映射或释放短码；重新启用同一映射后，短码可恢复跳转。重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。完成 MySQL 提交并确认缓存版本轮换后，新请求会加载当前数据库状态；先前查询不能再用旧版本回填，与维护操作重叠的请求仍可能按之前读到的快照完成。
 
 将来若增加应用内启用、禁用、删除映射或修改原始 URL／有效时长的操作，也必须在对应的 MySQL 事务提交后轮换该短码的缓存版本；本项目当前不增加这些接口。
 
@@ -105,3 +131,5 @@ $env:MYSQL_TEST_PASSWORD = '<本地测试数据库密码>'
 ```
 
 `RedisRedirectIntegrationTest` 使用 Docker/Testcontainers 启动 MySQL 8.4 与 Redis 7.2，验证版本化结构、有限 TTL 占位、轮换与条目丢失后的旧回填拒绝、重复跳转、SQL 次数、大小写隔离，以及 MySQL 提交后显式删除缓存 Key 对禁用和重新启用跳转的影响；每个测试前都会清理 Redis。完整测试集需要 Docker 可用。其他集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。
+
+创建与 404 的集成验收还覆盖：独立 Spring 应用上下文共享真实 Redis/MySQL 的迟到旧查询竞态；创建后的新请求可见性；404 命中不查库及自然到期；查询失败不产生负缓存；503 部分完成、协调执行后响应超时与重复恢复；恢复不增加映射或发号，也不恢复已经禁用的状态。服务和 Redis 边界测试使用可控随机输入验证 TTL 抖动端点及未确认提交的失败语义。

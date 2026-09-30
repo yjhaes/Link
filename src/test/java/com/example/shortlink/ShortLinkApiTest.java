@@ -533,7 +533,7 @@ class ShortLinkApiTest {
     }
 
     private ConfigurableApplicationContext startSeparateApplicationInstance() {
-        return new SpringApplicationBuilder(LinkApplication.class)
+        return new SpringApplicationBuilder(LinkApplication.class, ControlledTimeConfiguration.class)
                 .profiles("test")
                 .web(WebApplicationType.NONE)
                 .run("--spring.sql.init.mode=never", "--spring.main.banner-mode=off");

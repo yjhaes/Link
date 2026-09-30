@@ -195,15 +195,26 @@ class ShortLinkServiceTest {
     }
 
     @Test
-    void missingMappingIsNotCached() {
+    void missingMappingCachesNotFoundWithTheReadVersion() {
         when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.miss(GENERATION));
         when(shortLinkMapper.selectById("Ab12")).thenReturn(null);
 
         assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkNotFoundException.class);
 
-        verify(redirectCache, never()).storeIfVersion(
-                anyString(), anyString(), any(RedirectCacheRead.Status.class), any());
+        verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.NOT_FOUND, null);
+    }
+
+    @Test
+    void notFoundCacheHitDoesNotReadMySqlOrRenewTheResult() {
+        when(redirectCache.find("Ab12"))
+                .thenReturn(RedirectCacheRead.result(RedirectCacheRead.Status.NOT_FOUND, GENERATION));
+
+        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+                .isInstanceOf(LinkNotFoundException.class);
+        verify(shortLinkMapper, never()).selectById("Ab12");
+        verify(redirectCache).find("Ab12");
+        org.mockito.Mockito.verifyNoMoreInteractions(redirectCache);
     }
 
     @Test
@@ -260,6 +271,58 @@ class ShortLinkServiceTest {
         assertThat(createdLink.shortCode()).isEqualTo("1ZXuEkNa");
         verify(shortCodeIdIssuer, times(2)).issue();
         verify(shortLinkMapper, times(2)).insert(any(ShortLinkEntity.class));
+    }
+
+    @Test
+    void coordinationRecoveryDoesNotReissueInsertOrOverwriteDisabledState() {
+        when(shortLinkMapper.selectById("Ab12"))
+                .thenReturn(redirectableMapping("Ab12", "https://example.com/", null, false));
+        when(redirectCache.replaceVersion("Ab12")).thenReturn(GENERATION);
+
+        shortLinkService.recoverCacheCoordination("Ab12");
+        shortLinkService.recoverCacheCoordination("Ab12");
+
+        verify(redirectCache, times(2)).replaceVersion("Ab12");
+        org.mockito.Mockito.verifyNoInteractions(shortCodeIdIssuer);
+        verify(shortLinkMapper, times(2)).selectById("Ab12");
+        org.mockito.Mockito.verifyNoMoreInteractions(shortLinkMapper);
+        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+                .isInstanceOf(LinkDisabledException.class);
+    }
+
+    @Test
+    void databaseInsertFailureIsNotReportedAsCommittedCreation() {
+        when(shortCodeIdIssuer.issue()).thenReturn(1L);
+        IllegalStateException databaseFailure = new IllegalStateException("Commit acknowledgement lost");
+        when(shortLinkMapper.insert(any(ShortLinkEntity.class))).thenThrow(databaseFailure);
+
+        assertThatThrownBy(() -> shortLinkService.create("https://example.com/", null))
+                .isSameAs(databaseFailure);
+        verify(redirectCache, never()).replaceVersion(anyString());
+    }
+
+    @Test
+    void unconfirmedInsertCountIsNotReportedAsCommittedCreation() {
+        when(shortCodeIdIssuer.issue()).thenReturn(1L);
+        when(shortLinkMapper.insert(any(ShortLinkEntity.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> shortLinkService.create("https://example.com/", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("MySQL did not confirm inserting the short-link mapping.");
+        verify(redirectCache, never()).replaceVersion(anyString());
+    }
+
+    @Test
+    void recoveryRejectsAnUnknownOrMalformedCodeWithoutCoordinating() {
+        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination("Nope"))
+                .isInstanceOf(LinkNotFoundException.class);
+        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination("bad"))
+                .isInstanceOf(LinkNotFoundException.class);
+        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination(null))
+                .isInstanceOf(LinkNotFoundException.class);
+        org.mockito.Mockito.verifyNoInteractions(redirectCache, shortCodeIdIssuer);
+        verify(shortLinkMapper).selectById("Nope");
+        org.mockito.Mockito.verifyNoMoreInteractions(shortLinkMapper);
     }
 
     @Test

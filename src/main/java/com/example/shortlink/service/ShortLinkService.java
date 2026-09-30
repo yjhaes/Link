@@ -1,6 +1,7 @@
 package com.example.shortlink.service;
 
 import com.example.shortlink.service.error.InvalidRequestException;
+import com.example.shortlink.service.error.CreateCacheCoordinationException;
 import com.example.shortlink.service.error.LinkDisabledException;
 import com.example.shortlink.service.error.LinkExpiredException;
 import com.example.shortlink.service.error.LinkNotFoundException;
@@ -11,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -48,6 +51,9 @@ public class ShortLinkService {
         this.redirectCache = redirectCache;
     }
 
+    // MyBatis commits each non-transactional insert before returning. Suspend any caller transaction
+    // so cache coordination never reports completion for an uncommitted mapping.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CreatedShortLink create(String originalUrl, Integer validMinutes) {
         if (originalUrl == null || originalUrl.isBlank()) {
             throw new InvalidRequestException("originalUrl is required.");
@@ -80,8 +86,32 @@ public class ShortLinkService {
                 : LocalDateTime.ofInstant(expiresAtInstant, ZoneOffset.UTC));
         entity.setEnabled(true);
         insertWithCollisionRetries(entity);
+        try {
+            redirectCache.replaceVersion(entity.getShortCode());
+        } catch (RuntimeException exception) {
+            LOGGER.error("Database creation committed for short code {}; cache coordination unconfirmed. "
+                    + "Recover coordination using this short code.", entity.getShortCode(), exception);
+            throw new CreateCacheCoordinationException(entity.getShortCode(), exception);
+        }
 
         return new CreatedShortLink(entity.getShortCode(), expiresAtInstant);
+    }
+
+    /** Internal maintenance entry point: call only after the mapping's database commit is confirmed. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void recoverCacheCoordination(String shortCode) {
+        if (shortCode == null || !shortCode.matches("[A-Za-z0-9]{4,8}")
+                || shortLinkMapper.selectById(shortCode) == null) {
+            throw new LinkNotFoundException();
+        }
+        try {
+            redirectCache.replaceVersion(shortCode);
+        } catch (RuntimeException exception) {
+            LOGGER.error("Cache coordination recovery unconfirmed for short code {}; retry using the same code.",
+                    shortCode, exception);
+            throw exception;
+        }
+        LOGGER.info("Cache coordination recovery confirmed for short code {}.", shortCode);
     }
 
     private void insertWithCollisionRetries(ShortLinkEntity entity) {
@@ -95,7 +125,9 @@ public class ShortLinkService {
             }
 
             try {
-                shortLinkMapper.insert(entity);
+                if (shortLinkMapper.insert(entity) != 1) {
+                    throw new IllegalStateException("MySQL did not confirm inserting the short-link mapping.");
+                }
                 return;
             } catch (DuplicateKeyException exception) {
                 if (!isShortCodePrimaryKeyCollision(exception)) {
@@ -159,6 +191,9 @@ public class ShortLinkService {
         } catch (RuntimeException exception) {
             LOGGER.warn("Redirect cache lookup failed for short code {}; falling back to MySQL.", code, exception);
         }
+        if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.NOT_FOUND) {
+            throw new LinkNotFoundException();
+        }
         if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.REDIRECT) {
             RedirectCacheEntry cacheEntry = cachedRedirect.entry();
             if (isExpired(cacheEntry.expiresAt())) {
@@ -174,6 +209,7 @@ public class ShortLinkService {
 
         ShortLinkEntity entity = shortLinkMapper.selectById(code);
         if (entity == null) {
+            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.NOT_FOUND, null);
             throw new LinkNotFoundException();
         }
         Instant expiresAt = entity.getExpiresAt() == null
@@ -186,20 +222,23 @@ public class ShortLinkService {
             throw new LinkDisabledException();
         }
 
-        if (cachedRedirect != null
-                && (cachedRedirect.status() == RedirectCacheRead.Status.MISS
-                || cachedRedirect.status() == RedirectCacheRead.Status.PLACEHOLDER)) {
+        cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.REDIRECT,
+                new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt));
+        return entity.getOriginalUrl();
+    }
+
+    private void cacheResultIfVersion(
+            String code, RedirectCacheRead read, RedirectCacheRead.Status status, RedirectCacheEntry entry) {
+        if (read != null
+                && (read.status() == RedirectCacheRead.Status.MISS
+                || read.status() == RedirectCacheRead.Status.PLACEHOLDER)) {
             try {
-                redirectCache.storeIfVersion(
-                        code,
-                        cachedRedirect.generation(),
-                        RedirectCacheRead.Status.REDIRECT,
-                        new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt));
+                redirectCache.storeIfVersion(code, read.generation(), status, entry);
             } catch (RuntimeException exception) {
-                LOGGER.warn("Redirect cache write failed for short code {}; returning the MySQL result.", code, exception);
+                LOGGER.warn("Redirect cache write failed for short code {} and result {}; returning the MySQL result.",
+                        code, status, exception);
             }
         }
-        return entity.getOriginalUrl();
     }
 
     private boolean isExpired(Instant expiresAt) {

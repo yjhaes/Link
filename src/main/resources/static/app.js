@@ -163,6 +163,9 @@ function renderCreatedLink(data, originalUrl) {
 }
 
 function errorMessageFor(response, data) {
+  if (data?.code === 'CREATE_CACHE_COORDINATION_UNCONFIRMED') {
+    return `短码 ${data.shortCode} 已保存，但访问状态尚未确认。请保留短码并联系维护者恢复；再次提交会创建新的短链接。`;
+  }
   if (response.status === 400 || data?.code === 'INVALID_REQUEST') {
     return '网址或有效分钟数未通过服务端校验，请检查输入后重试。';
   }
