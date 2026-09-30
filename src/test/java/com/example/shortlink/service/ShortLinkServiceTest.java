@@ -51,6 +51,36 @@ class ShortLinkServiceTest {
     }
 
     @Test
+    void disabledHitChecksExpiryWithoutReadingMySqlOrRenewingBeforeExpiry() {
+        for (Instant expiresAt : new Instant[]{null, BASE_TIME.plusNanos(1), BASE_TIME, BASE_TIME.minusNanos(1)}) {
+            org.mockito.Mockito.reset(redirectCache);
+            when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.result(
+                    RedirectCacheRead.Status.DISABLED, GENERATION, new RedirectCacheEntry(null, expiresAt)));
+            boolean expired = expiresAt != null && !BASE_TIME.isBefore(expiresAt);
+            assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+                    .isInstanceOf(expired ? LinkExpiredException.class : LinkDisabledException.class);
+            if (expired) {
+                verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.EXPIRED, null);
+            }
+            verify(redirectCache).find("Ab12");
+            org.mockito.Mockito.verifyNoMoreInteractions(redirectCache);
+        }
+        org.mockito.Mockito.verifyNoInteractions(shortLinkMapper);
+    }
+
+    @Test
+    void disabledMissCachesExpirySnapshotAndCacheFailureStillReturnsForbidden() {
+        when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.miss(GENERATION));
+        when(shortLinkMapper.selectById("Ab12")).thenReturn(redirectableMapping(
+                "Ab12", "https://example.com/", LocalDateTime.ofInstant(BASE_TIME.plusSeconds(1), ZoneOffset.UTC), false));
+        org.mockito.Mockito.doThrow(new IllegalStateException("Redis unavailable")).when(redirectCache)
+                .storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.DISABLED,
+                        new RedirectCacheEntry(null, BASE_TIME.plusSeconds(1)));
+        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12")).isInstanceOf(LinkDisabledException.class);
+        verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.DISABLED,
+                new RedirectCacheEntry(null, BASE_TIME.plusSeconds(1)));
+    }
+    @Test
     void expiredResultHitDoesNotReadMySqlOrRenewTtl() {
         when(redirectCache.find("Ab12"))
                 .thenReturn(RedirectCacheRead.result(RedirectCacheRead.Status.EXPIRED, GENERATION));
