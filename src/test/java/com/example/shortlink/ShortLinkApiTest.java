@@ -5,6 +5,7 @@ import com.example.shortlink.service.CreatedShortLink;
 import com.example.shortlink.service.PermutedShortCodeEncoder;
 import com.example.shortlink.service.RedirectCache;
 import com.example.shortlink.service.RedirectCacheEntry;
+import com.example.shortlink.service.RedirectCacheRead;
 import com.example.shortlink.service.ShortLinkService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,7 +40,6 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -714,16 +714,27 @@ class ShortLinkApiTest {
         RedirectCache redirectCache() {
             return new RedirectCache() {
                 @Override
-                public Optional<RedirectCacheEntry> find(String shortCode) {
-                    return Optional.empty();
+                public RedirectCacheRead find(String shortCode) {
+                    return RedirectCacheRead.miss("00000000-0000-0000-0000-000000000001");
                 }
 
                 @Override
-                public void store(String shortCode, RedirectCacheEntry entry) {
+                public boolean storeIfVersion(
+                        String shortCode,
+                        String generation,
+                        RedirectCacheRead.Status status,
+                        RedirectCacheEntry entry) {
+                    return true;
                 }
 
                 @Override
-                public void delete(String shortCode) {
+                public String replaceVersion(String shortCode) {
+                    return "00000000-0000-0000-0000-000000000001";
+                }
+
+                @Override
+                public boolean deleteIfVersion(String shortCode, String generation) {
+                    return true;
                 }
             };
         }
