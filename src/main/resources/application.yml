@@ -26,3 +26,4 @@ short-link:
     not-found-ttl: ${SHORT_LINK_NOT_FOUND_CACHE_TTL:30s}
     expired-ttl: ${SHORT_LINK_EXPIRED_CACHE_TTL:5m}
     disabled-ttl: ${SHORT_LINK_DISABLED_CACHE_TTL:15s}
+    load-wait: ${SHORT_LINK_REDIRECT_LOAD_WAIT:200ms}
