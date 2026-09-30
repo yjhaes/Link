@@ -1,6 +1,9 @@
 package com.example.shortlink;
 
 import com.example.shortlink.LinkApplication;
+import com.example.shortlink.service.RedirectCache;
+import com.example.shortlink.service.RedirectCacheEntry;
+import com.example.shortlink.service.RedirectCacheRead;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Testcontainers
 class RedisRedirectIntegrationTest {
 
-    private static final String CACHE_KEY_PREFIX = "shortlink:redirect:v1:";
+    private static final String CACHE_KEY_PREFIX = "shortlink:redirect:v2:";
     private static final String ORIGINAL_URL = "https://redis-cache.example/article";
     private static final long CACHE_TTL_MILLIS = 300_000L;
 
@@ -70,6 +73,9 @@ class RedisRedirectIntegrationTest {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private RedirectCache redirectCache;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -123,13 +129,16 @@ class RedisRedirectIntegrationTest {
 
         String serializedValue = redisTemplate.opsForValue().get(cacheKey(shortCode));
         JsonNode cacheValue = objectMapper.readTree(serializedValue);
-        assertThat(cacheValue.size()).isEqualTo(2);
+        assertThat(cacheValue.size()).isEqualTo(5);
+        assertThat(cacheValue.path("schemaVersion").asInt()).isEqualTo(2);
+        assertThat(cacheValue.path("generation").asText()).isNotBlank();
+        assertThat(cacheValue.path("status").asText()).isEqualTo("REDIRECT");
         assertThat(cacheValue.path("originalUrl").asText()).isEqualTo(ORIGINAL_URL);
         assertThat(cacheValue.has("expiresAt")).isTrue();
         assertThat(cacheValue.get("expiresAt").isNull()).isTrue();
 
         Long ttlMillis = redisTemplate.getExpire(cacheKey(shortCode), TimeUnit.MILLISECONDS);
-        assertThat(ttlMillis).isBetween(CACHE_TTL_MILLIS - 10_000L, CACHE_TTL_MILLIS);
+        assertThat(ttlMillis).isBetween((long) (CACHE_TTL_MILLIS * 0.9) - 1_000L, CACHE_TTL_MILLIS);
         verify(shortLinkMapper).selectById(shortCode);
     }
 
@@ -179,7 +188,8 @@ class RedisRedirectIntegrationTest {
                 .andExpect(header().string("Cache-Control", "no-store"));
 
         verify(shortLinkMapper).selectById(shortCode);
-        assertThat(redisTemplate.hasKey(key)).isFalse();
+        JsonNode placeholder = objectMapper.readTree(redisTemplate.opsForValue().get(key));
+        assertThat(placeholder.path("status").asText()).isEqualTo("PLACEHOLDER");
 
         assertThat(jdbcTemplate.update(
                 "UPDATE short_link SET enabled = TRUE WHERE short_code = ?", shortCode))
@@ -207,7 +217,8 @@ class RedisRedirectIntegrationTest {
         String key = cacheKey(shortCode);
         JsonNode cacheValue = objectMapper.readTree(redisTemplate.opsForValue().get(key));
         Instant expectedExpiry = expiresAt.toInstant(ZoneOffset.UTC);
-        assertThat(cacheValue.size()).isEqualTo(2);
+        assertThat(cacheValue.size()).isEqualTo(5);
+        assertThat(cacheValue.path("status").asText()).isEqualTo("REDIRECT");
         assertThat(cacheValue.path("originalUrl").asText()).isEqualTo(ORIGINAL_URL);
         assertThat(cacheValue.path("expiresAt").asText()).isEqualTo(expectedExpiry.toString());
 
@@ -234,7 +245,7 @@ class RedisRedirectIntegrationTest {
         assertRedirect(shortCode, ORIGINAL_URL);
 
         Long ttlMillis = redisTemplate.getExpire(cacheKey(shortCode), TimeUnit.MILLISECONDS);
-        assertThat(ttlMillis).isBetween(CACHE_TTL_MILLIS - 10_000L, CACHE_TTL_MILLIS);
+        assertThat(ttlMillis).isBetween((long) (CACHE_TTL_MILLIS * 0.9) - 1_000L, CACHE_TTL_MILLIS);
     }
 
     @Test
@@ -242,6 +253,9 @@ class RedisRedirectIntegrationTest {
         String shortCode = "Ex12";
         Instant expiresAt = Instant.now().minusSeconds(1);
         String value = objectMapper.createObjectNode()
+                .put("schemaVersion", 2)
+                .put("generation", "00000000-0000-0000-0000-000000000001")
+                .put("status", "REDIRECT")
                 .put("originalUrl", ORIGINAL_URL)
                 .put("expiresAt", expiresAt.toString())
                 .toString();
@@ -268,6 +282,130 @@ class RedisRedirectIntegrationTest {
         JsonNode repairedValue = objectMapper.readTree(redisTemplate.opsForValue().get(cacheKey(shortCode)));
         assertThat(repairedValue.path("originalUrl").asText()).isEqualTo(ORIGINAL_URL);
         verify(shortLinkMapper, times(1)).selectById(shortCode);
+    }
+
+    @Test
+    void firstReadAtomicallyInitializesAFinitePlaceholderAndLaterReadsItsGeneration() throws Exception {
+        String shortCode = "Mis1";
+
+        RedirectCacheRead firstRead = redirectCache.find(shortCode);
+        String serializedPlaceholder = redisTemplate.opsForValue().get(cacheKey(shortCode));
+        JsonNode placeholder = objectMapper.readTree(serializedPlaceholder);
+        Long ttlMillis = redisTemplate.getExpire(cacheKey(shortCode), TimeUnit.MILLISECONDS);
+
+        assertThat(firstRead.status()).isEqualTo(RedirectCacheRead.Status.MISS);
+        assertThat(firstRead.generation()).isNotBlank();
+        assertThat(placeholder.path("schemaVersion").asInt()).isEqualTo(2);
+        assertThat(placeholder.path("generation").asText()).isEqualTo(firstRead.generation());
+        assertThat(placeholder.path("status").asText()).isEqualTo("PLACEHOLDER");
+        assertThat(placeholder.path("originalUrl").isNull()).isTrue();
+        assertThat(placeholder.path("expiresAt").isNull()).isTrue();
+        assertThat(ttlMillis).isPositive().isLessThanOrEqualTo(CACHE_TTL_MILLIS);
+
+        RedirectCacheRead secondRead = redirectCache.find(shortCode);
+        assertThat(secondRead.status()).isEqualTo(RedirectCacheRead.Status.PLACEHOLDER);
+        assertThat(secondRead.generation()).isEqualTo(firstRead.generation());
+    }
+
+    @Test
+    void aValueWithoutFiniteRedisTtlIsReplacedWithANewVersionedPlaceholder() throws Exception {
+        String shortCode = "Inf1";
+        String oldGeneration = "00000000-0000-0000-0000-000000000001";
+        redisTemplate.opsForValue().set(
+                cacheKey(shortCode),
+                objectMapper.createObjectNode()
+                        .put("schemaVersion", 2)
+                        .put("generation", oldGeneration)
+                        .put("status", "REDIRECT")
+                        .put("originalUrl", ORIGINAL_URL)
+                        .putNull("expiresAt")
+                        .toString());
+
+        RedirectCacheRead read = redirectCache.find(shortCode);
+        JsonNode replacement = objectMapper.readTree(redisTemplate.opsForValue().get(cacheKey(shortCode)));
+        Long ttlMillis = redisTemplate.getExpire(cacheKey(shortCode), TimeUnit.MILLISECONDS);
+
+        assertThat(read.status()).isEqualTo(RedirectCacheRead.Status.MISS);
+        assertThat(read.generation()).isNotEqualTo(oldGeneration);
+        assertThat(replacement.path("status").asText()).isEqualTo("PLACEHOLDER");
+        assertThat(replacement.path("generation").asText()).isEqualTo(read.generation());
+        assertThat(ttlMillis).isPositive().isLessThanOrEqualTo(CACHE_TTL_MILLIS);
+    }
+
+    @Test
+    void redirectCacheProtocolKeepsTheThreeRejectionResultsDistinct() throws Exception {
+        RedirectCacheRead.Status[] outcomes = {
+                RedirectCacheRead.Status.NOT_FOUND,
+                RedirectCacheRead.Status.EXPIRED,
+                RedirectCacheRead.Status.DISABLED
+        };
+
+        for (int index = 0; index < outcomes.length; index++) {
+            String shortCode = "Rj" + index + "1";
+            RedirectCacheRead initialized = redirectCache.find(shortCode);
+            RedirectCacheEntry result = outcomes[index] == RedirectCacheRead.Status.DISABLED
+                    ? new RedirectCacheEntry(null, Instant.now().plusSeconds(60))
+                    : null;
+
+            assertThat(redirectCache.storeIfVersion(shortCode, initialized.generation(), outcomes[index], result))
+                    .isTrue();
+            RedirectCacheRead cached = redirectCache.find(shortCode);
+
+            assertThat(cached.status()).isEqualTo(outcomes[index]);
+            if (outcomes[index] == RedirectCacheRead.Status.DISABLED) {
+                assertThat(cached.entry().expiresAt()).isEqualTo(result.expiresAt());
+            }
+        }
+    }
+
+    @Test
+    void aMissingMappingLeavesOnlyAPlaceholderAndIsStillLoadedFromMySqlOnEachRequest() throws Exception {
+        String shortCode = "Nope";
+
+        for (int request = 0; request < 2; request++) {
+            mockMvc.perform(get("/s/" + shortCode))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+        }
+
+        JsonNode placeholder = objectMapper.readTree(redisTemplate.opsForValue().get(cacheKey(shortCode)));
+        assertThat(placeholder.path("status").asText()).isEqualTo("PLACEHOLDER");
+        verify(shortLinkMapper, times(2)).selectById(shortCode);
+    }
+
+    @Test
+    void versionReplacementAndMissingEntryBothRejectAnOldConditionalRefill() throws Exception {
+        String replacedCode = "Rep1";
+        RedirectCacheRead beforeReplacement = redirectCache.find(replacedCode);
+        String replacementGeneration = redirectCache.replaceVersion(replacedCode);
+
+        assertThat(replacementGeneration).isNotEqualTo(beforeReplacement.generation());
+        assertThat(redirectCache.storeIfVersion(
+                replacedCode,
+                beforeReplacement.generation(),
+                RedirectCacheRead.Status.REDIRECT,
+                new RedirectCacheEntry(ORIGINAL_URL, null))).isFalse();
+        assertThat(redirectCache.find(replacedCode).status()).isEqualTo(RedirectCacheRead.Status.PLACEHOLDER);
+        JsonNode replacement = objectMapper.readTree(redisTemplate.opsForValue().get(cacheKey(replacedCode)));
+        assertThat(replacement.path("generation").asText()).isEqualTo(replacementGeneration);
+        assertThat(replacement.path("status").asText()).isEqualTo("PLACEHOLDER");
+
+        String lostCode = "Los1";
+        RedirectCacheRead beforeLoss = redirectCache.find(lostCode);
+        assertThat(redisTemplate.delete(cacheKey(lostCode))).isTrue();
+        RedirectCacheRead afterLoss = redirectCache.find(lostCode);
+
+        assertThat(afterLoss.status()).isEqualTo(RedirectCacheRead.Status.MISS);
+        assertThat(afterLoss.generation()).isNotEqualTo(beforeLoss.generation());
+        assertThat(redirectCache.storeIfVersion(
+                lostCode,
+                beforeLoss.generation(),
+                RedirectCacheRead.Status.REDIRECT,
+                new RedirectCacheEntry(ORIGINAL_URL, null))).isFalse();
+        JsonNode freshEntry = objectMapper.readTree(redisTemplate.opsForValue().get(cacheKey(lostCode)));
+        assertThat(freshEntry.path("generation").asText()).isEqualTo(afterLoss.generation());
+        assertThat(freshEntry.path("status").asText()).isEqualTo("PLACEHOLDER");
     }
 
     private void assertRedirect(String shortCode, String originalUrl) throws Exception {

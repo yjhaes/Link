@@ -1,12 +1,16 @@
 package com.example.shortlink.service;
 
-import java.util.Optional;
-
 public interface RedirectCache {
 
-    Optional<RedirectCacheEntry> find(String shortCode);
+    RedirectCacheRead find(String shortCode);
 
-    void store(String shortCode, RedirectCacheEntry entry);
+    boolean storeIfVersion(
+            String shortCode,
+            String generation,
+            RedirectCacheRead.Status status,
+            RedirectCacheEntry entry);
 
-    void delete(String shortCode);
+    String replaceVersion(String shortCode);
+
+    boolean deleteIfVersion(String shortCode, String generation);
 }

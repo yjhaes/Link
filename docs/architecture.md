@@ -33,6 +33,6 @@ src/test/resources/
 
 `service/error` 中的异常表达创建或跳转失败的原因。`api/ApiExceptionHandler` 统一把这些原因和 HTTP 输入错误映射成 `ApiError`，业务流程无需知道 HTTP 状态码。短码编码规则由 `PermutedShortCodeEncoder` 封装，创建流程只调用 `encode`。
 
-创建时先由 MySQL 分配 ID，再编码并插入映射；发号与映射分别提交。跳转时先查 Redis，未命中或缓存不可用时查 MySQL，并仅缓存可跳转的映射。具体规则和一致性范围见 [ADR-0002](adr/0002-permuted-auto-id-base62.md) 与 [ADR-0003](adr/0003-redis-cache-aside-for-redirects.md)。
+创建时先由 MySQL 分配 ID，再编码并插入映射；发号与映射分别提交。跳转时先读取带版本的 Redis 条目：缓存 miss 或有限期占位都会继续查询 MySQL，可跳转快照命中时直接返回；MySQL 回源结果只按读取时的版本条件回填。Redis 不可用时回源 MySQL，但没有拿到版本就跳过回填。具体规则和一致性范围见 [ADR-0002](adr/0002-permuted-auto-id-base62.md)、[ADR-0003](adr/0003-redis-cache-aside-for-redirects.md) 与 [ADR-0004](adr/0004-negative-cache-for-redirects.md)。
 
 测试目录与生产包对应。HTTP 和 MySQL/Redis 集成测试位于测试根包，覆盖接口可见行为；`service` 与 `cache` 测试验证可控制的时间边界、失败路径和缓存写入条件。运行方式见 [README](../README.md)。
