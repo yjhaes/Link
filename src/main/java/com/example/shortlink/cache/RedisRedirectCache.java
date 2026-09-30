@@ -123,17 +123,11 @@ public class RedisRedirectCache implements RedirectCache {
             }
             String serializedValue = response.substring(2);
             try {
-                StoredEntry stored = parse(serializedValue);
+                RedirectCacheRead stored = parse(serializedValue);
                 if (initialized) {
                     return RedirectCacheRead.miss(stored.generation());
                 }
-                if (stored.status() == RedirectCacheRead.Status.PLACEHOLDER) {
-                    return RedirectCacheRead.placeholder(stored.generation());
-                }
-                if (stored.status() == RedirectCacheRead.Status.REDIRECT) {
-                    return RedirectCacheRead.redirect(stored.generation(), stored.entry());
-                }
-                return RedirectCacheRead.result(stored.status(), stored.generation(), stored.entry());
+                return stored;
             } catch (JsonProcessingException | DateTimeParseException | IllegalArgumentException exception) {
                 LOGGER.warn("Ignoring malformed redirect cache value for short code {}.", shortCode, exception);
                 deleteMalformedValue(key, serializedValue, shortCode);
@@ -148,7 +142,7 @@ public class RedisRedirectCache implements RedirectCache {
             String generation,
             RedirectCacheRead.Status status,
             RedirectCacheEntry entry) {
-        validateBusinessResult(status, entry);
+        validateBusinessResult(generation, status, entry);
         long entryTtlMillis = ttlMillisFor(status, entry);
         if (entryTtlMillis < 1) {
             return false;
@@ -210,27 +204,16 @@ public class RedisRedirectCache implements RedirectCache {
         return Math.max(1, ttlMillis - reductionMillis);
     }
 
-    private void validateBusinessResult(RedirectCacheRead.Status status, RedirectCacheEntry entry) {
+    private void validateBusinessResult(
+            String generation,
+            RedirectCacheRead.Status status,
+            RedirectCacheEntry entry) {
         if (status == null
                 || status == RedirectCacheRead.Status.MISS
                 || status == RedirectCacheRead.Status.PLACEHOLDER) {
             throw new IllegalArgumentException("Only business results can replace a redirect cache placeholder.");
         }
-        if (status == RedirectCacheRead.Status.REDIRECT && entry == null) {
-            throw new IllegalArgumentException("Redirect cache results require a redirect snapshot.");
-        }
-        if (status == RedirectCacheRead.Status.DISABLED && entry != null && entry.originalUrl() != null) {
-            throw new IllegalArgumentException("Disabled redirect results cannot contain an original URL.");
-        }
-        if (status != RedirectCacheRead.Status.REDIRECT
-                && status != RedirectCacheRead.Status.DISABLED
-                && entry != null) {
-            throw new IllegalArgumentException("This redirect cache result cannot contain a snapshot.");
-        }
-        if (status == RedirectCacheRead.Status.REDIRECT
-                && (entry.originalUrl() == null || entry.originalUrl().isBlank())) {
-            throw new IllegalArgumentException("A redirect cache snapshot must contain an original URL.");
-        }
+        RedirectCacheRead.result(status, generation, entry);
     }
 
     private String serialize(String generation, RedirectCacheRead.Status status, RedirectCacheEntry entry) {
@@ -256,7 +239,7 @@ public class RedisRedirectCache implements RedirectCache {
         }
     }
 
-    private StoredEntry parse(String serializedValue) throws JsonProcessingException {
+    private RedirectCacheRead parse(String serializedValue) throws JsonProcessingException {
         JsonNode value = objectMapper.readTree(serializedValue);
         if (value == null
                 || !value.isObject()
@@ -286,27 +269,10 @@ public class RedisRedirectCache implements RedirectCache {
         Instant expiresAt = value.get("expiresAt").isNull()
                 ? null
                 : Instant.parse(value.get("expiresAt").textValue());
-        if (status == RedirectCacheRead.Status.PLACEHOLDER && (originalUrl != null || expiresAt != null)) {
-            throw new IllegalArgumentException("A redirect cache placeholder cannot contain a business result.");
-        }
-        if (status == RedirectCacheRead.Status.REDIRECT && (originalUrl == null || originalUrl.isBlank())) {
-            throw new IllegalArgumentException("A redirect cache result must contain an original URL.");
-        }
-        if ((status == RedirectCacheRead.Status.NOT_FOUND || status == RedirectCacheRead.Status.EXPIRED)
-                && (originalUrl != null || expiresAt != null)) {
-            throw new IllegalArgumentException("This redirect rejection result cannot contain a snapshot.");
-        }
-        if (status == RedirectCacheRead.Status.DISABLED && originalUrl != null) {
-            throw new IllegalArgumentException("A disabled redirect result cannot contain an original URL.");
-        }
-
         RedirectCacheEntry entry = originalUrl == null && expiresAt == null
                 ? null
                 : new RedirectCacheEntry(originalUrl, expiresAt);
-        if (status == RedirectCacheRead.Status.REDIRECT || status == RedirectCacheRead.Status.DISABLED) {
-            return new StoredEntry(generation, status, entry);
-        }
-        return new StoredEntry(generation, status, null);
+        return new RedirectCacheRead(status, generation, entry);
     }
 
     private void deleteMalformedValue(String key, String serializedValue, String shortCode) {
@@ -321,6 +287,4 @@ public class RedisRedirectCache implements RedirectCache {
         return KEY_PREFIX + shortCode;
     }
 
-    private record StoredEntry(String generation, RedirectCacheRead.Status status, RedirectCacheEntry entry) {
-    }
 }

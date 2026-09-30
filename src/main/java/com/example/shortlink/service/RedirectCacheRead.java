@@ -48,8 +48,8 @@ public record RedirectCacheRead(Status status, String generation, RedirectCacheE
     }
 
     public static RedirectCacheRead result(Status status, String generation, RedirectCacheEntry entry) {
-        if (status == Status.MISS || status == Status.PLACEHOLDER || status == Status.REDIRECT) {
-            throw new IllegalArgumentException("Use the matching redirect cache read factory.");
+        if (status == Status.MISS || status == Status.PLACEHOLDER) {
+            throw new IllegalArgumentException("A miss or placeholder is not a business result.");
         }
         return new RedirectCacheRead(status, generation, entry);
     }
