@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -44,6 +45,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -53,6 +57,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -75,7 +81,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(classes = LinkApplication.class)
+@SpringBootTest(classes = LinkApplication.class, properties = "short-link.redirect-cache.load-wait=5s")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -289,7 +295,7 @@ class RedisRedirectIntegrationTest {
         }).when(redirectCache).storeIfVersion(eq(shortCode), anyString(),
                 eq(RedirectCacheRead.Status.NOT_FOUND), isNull());
 
-        ExecutorService executor = Executors.newSingleThreadExecutor();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
         try (ConfigurableApplicationContext creator = independentCreator()) {
             assertThat(creator.getBean(RedirectCache.class)).isNotSameAs(redirectCache);
             Future<Integer> oldRequest = executor.submit(() ->
@@ -301,7 +307,12 @@ class RedisRedirectIntegrationTest {
             assertThat(created.shortCode()).isEqualTo(shortCode);
             assertThat(redirectCache.find(shortCode).generation()).isNotEqualTo(oldGeneration);
             // This request starts after create returned, while the old snapshot is still paused.
-            assertRedirect(shortCode, ORIGINAL_URL);
+            Future<?> currentRequest = executor.submit(() -> {
+                assertRedirect(shortCode, ORIGINAL_URL);
+                return null;
+            });
+            currentRequest.get(2, TimeUnit.SECONDS); // Less than the shared-load wait budget.
+            verify(shortLinkMapper, times(2)).selectById(shortCode);
             resumeOldQuery.countDown();
             // Overlapping requests may finish with the snapshot they read before creation.
             assertThat(oldRequest.get(5, TimeUnit.SECONDS)).isEqualTo(404);
@@ -771,7 +782,7 @@ class RedisRedirectIntegrationTest {
             accepted.set(stored);
             return stored;
         }).when(redirectCache).storeIfVersion(eq(code), anyString(), eq(RedirectCacheRead.Status.DISABLED), any());
-        ExecutorService executor = Executors.newSingleThreadExecutor();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
         try (ConfigurableApplicationContext maintainer = independentCreator()) {
             Future<Integer> old = executor.submit(() -> mockMvc.perform(get("/s/" + code))
                     .andReturn().getResponse().getStatus());
@@ -779,7 +790,12 @@ class RedisRedirectIntegrationTest {
             maintainer.getBean(JdbcTemplate.class).update(
                     "UPDATE short_link SET enabled = true WHERE short_code = ?", code);
             maintainer.getBean(ShortLinkService.class).recoverCacheCoordination(code);
-            assertRedirect(code, ORIGINAL_URL);
+            Future<?> currentRequest = executor.submit(() -> {
+                assertRedirect(code, ORIGINAL_URL);
+                return null;
+            });
+            currentRequest.get(2, TimeUnit.SECONDS); // Cannot pass by timing out of the old task.
+            verify(shortLinkMapper, times(2)).selectById(code);
             resume.countDown();
             assertThat(old.get(5, TimeUnit.SECONDS)).isEqualTo(403);
             assertThat(accepted.get()).isFalse();
@@ -866,7 +882,11 @@ class RedisRedirectIntegrationTest {
     }
 
     private ConfigurableApplicationContext independentCreator() {
-        return new SpringApplicationBuilder(LinkApplication.class, FixedCodeConfiguration.class)
+        return independentInstance(FixedCodeConfiguration.class);
+    }
+
+    private ConfigurableApplicationContext independentInstance(Class<?> configuration) {
+        return new SpringApplicationBuilder(LinkApplication.class, configuration)
                 .web(WebApplicationType.NONE)
                 .profiles("test")
                 .run("--spring.datasource.url=" + MYSQL.getJdbcUrl(),
@@ -874,9 +894,79 @@ class RedisRedirectIntegrationTest {
                         "--spring.datasource.password=" + MYSQL.getPassword(),
                         "--spring.data.redis.host=" + REDIS.getHost(),
                         "--spring.data.redis.port=" + REDIS.getFirstMappedPort(),
-                        "--spring.sql.init.mode=never", "--spring.main.banner-mode=off");
+                        "--spring.sql.init.mode=never", "--spring.main.banner-mode=off",
+                        "--short-link.redirect-cache.load-wait=5s");
     }
 
+    @Test
+    void isolatedApplicationInstancesEachCoalesceTheirOwnOverlappingMisses() throws Exception {
+        String code = "Coal";
+        insertMapping(code, ORIGINAL_URL);
+        redirectCache.find(code); // Both instances read the same initialized generation.
+        CountDownLatch bothQueries = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        List<Thread> threads = new ArrayList<>();
+        try (ConfigurableApplicationContext first = independentInstance(CoalescingConfiguration.class);
+             ConfigurableApplicationContext second = independentInstance(CoalescingConfiguration.class)) {
+            ShortLinkService firstService = first.getBean(ShortLinkService.class);
+            ShortLinkService secondService = second.getBean(ShortLinkService.class);
+            ShortLinkMapper firstMapper = first.getBean(ShortLinkMapper.class);
+            ShortLinkMapper secondMapper = second.getBean(ShortLinkMapper.class);
+            assertThat(firstService).isNotSameAs(secondService);
+            assertThat(firstMapper).isNotSameAs(secondMapper);
+            for (ShortLinkMapper mapper : new ShortLinkMapper[]{firstMapper, secondMapper}) {
+                var query = mockingDetails(mapper).getMockCreationSettings().getDefaultAnswer();
+                doAnswer(invocation -> {
+                    Object snapshot = query.answer(invocation);
+                    bothQueries.countDown();
+                    assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+                    return snapshot;
+                }).when(mapper).selectById(code);
+            }
+            var firstLoad = startRedirect(firstService, code, threads);
+            var secondLoad = startRedirect(secondService, code, threads);
+            assertThat(bothQueries.await(5, TimeUnit.SECONDS)).isTrue();
+            var firstWaiter = startRedirect(firstService, code, threads);
+            var secondWaiter = startRedirect(secondService, code, threads);
+            await().atMost(Duration.ofSeconds(3)).pollInterval(Duration.ofMillis(1)).untilAsserted(() -> {
+                assertThat(threads.get(2).getState()).isEqualTo(Thread.State.TIMED_WAITING);
+                assertThat(threads.get(3).getState()).isEqualTo(Thread.State.TIMED_WAITING);
+            });
+            verify(firstMapper).selectById(code);
+            verify(secondMapper).selectById(code);
+            release.countDown();
+            for (var request : List.of(firstLoad, secondLoad, firstWaiter, secondWaiter)) {
+                assertThat(request.get(5, TimeUnit.SECONDS)).isEqualTo(ORIGINAL_URL);
+            }
+            verify(firstMapper).selectById(code);
+            verify(secondMapper).selectById(code);
+        } finally {
+            release.countDown();
+            for (Thread thread : threads) {
+                thread.join(5000);
+                assertThat(thread.isAlive()).isFalse();
+            }
+        }
+    }
+
+    private FutureTask<String> startRedirect(
+            ShortLinkService service, String code, List<Thread> threads) {
+        var task = new FutureTask<String>(() -> service.findOriginalUrl(code));
+        Thread thread = new Thread(task);
+        threads.add(thread);
+        thread.start();
+        return task;
+    }
+
+    @TestConfiguration
+    static class CoalescingConfiguration {
+        @Bean
+        @Primary
+        ShortLinkMapper countedMapper(
+                @Qualifier("shortLinkMapper") ShortLinkMapper delegate) {
+            return mock(ShortLinkMapper.class, delegatesTo(delegate));
+        }
+    }
     @TestConfiguration
     static class FixedCodeConfiguration {
         @Bean

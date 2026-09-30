@@ -10,6 +10,8 @@ import com.example.shortlink.persistence.ShortLinkEntity;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -19,10 +21,16 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.time.ZoneOffset;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.TimeUnit;
 import java.util.Locale;
 
 @Service
@@ -38,12 +46,30 @@ public class ShortLinkService {
     private final Clock clock;
     private final RedirectCache redirectCache;
 
+    private final ConcurrentHashMap<LoadKey, CompletableFuture<LoadedRedirect>> redirectLoads = new ConcurrentHashMap<>();
+    private final long loadWaitNanos;
+
     public ShortLinkService(
             ShortLinkMapper shortLinkMapper,
             ShortCodeIdIssuer shortCodeIdIssuer,
             PermutedShortCodeEncoder shortCodeEncoder,
             Clock clock,
             RedirectCache redirectCache) {
+        this(shortLinkMapper, shortCodeIdIssuer, shortCodeEncoder, clock, redirectCache, Duration.ofMillis(200));
+    }
+
+    @Autowired
+    public ShortLinkService(
+            ShortLinkMapper shortLinkMapper,
+            ShortCodeIdIssuer shortCodeIdIssuer,
+            PermutedShortCodeEncoder shortCodeEncoder,
+            Clock clock,
+            RedirectCache redirectCache,
+            @Value("${short-link.redirect-cache.load-wait:200ms}") Duration loadWait) {
+        if (loadWait == null || loadWait.isNegative() || loadWait.isZero()) {
+            throw new IllegalArgumentException("Redirect load wait must be positive and finite.");
+        }
+        this.loadWaitNanos = loadWait.toNanos();
         this.shortLinkMapper = shortLinkMapper;
         this.shortCodeIdIssuer = shortCodeIdIssuer;
         this.shortCodeEncoder = shortCodeEncoder;
@@ -185,58 +211,121 @@ public class ShortLinkService {
             throw new LinkNotFoundException();
         }
 
-        RedirectCacheRead cachedRedirect = null;
+        RedirectCacheRead read = readCache(code);
+        if (hasResult(read)) {
+            return useResult(code, read);
+        }
+        if (read == null) {
+            return useResult(code, loadRedirect(code, null));
+        }
+
+        LoadKey key = new LoadKey(code, read.generation());
+        CompletableFuture<LoadedRedirect> task = new CompletableFuture<>();
+        CompletableFuture<LoadedRedirect> existing = redirectLoads.putIfAbsent(key, task);
+        if (existing == null) {
+            try {
+                // A request can be descheduled after its miss until a previous load has finished.
+                // Check again after winning ownership, so that completed round does not cause another SQL.
+                RedirectCacheRead latest = readCache(code);
+                LoadedRedirect result = hasResult(latest)
+                        ? new LoadedRedirect(latest.status(), latest.entry(), latest.generation())
+                        : loadRedirect(code, latest);
+                task.complete(result);
+                return useResult(code, result);
+            } catch (RuntimeException | Error failure) {
+                task.completeExceptionally(failure);
+                throw failure;
+            } finally {
+                redirectLoads.remove(key, task);
+            }
+        }
         try {
-            cachedRedirect = redirectCache.find(code);
+            return useResult(code, existing.get(loadWaitNanos, TimeUnit.NANOSECONDS));
+        } catch (TimeoutException exception) {
+            RedirectCacheRead retry = readCache(code);
+            return hasResult(retry) ? useResult(code, retry) : useResult(code, loadRedirect(code, retry));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for a redirect load.", exception);
+        } catch (ExecutionException exception) {
+            if (exception.getCause() instanceof RuntimeException failure) {
+                throw failure;
+            }
+            if (exception.getCause() instanceof Error failure) {
+                throw failure;
+            }
+            throw new IllegalStateException("Redirect load failed.", exception.getCause());
+        }
+    }
+
+    private RedirectCacheRead readCache(String code) {
+        try {
+            return redirectCache.find(code);
         } catch (RuntimeException exception) {
             LOGGER.warn("Redirect cache lookup failed for short code {}; falling back to MySQL.", code, exception);
+            return null;
         }
-        if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.NOT_FOUND) {
+    }
+
+    private boolean hasResult(RedirectCacheRead read) {
+        return read != null && read.status() != RedirectCacheRead.Status.MISS
+                && read.status() != RedirectCacheRead.Status.PLACEHOLDER;
+    }
+
+    private LoadedRedirect loadRedirect(String code, RedirectCacheRead read) {
+        ShortLinkEntity entity = shortLinkMapper.selectById(code);
+        RedirectCacheRead.Status status;
+        RedirectCacheEntry entry = null;
+        if (entity == null) {
+            status = RedirectCacheRead.Status.NOT_FOUND;
+        } else {
+            Instant expiresAt = entity.getExpiresAt() == null
+                    ? null : entity.getExpiresAt().toInstant(ZoneOffset.UTC);
+            if (isExpired(expiresAt)) {
+                status = RedirectCacheRead.Status.EXPIRED;
+            } else if (!entity.isEnabled()) {
+                status = RedirectCacheRead.Status.DISABLED;
+                entry = new RedirectCacheEntry(null, expiresAt);
+            } else {
+                status = RedirectCacheRead.Status.REDIRECT;
+                entry = new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt);
+            }
+        }
+        cacheResultIfVersion(code, read, status, entry);
+        return new LoadedRedirect(status, entry, read == null ? null : read.generation());
+    }
+
+    private String useResult(String code, RedirectCacheRead result) {
+        return useResult(code, new LoadedRedirect(result.status(), result.entry(), result.generation()));
+    }
+
+    private String useResult(String code, LoadedRedirect result) {
+        if (result.status() == RedirectCacheRead.Status.NOT_FOUND) {
             throw new LinkNotFoundException();
         }
-        if (cachedRedirect != null && cachedRedirect.status() == RedirectCacheRead.Status.EXPIRED) {
+        if (result.status() == RedirectCacheRead.Status.EXPIRED) {
             throw new LinkExpiredException();
         }
-        if (cachedRedirect != null && (cachedRedirect.status() == RedirectCacheRead.Status.REDIRECT
-                || cachedRedirect.status() == RedirectCacheRead.Status.DISABLED)) {
-            RedirectCacheEntry cacheEntry = cachedRedirect.entry();
-            if (isExpired(cacheEntry == null ? null : cacheEntry.expiresAt())) {
+        RedirectCacheEntry entry = result.entry();
+        if (isExpired(entry == null ? null : entry.expiresAt())) {
+            if (result.generation() != null) {
                 try {
-                    redirectCache.storeIfVersion(code, cachedRedirect.generation(), RedirectCacheRead.Status.EXPIRED, null);
+                    redirectCache.storeIfVersion(code, result.generation(), RedirectCacheRead.Status.EXPIRED, null);
                 } catch (RuntimeException exception) {
                     LOGGER.warn("Could not cache expired redirect result for short code {}.", code, exception);
                 }
-                throw new LinkExpiredException();
             }
-            if (cachedRedirect.status() == RedirectCacheRead.Status.DISABLED) {
-                throw new LinkDisabledException();
-            }
-            return cacheEntry.originalUrl();
-        }
-
-        ShortLinkEntity entity = shortLinkMapper.selectById(code);
-        if (entity == null) {
-            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.NOT_FOUND, null);
-            throw new LinkNotFoundException();
-        }
-        Instant expiresAt = entity.getExpiresAt() == null
-                ? null
-                : entity.getExpiresAt().toInstant(ZoneOffset.UTC);
-        if (isExpired(expiresAt)) {
-            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.EXPIRED, null);
             throw new LinkExpiredException();
         }
-        if (!entity.isEnabled()) {
-            cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.DISABLED,
-                    new RedirectCacheEntry(null, expiresAt));
+        if (result.status() == RedirectCacheRead.Status.DISABLED) {
             throw new LinkDisabledException();
         }
-
-        cacheResultIfVersion(code, cachedRedirect, RedirectCacheRead.Status.REDIRECT,
-                new RedirectCacheEntry(entity.getOriginalUrl(), expiresAt));
-        return entity.getOriginalUrl();
+        return entry.originalUrl();
     }
 
+    private record LoadKey(String code, String generation) { }
+
+    private record LoadedRedirect(RedirectCacheRead.Status status, RedirectCacheEntry entry, String generation) { }
     private void cacheResultIfVersion(
             String code, RedirectCacheRead read, RedirectCacheRead.Status status, RedirectCacheEntry entry) {
         if (read != null
