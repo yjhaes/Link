@@ -1,0 +1,6 @@
+# Cache resilience 工作地图
+
+## 已作决定
+
+- [06：Redis 中断与旧数据恢复](issues/06-redis-failure-and-recovery.md) 已完成。以缓存停用启动配置及停止、排空旧实例为恢复入口，完成 Redis 恢复后清理整个跳转缓存命名空间，再恢复按需加载。旧结果和旧版本整体恢复不能自动维持即时可见。
+- 恢复步骤及压力边界见 [运行说明](../../docs/redis-recovery.md)。完整套件 109 项通过，两轴审查均由 GPT-6.1 Sol（high）完成，各 0 项发现。
