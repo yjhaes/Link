@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -24,6 +25,20 @@ import org.springframework.data.redis.core.script.RedisScript;
 class RedisRedirectCacheTest {
 
     private static final Instant NOW = Instant.parse("2026-09-28T12:00:00Z");
+
+    @Test
+    void disabledCacheCannotReadRefillOrConfirmCoordination() {
+        StringRedisTemplate redis = mock(StringRedisTemplate.class);
+        RedisRedirectCache cache = new RedisRedirectCache(redis, new ObjectMapper(),
+                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofMinutes(5), Duration.ofSeconds(30),
+                Duration.ofMinutes(5), Duration.ofSeconds(15), false);
+
+        assertThatThrownBy(() -> cache.find("Ab12")).isInstanceOf(IllegalStateException.class);
+        assertThat(cache.storeIfVersion("Ab12", "old-version", RedirectCacheRead.Status.NOT_FOUND, null)).isFalse();
+        assertThat(cache.deleteIfVersion("Ab12", "old-version")).isFalse();
+        assertThatThrownBy(() -> cache.replaceVersion("Ab12")).isInstanceOf(IllegalStateException.class);
+        verifyNoInteractions(redis);
+    }
 
     @Test
     void disabledTtlUsesIndependentMaximumAndKeepsBusinessExpiry() {
