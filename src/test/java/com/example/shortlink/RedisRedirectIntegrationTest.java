@@ -25,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -886,6 +887,10 @@ class RedisRedirectIntegrationTest {
     }
 
     private ConfigurableApplicationContext independentInstance(Class<?> configuration) {
+        return independentInstance(configuration, true);
+    }
+
+    private ConfigurableApplicationContext independentInstance(Class<?> configuration, boolean cacheEnabled) {
         return new SpringApplicationBuilder(LinkApplication.class, configuration)
                 .web(WebApplicationType.NONE)
                 .profiles("test")
@@ -895,7 +900,184 @@ class RedisRedirectIntegrationTest {
                         "--spring.data.redis.host=" + REDIS.getHost(),
                         "--spring.data.redis.port=" + REDIS.getFirstMappedPort(),
                         "--spring.sql.init.mode=never", "--spring.main.banner-mode=off",
-                        "--short-link.redirect-cache.load-wait=5s");
+                        "--short-link.redirect-cache.load-wait=5s",
+                        "--short-link.redirect-cache.enabled=" + cacheEnabled);
+    }
+
+    @Test
+    void realRedisTimeoutKeepsAllMySqlOutcomesAndCannotConfirmCreation() throws Exception {
+        insertMapping("Live", ORIGINAL_URL);
+        insertMapping("Off1", ORIGINAL_URL);
+        jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = 'Off1'");
+        insertExpiringMapping("Past", ORIGINAL_URL, LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        pauseRedis();
+        try {
+            assertRedirect("Live", ORIGINAL_URL);
+            mockMvc.perform(get("/s/Off1")).andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("LINK_DISABLED"));
+            mockMvc.perform(get("/s/Past")).andExpect(status().isGone())
+                    .andExpect(jsonPath("$.code").value("LINK_EXPIRED"));
+            mockMvc.perform(get("/s/None")).andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"));
+            mockMvc.perform(post("/api/links").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"originalUrl\":\"https://committed.example/\"}"))
+                    .andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("CREATE_CACHE_COORDINATION_UNCONFIRMED"))
+                    .andExpect(jsonPath("$.shortCode").isString());
+            assertThat(mappingCount()).isEqualTo(4);
+        } finally {
+            resumeRedis();
+        }
+        verify(shortLinkMapper).selectById("Live");
+        verify(redirectCache, never()).storeIfVersion(eq("Live"), anyString(), any(), any());
+        assertRedirect("Live", ORIGINAL_URL);
+        assertRedirect("Live", ORIGINAL_URL);
+        verify(shortLinkMapper, times(2)).selectById("Live");
+    }
+
+    @Test
+    void realRedisTimeoutDuringRefillDoesNotChangeTheDatabaseResult() throws Exception {
+        insertMapping("Fill", ORIGINAL_URL);
+        var query = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        AtomicBoolean first = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            Object snapshot = query.answer(invocation);
+            if (first.getAndSet(false)) pauseRedis();
+            return snapshot;
+        }).when(shortLinkMapper).selectById("Fill");
+        try {
+            assertRedirect("Fill", ORIGINAL_URL);
+        } finally {
+            resumeRedis();
+        }
+        verify(redirectCache).storeIfVersion(eq("Fill"), anyString(), eq(RedirectCacheRead.Status.REDIRECT), any());
+        // A timed out command may still execute after the server resumes; its effect is not assumed absent.
+        assertRedirect("Fill", ORIGINAL_URL);
+    }
+
+    @Test
+    void realRedisTimeoutDoesNotJoinAnOldMissingLoadAfterCreation() throws Exception {
+        String code = "Unkn";
+        CountDownLatch snapshotRead = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        var query = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        doAnswer(invocation -> {
+            Object snapshot = query.answer(invocation);
+            if (first.getAndSet(false)) {
+                assertThat(snapshot).isNull();
+                snapshotRead.countDown();
+                assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            return snapshot;
+        }).when(shortLinkMapper).selectById(code);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<Integer> old = executor.submit(() -> mockMvc.perform(get("/s/" + code))
+                .andReturn().getResponse().getStatus());
+        try {
+            assertThat(snapshotRead.await(5, TimeUnit.SECONDS)).isTrue();
+            insertMapping(code, ORIGINAL_URL);
+            shortLinkService.recoverCacheCoordination(code);
+            pauseRedis();
+            try {
+                assertRedirect(code, ORIGINAL_URL);
+                assertThat(old.isDone()).isFalse();
+                verify(redirectCache, never()).storeIfVersion(eq(code), anyString(),
+                        eq(RedirectCacheRead.Status.REDIRECT), any());
+            } finally {
+                resumeRedis();
+            }
+            release.countDown();
+            assertThat(old.get(5, TimeUnit.SECONDS)).isEqualTo(404);
+            assertRedirect(code, ORIGINAL_URL);
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void malformedUnknownAndInvalidTimeValuesCannotRedirectOrReject() throws Exception {
+        String code = "Bad2";
+        insertMapping(code, ORIGINAL_URL);
+        String valid = "{\"schemaVersion\":2,\"generation\":\"00000000-0000-0000-0000-000000000001\","
+                + "\"status\":\"REDIRECT\",\"originalUrl\":\"https://wrong.example/\",\"expiresAt\":null}";
+        for (String value : List.of("null", "[]", "{broken", "{\"originalUrl\":\"https://wrong.example/\"}",
+                valid.replace("\"schemaVersion\":2", "\"schemaVersion\":99"),
+                valid.replace("REDIRECT", "UNKNOWN"),
+                valid.replace("\"expiresAt\":null", "\"expiresAt\":\"not-a-time\""),
+                valid.replace("\"expiresAt\":null", "\"expiresAt\":42"),
+                valid.replace("REDIRECT", "NOT_FOUND"))) {
+            redisTemplate.opsForValue().set(cacheKey(code), value, Duration.ofMinutes(5));
+            assertRedirect(code, ORIGINAL_URL);
+            assertThat(redirectCache.find(code).entry().originalUrl()).isEqualTo(ORIGINAL_URL);
+        }
+        verify(shortLinkMapper, times(9)).selectById(code);
+    }
+
+    @Test
+    void controlledCleanupRemovesRestoredResultsAndVersionsBeforeDemandLoading() throws Exception {
+        String code = "Back";
+        mockMvc.perform(get("/s/" + code)).andExpect(status().isNotFound());
+        String oldSnapshot = redisTemplate.opsForValue().get(cacheKey(code));
+        String oldGeneration = redirectCache.find(code).generation();
+        insertMapping(code, ORIGINAL_URL);
+        shortLinkService.recoverCacheCoordination(code);
+        assertRedirect(code, ORIGINAL_URL);
+        // Restore the whole old entry, including its version, as an old snapshot would do.
+        redisTemplate.opsForValue().set(cacheKey(code), oldSnapshot, Duration.ofSeconds(30));
+        redisTemplate.opsForValue().set("shortlink:redirect:v1:" + code,
+                "{\"originalUrl\":\"https://old.example/\",\"expiresAt\":null}");
+        redisTemplate.opsForValue().set("other:keep", "unrelated");
+        try (ConfigurableApplicationContext disabled = independentInstance(CoalescingConfiguration.class, false)) {
+            ShortLinkService service = disabled.getBean(ShortLinkService.class);
+            assertThat(service.findOriginalUrl(code)).isEqualTo(ORIGINAL_URL);
+            assertThat(service.findOriginalUrl(code)).isEqualTo(ORIGINAL_URL);
+            verify(disabled.getBean(ShortLinkMapper.class), times(2)).selectById(code);
+            assertThatThrownBy(() -> service.recoverCacheCoordination(code)).isInstanceOf(IllegalStateException.class);
+            assertThat(redisTemplate.opsForValue().get(cacheKey(code))).isEqualTo(oldSnapshot);
+        }
+        // All callers are idle here; production must stop and drain every cache-enabled instance.
+        try (var keys = redisTemplate.scan(ScanOptions.scanOptions().match("shortlink:redirect:*").count(100).build())) {
+            keys.forEachRemaining(redisTemplate::delete);
+        }
+        assertThat(redisTemplate.hasKey(cacheKey(code))).isFalse();
+        assertThat(redisTemplate.hasKey("shortlink:redirect:v1:" + code)).isFalse();
+        assertThat(redisTemplate.opsForValue().get("other:keep")).isEqualTo("unrelated");
+        assertThat(redirectCache.storeIfVersion(code, oldGeneration, RedirectCacheRead.Status.NOT_FOUND, null)).isFalse();
+        assertRedirect(code, ORIGINAL_URL);
+        assertThat(redirectCache.find(code).generation()).isNotEqualTo(oldGeneration);
+        clearInvocations(shortLinkMapper);
+        assertRedirect(code, ORIGINAL_URL);
+        verify(shortLinkMapper, never()).selectById(code);
+    }
+
+    @Test
+    void differentMissingCodesStillQueryAndAllEntriesHaveFiniteTtl() throws Exception {
+        for (String code : List.of("Scan1", "Scan2", "Scan3", "Scan4")) {
+            mockMvc.perform(get("/s/" + code)).andExpect(status().isNotFound());
+            verify(shortLinkMapper).selectById(code);
+            assertThat(redisTemplate.getExpire(cacheKey(code), TimeUnit.MILLISECONDS))
+                    .isPositive().isLessThanOrEqualTo(30_000L);
+            mockMvc.perform(get("/s/" + code)).andExpect(status().isNotFound());
+            verify(shortLinkMapper).selectById(code);
+        }
+        for (String code : List.of("Hold1", "Hold2")) {
+            assertThat(redirectCache.find(code).status()).isEqualTo(RedirectCacheRead.Status.MISS);
+            assertThat(redisTemplate.getExpire(cacheKey(code), TimeUnit.MILLISECONDS))
+                    .isPositive().isLessThanOrEqualTo(CACHE_TTL_MILLIS);
+        }
+    }
+
+    private void pauseRedis() throws Exception {
+        // WRITE also pauses all Lua scripts, including the cache's read-or-initialize script.
+        assertThat(REDIS.execInContainer("redis-cli", "CLIENT", "PAUSE", "10000", "WRITE").getExitCode()).isZero();
+    }
+
+    private void resumeRedis() throws Exception {
+        assertThat(REDIS.execInContainer("redis-cli", "CLIENT", "UNPAUSE").getExitCode()).isZero();
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
+                assertThat(redisTemplate.execute((RedisCallback<String>) connection -> connection.ping())).isEqualTo("PONG"));
     }
 
     @Test

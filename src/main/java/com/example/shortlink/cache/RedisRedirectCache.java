@@ -79,6 +79,7 @@ public class RedisRedirectCache implements RedirectCache {
     private final long notFoundTtlMillis;
     private final long expiredTtlMillis;
     private final long disabledTtlMillis;
+    private boolean enabled = true;
 
     @Autowired
     public RedisRedirectCache(
@@ -88,8 +89,10 @@ public class RedisRedirectCache implements RedirectCache {
             @Value("${short-link.redirect-cache.ttl:5m}") Duration ttl,
             @Value("${short-link.redirect-cache.not-found-ttl:30s}") Duration notFoundTtl,
             @Value("${short-link.redirect-cache.expired-ttl:5m}") Duration expiredTtl,
-            @Value("${short-link.redirect-cache.disabled-ttl:15s}") Duration disabledTtl) {
+            @Value("${short-link.redirect-cache.disabled-ttl:15s}") Duration disabledTtl,
+            @Value("${short-link.redirect-cache.enabled:true}") boolean enabled) {
         this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, expiredTtl, disabledTtl, () -> ThreadLocalRandom.current().nextDouble());
+        this.enabled = enabled;
     }
 
     public RedisRedirectCache(
@@ -132,6 +135,7 @@ public class RedisRedirectCache implements RedirectCache {
 
     @Override
     public RedirectCacheRead find(String shortCode) {
+        requireEnabled();
         String key = keyFor(shortCode);
         for (int attempt = 0; attempt < 2; attempt++) {
             String generation = UUID.randomUUID().toString();
@@ -170,6 +174,9 @@ public class RedisRedirectCache implements RedirectCache {
             String generation,
             RedirectCacheRead.Status status,
             RedirectCacheEntry entry) {
+        if (!enabled) {
+            return false;
+        }
         validateBusinessResult(generation, status, entry);
         long entryTtlMillis = ttlMillisFor(status, entry);
         if (entryTtlMillis < 1) {
@@ -188,6 +195,7 @@ public class RedisRedirectCache implements RedirectCache {
 
     @Override
     public String replaceVersion(String shortCode) {
+        requireEnabled();
         String generation = UUID.randomUUID().toString();
         String placeholder = serialize(generation, RedirectCacheRead.Status.PLACEHOLDER, null);
         Long replaced = redisTemplate.execute(
@@ -203,6 +211,9 @@ public class RedisRedirectCache implements RedirectCache {
 
     @Override
     public boolean deleteIfVersion(String shortCode, String generation) {
+        if (!enabled) {
+            return false;
+        }
         Long deleted = redisTemplate.execute(
                 DELETE_IF_VERSION,
                 List.of(keyFor(shortCode)),
@@ -319,6 +330,12 @@ public class RedisRedirectCache implements RedirectCache {
 
     private String keyFor(String shortCode) {
         return KEY_PREFIX + shortCode;
+    }
+
+    private void requireEnabled() {
+        if (!enabled) {
+            throw new IllegalStateException("Redirect cache is disabled; coordination cannot be confirmed.");
+        }
     }
 
 }
