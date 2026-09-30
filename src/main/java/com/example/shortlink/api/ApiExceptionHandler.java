@@ -1,6 +1,7 @@
 package com.example.shortlink.api;
 
 import com.example.shortlink.service.error.InvalidRequestException;
+import com.example.shortlink.service.error.CreateCacheCoordinationException;
 import com.example.shortlink.service.error.LinkDisabledException;
 import com.example.shortlink.service.error.LinkExpiredException;
 import com.example.shortlink.service.error.LinkNotFoundException;
@@ -16,6 +17,15 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(CreateCacheCoordinationException.class)
+    public ResponseEntity<CreateCacheCoordinationError> handleCreateCoordinationFailure(
+            CreateCacheCoordinationException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .cacheControl(CacheControl.noStore())
+                .body(new CreateCacheCoordinationError("CREATE_CACHE_COORDINATION_UNCONFIRMED",
+                        exception.getMessage(), exception.shortCode()));
+    }
 
     @ExceptionHandler(LinkNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(LinkNotFoundException exception) {
