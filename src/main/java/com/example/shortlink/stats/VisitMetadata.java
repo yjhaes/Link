@@ -50,8 +50,9 @@ public final class VisitMetadata {
                 if (close < 0) return null;
                 String suffix = host.substring(close + 1);
                 if (!validPort(suffix)) return null;
+                uri.parseServerAuthority();
                 String literal = host.substring(1, close);
-                if (!literal.matches("[0-9a-fA-F:]+") || !literal.contains(":")) return null;
+                if (!literal.matches("[0-9a-fA-F:.]+") || !literal.contains(":")) return null;
                 return InetAddress.getByName(literal).getHostAddress().toLowerCase(Locale.ROOT);
             }
             int colon = host.lastIndexOf(':');
@@ -63,6 +64,9 @@ public final class VisitMetadata {
             host = IDN.toASCII(host, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
             if (host.isEmpty() || host.length() > 253) return null;
             for (String label : host.split("\\.", -1)) if (label.isEmpty()) return null;
+            String userInfo = authority.substring(0, authority.lastIndexOf('@') + 1);
+            String port = colon >= 0 ? authority.substring(authority.lastIndexOf(':')) : "";
+            new URI(uri.getScheme() + "://" + userInfo + host + port).parseServerAuthority();
             return host;
         } catch (Exception failure) { return null; }
     }

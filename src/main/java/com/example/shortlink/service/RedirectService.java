@@ -143,7 +143,7 @@ public class RedirectService {
         }
         RedirectCacheEntry entry = result.entry();
         Instant decidedAt = clock.instant();
-        if (entry != null && entry.expiresAt() != null && !decidedAt.isBefore(entry.expiresAt())) {
+        if (isExpired(entry == null ? null : entry.expiresAt(), decidedAt)) {
             if (result.generation() != null) {
                 try {
                     redirectCache.storeIfVersion(code, result.generation(), RedirectCacheRead.Status.EXPIRED, null);
@@ -177,7 +177,11 @@ public class RedirectService {
     }
 
     private boolean isExpired(Instant expiresAt) {
-        return expiresAt != null && !clock.instant().isBefore(expiresAt);
+        return expiresAt != null && isExpired(expiresAt, clock.instant());
+    }
+
+    private boolean isExpired(Instant expiresAt, Instant checkedAt) {
+        return expiresAt != null && !checkedAt.isBefore(expiresAt);
     }
 
 }

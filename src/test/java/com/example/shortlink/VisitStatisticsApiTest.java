@@ -203,6 +203,17 @@ class VisitStatisticsApiTest {
     }
 
     @Test
+    void refererRejectsMalformedAuthorityAndKeepsLegalMappedIpv6() throws Exception {
+        http.perform(get("/s/Ab12").header("Referer", "https://a@b@example.com/private"))
+                .andExpect(status().isFound());
+        assertThat(db.queryForObject("SELECT referer_host FROM short_link_visit_log", String.class)).isNull();
+        db.update("DELETE FROM short_link_visit_log");
+        http.perform(get("/s/Ab12").header("Referer", "https://[::ffff:192.168.1.1]/private"))
+                .andExpect(status().isFound());
+        assertThat(db.queryForObject("SELECT referer_host FROM short_link_visit_log", String.class)).isEqualTo("192.168.1.1");
+    }
+
+    @Test
     void ipv6AndInvalidOptionalMetadataDoNotBlockRedirects() throws Exception {
         http.perform(get("/s/Ab12").header("Referer", "about:blank").with(request -> {
             request.setRemoteAddr("2001:db8:1234:5678::99%eth0"); return request;
