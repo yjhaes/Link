@@ -41,6 +41,17 @@ class VisitStatisticsApiTest {
     com.zaxxer.hikari.HikariDataSource statsPool;
     @Autowired javax.sql.DataSource corePool;
     @Autowired com.example.shortlink.stats.VisitWriteObservations observations;
+
+    @Test
+    void enabledCollectionIsReportedAndStatisticsRequestsNeverCollectVisits() throws Exception {
+        http.perform(get("/s/Ab12")).andExpect(status().isFound());
+        http.perform(get("/api/internal/links/Ab12/stats")
+                        .header("X-Internal-Token", "0123456789abcdef0123456789abcdef"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.collectionEnabled").value(true))
+                .andExpect(jsonPath("$.pv").value(1)).andExpect(jsonPath("$.uv").value(1))
+                .andExpect(header().doesNotExist("Set-Cookie"));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1);
+    }
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name = "statsDataSource")
     com.zaxxer.hikari.HikariDataSource controlledStatsPool;
 

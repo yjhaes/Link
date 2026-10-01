@@ -20,6 +20,15 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
+    @ExceptionHandler(com.example.shortlink.stats.StatsQueryException.class)
+    public ResponseEntity<ApiError> handleStatsQuery(com.example.shortlink.stats.StatsQueryException exception) {
+        return switch (exception.reason()) {
+            case BUSY -> error(HttpStatus.SERVICE_UNAVAILABLE, "STATS_BUSY", "Statistics query capacity is busy.");
+            case TIMEOUT -> error(HttpStatus.SERVICE_UNAVAILABLE, "STATS_QUERY_TIMEOUT", "Statistics query timed out.");
+            case DATABASE -> error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "Statistics query failed.");
+        };
+    }
+
     @ExceptionHandler(StateCacheCoordinationException.class)
     public ResponseEntity<StateCacheCoordinationError> handleStateCoordinationFailure(
             StateCacheCoordinationException exception) {
