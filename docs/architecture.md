@@ -13,6 +13,7 @@ src/main/java/com/example/shortlink/
   shortcode/           发号契约与确定性短码编码规则
   persistence/         MyBatis-Plus 映射、MySQL 发号与映射保存错误分类
   cache/               跳转缓存契约、读取状态、快照、配置与 Redis 实现
+  stats/               独立访问事件、身份与元数据规范化、统计池、同步日志记录
 src/main/resources/
   application.yml      数据库、Redis 和服务地址配置
   schema.sql           MySQL 表结构
@@ -28,6 +29,12 @@ src/test/resources/
 ```
 
 ## 模块与依赖
+
+`RedirectDecision` 携带原始 URL 和最终逐请求检查时冻结的时刻。HTTP 边界的
+`VisitCollection` 仅在正常 GET 决定后识别 Cookie、摘要和脱敏，再将独立 `VisitEvent`
+交给 `VisitRecorder`。`MySqlVisitRecorder` 使用显式统计池、容量 2 的立即准入和独立
+自动提交，不加入核心事务、不重新读取映射。统计配置显式声明主核心池，保留原有
+MyBatis/JDBC/事务及初始化归属。详见 [采集部署说明](visit-collection.md)。
 
 管理访问边界位于 `api`：`@InternalManagement` 标记控制器方法或整个控制器，`InternalManagementAccess` 在 MVC 参数与请求体解析前通过独立配置的 `X-Internal-Token` 精确安全比较鉴权。未配置关闭、拒绝无业务调用，并统一设置 `no-store`。现有状态 PUT 使用该标记；后续内部统计控制器可复用它，包含 GET 隐式支持的 HEAD。令牌不进入业务服务，公开创建和跳转无需管理令牌。访问控制规则见 [ADR-0006](adr/0006-synchronous-visit-statistics.md)。
 

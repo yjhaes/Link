@@ -109,6 +109,13 @@ class ShortLinkApiTest {
     }
 
     @Test
+    void collectionDefaultsToOffAndLeavesRedirectWithoutVisitorCookie() throws Exception {
+        insertMapping("Ab12", ORIGINAL_URL);
+        mockMvc.perform(get("/s/Ab12")).andExpect(status().isFound())
+                .andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    @Test
     void disablingThroughTheApiReturnsTheCommittedStateAndStopsRedirecting() throws Exception {
         insertMapping("Ab12", ORIGINAL_URL);
         mockMvc.perform(authorizedStateRequest("Ab12")

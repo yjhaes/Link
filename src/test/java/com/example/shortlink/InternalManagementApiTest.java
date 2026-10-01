@@ -185,6 +185,13 @@ class InternalManagementApiTest {
     @Import({ShortLinkCreationService.class, ShortLinkStateService.class, RedirectService.class,
             MySqlShortLinkWriter.class, PermutedShortCodeEncoder.class, FutureManagementController.class})
     static class WebConfiguration {
+        @Bean com.example.shortlink.stats.VisitStatsProperties visitStatsProperties() {
+            return new com.example.shortlink.stats.VisitStatsProperties(
+                    false, null, null, null, null, null, null, null, null);
+        }
+        @Bean com.example.shortlink.stats.VisitRecorder visitRecorder() {
+            return mock(com.example.shortlink.stats.VisitRecorder.class);
+        }
         @Bean ShortLinkMapper mapper() { return mock(ShortLinkMapper.class); }
         @Bean RedirectCache cache() { return mock(RedirectCache.class); }
         @Bean PlatformTransactionManager transactions() { return mock(PlatformTransactionManager.class); }

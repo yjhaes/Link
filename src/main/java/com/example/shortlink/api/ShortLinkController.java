@@ -25,15 +25,18 @@ public class ShortLinkController {
     private final RedirectService redirectService;
     private final ShortLinkStateService stateService;
     private final String baseUrl;
+    private final VisitCollection visits;
 
     public ShortLinkController(
             ShortLinkCreationService creationService,
             RedirectService redirectService,
             ShortLinkStateService stateService,
+            VisitCollection visits,
             @Value("${short-link.base-url}") String baseUrl) {
         this.creationService = creationService;
         this.redirectService = redirectService;
         this.stateService = stateService;
+        this.visits = visits;
         this.baseUrl = baseUrl.replaceAll("/+$", "");
     }
 
@@ -59,11 +62,13 @@ public class ShortLinkController {
     }
 
     @GetMapping("/s/{code}")
-    public ResponseEntity<Void> redirect(@PathVariable String code) {
-        String originalUrl = redirectService.findOriginalUrl(code);
-        return ResponseEntity.status(302)
-                .header(HttpHeaders.LOCATION, originalUrl)
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .build();
+    public ResponseEntity<Void> redirect(@PathVariable String code, jakarta.servlet.http.HttpServletRequest request) {
+        var decision = redirectService.decide(code);
+        var response = ResponseEntity.status(302)
+                .header(HttpHeaders.LOCATION, decision.originalUrl())
+                .header(HttpHeaders.CACHE_CONTROL, "no-store");
+        String cookie = visits.collect(code, decision, request);
+        if (cookie != null) response.header(HttpHeaders.SET_COOKIE, cookie);
+        return response.build();
     }
 }

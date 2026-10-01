@@ -63,6 +63,17 @@ class ShortLinkUseCasesTest {
     }
 
     @Test
+    void redirectDecisionFreezesTheFinalCheckInstant() {
+        when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.result(
+                RedirectCacheRead.Status.REDIRECT, GENERATION,
+                new RedirectCacheEntry("https://example.com/", BASE_TIME.plusSeconds(1))));
+        RedirectDecision decision = redirectService.decide("Ab12");
+        assertThat(decision.originalUrl()).isEqualTo("https://example.com/");
+        assertThat(decision.decidedAt()).isEqualTo(BASE_TIME);
+        verify(shortLinkMapper, never()).selectById(anyString());
+    }
+
+    @Test
     void disabledHitChecksExpiryWithoutReadingMySqlOrRenewingBeforeExpiry() {
         for (Instant expiresAt : new Instant[]{null, BASE_TIME.plusNanos(1), BASE_TIME, BASE_TIME.minusNanos(1)}) {
             org.mockito.Mockito.reset(redirectCache);
