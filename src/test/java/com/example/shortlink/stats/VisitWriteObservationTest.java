@@ -84,4 +84,3 @@ class VisitWriteObservationTest {
         } finally { logger.detachAppender(logs); logs.stop(); }
     }
 }
-
