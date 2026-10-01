@@ -7,6 +7,7 @@ import com.example.shortlink.cache.RedirectCacheRead;
 import com.example.shortlink.service.CreatedShortLink;
 import com.example.shortlink.service.ShortLinkCreationService;
 import com.example.shortlink.service.RedirectService;
+import com.example.shortlink.service.ShortLinkStateService;
 import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import com.example.shortlink.persistence.ShortLinkEntity;
@@ -43,6 +44,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -57,6 +59,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.AdditionalAnswers.delegatesTo;
@@ -79,6 +82,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -129,6 +133,12 @@ class RedisRedirectIntegrationTest {
 
     @MockitoSpyBean
     private ShortLinkMapper shortLinkMapper;
+
+    @Autowired
+    private ShortLinkStateService stateService;
+
+    @MockitoSpyBean
+    private Clock clock;
 
     @DynamicPropertySource
     static void configureContainers(DynamicPropertyRegistry registry) {
@@ -619,6 +629,271 @@ class RedisRedirectIntegrationTest {
         assertThat(replacement.path("status").asText()).isEqualTo("PLACEHOLDER");
         assertThat(replacement.path("generation").asText()).isEqualTo(read.generation());
         assertThat(ttlMillis).isPositive().isLessThanOrEqualTo(CACHE_TTL_MILLIS);
+    }
+
+    @Test
+    void enabledStateApiReplacesBothCachedRedirectsAndCachedDisabledResults() throws Exception {
+        String code = "Sta1";
+        LocalDateTime expiry = LocalDateTime.now(ZoneOffset.UTC).plusHours(1).truncatedTo(ChronoUnit.MILLIS);
+        insertExpiringMapping(code, ORIGINAL_URL, expiry);
+        assertRedirect(code, ORIGINAL_URL);
+        performStateChange(code, false).andExpect(status().isOk())
+                .andExpect(jsonPath("$.shortCode").value(code))
+                .andExpect(jsonPath("$.enabled").value(false))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        assertStateRedirect(code, false);
+        assertStateRedirect(code, false);
+        performStateChange(code, true).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
+        assertRedirect(code, ORIGINAL_URL);
+        assertThat(jdbcTemplate.queryForObject("SELECT expires_at FROM short_link WHERE short_code = ?",
+                LocalDateTime.class, code)).isEqualTo(expiry);
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_code_issuance", Long.class)).isZero();
+    }
+
+    @Test
+    void disablingInAnotherInstanceRejectsLateRedirectRefill() throws Exception {
+        assertStateChangeRejectsLateSnapshot(true);
+    }
+
+    @Test
+    void enablingInAnotherInstanceRejectsLateDisabledRefill() throws Exception {
+        assertStateChangeRejectsLateSnapshot(false);
+    }
+
+    private void assertStateChangeRejectsLateSnapshot(boolean initiallyEnabled) throws Exception {
+        String code = initiallyEnabled ? "Sta2" : "Sta3";
+        insertMapping(code, ORIGINAL_URL);
+        if (!initiallyEnabled) jdbcTemplate.update("UPDATE short_link SET enabled = false WHERE short_code = ?", code);
+        CountDownLatch snapshotRead = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        AtomicReference<Boolean> accepted = new AtomicReference<>();
+        var query = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        doAnswer(invocation -> {
+            Object snapshot = query.answer(invocation);
+            if (first.getAndSet(false)) {
+                snapshotRead.countDown();
+                if (!resume.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Old query timed out");
+            }
+            return snapshot;
+        }).when(shortLinkMapper).selectById(code);
+        RedirectCacheRead.Status oldStatus = initiallyEnabled
+                ? RedirectCacheRead.Status.REDIRECT : RedirectCacheRead.Status.DISABLED;
+        doAnswer(invocation -> {
+            Boolean stored = (Boolean) invocation.callRealMethod();
+            accepted.set(stored);
+            return stored;
+        }).when(redirectCache).storeIfVersion(eq(code), anyString(), eq(oldStatus), any());
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try (ConfigurableApplicationContext maintainer = independentCreator()) {
+            Future<Integer> old = executor.submit(() -> mockMvc.perform(get("/s/" + code))
+                    .andReturn().getResponse().getStatus());
+            assertThat(snapshotRead.await(5, TimeUnit.SECONDS)).isTrue();
+            maintainer.getBean(ShortLinkStateService.class).setEnabled(code, !initiallyEnabled);
+            Future<?> current = executor.submit(() -> { assertStateRedirect(code, !initiallyEnabled); return null; });
+            current.get(2, TimeUnit.SECONDS);
+            resume.countDown();
+            assertThat(old.get(5, TimeUnit.SECONDS)).isEqualTo(initiallyEnabled ? 302 : 403);
+            assertThat(accepted.get()).isFalse();
+            assertStateRedirect(code, !initiallyEnabled);
+        } finally {
+            resume.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void lateRetryAfterAResponseLossCannotUndoANewerReverseOperation() throws Exception {
+        String code = "Sta4";
+        insertMapping(code, ORIGINAL_URL);
+        CountDownLatch oldCommit = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            if (first.getAndSet(false)) {
+                assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                        Boolean.class, code)).isFalse();
+                oldCommit.countDown();
+                if (!resume.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Old coordination timed out");
+                invocation.callRealMethod();
+                throw new IllegalStateException("Redis executed; response lost");
+            }
+            return invocation.callRealMethod();
+        }).when(redirectCache).replaceVersion(code);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> old = executor.submit(() -> {
+                performStateChange(code, false).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(false));
+                return null;
+            });
+            assertThat(oldCommit.await(5, TimeUnit.SECONDS)).isTrue();
+            performStateChange(code, true).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
+            assertRedirect(code, ORIGINAL_URL);
+            resume.countDown();
+            old.get(5, TimeUnit.SECONDS);
+            assertRedirect(code, ORIGINAL_URL);
+            verify(shortLinkMapper).updateEnabled(code, false);
+            verify(shortLinkMapper).updateEnabled(code, true);
+        } finally {
+            resume.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void overlappingSameTargetRequestsOnlyCommitOneStateChange() throws Exception {
+        String code = "Sta5";
+        insertMapping(code, ORIGINAL_URL);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch secondEntered = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        AtomicInteger order = new AtomicInteger();
+        var query = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        doAnswer(invocation -> {
+            int position = order.incrementAndGet();
+            if (position == 2) secondEntered.countDown();
+            Object mapping = query.answer(invocation);
+            if (position == 1) {
+                locked.countDown();
+                if (!resume.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Row lock timed out");
+            }
+            return mapping;
+        }).when(shortLinkMapper).selectForUpdate(code);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Integer> first = executor.submit(() -> performStateChange(code, false).andReturn().getResponse().getStatus());
+            assertThat(locked.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<Integer> second = executor.submit(() -> performStateChange(code, false).andReturn().getResponse().getStatus());
+            assertThat(secondEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            resume.countDown();
+            assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(200);
+            assertThat(second.get(5, TimeUnit.SECONDS)).isEqualTo(409);
+            assertStateRedirect(code, false);
+            verify(shortLinkMapper).updateEnabled(code, false);
+        } finally {
+            resume.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void aRequestWaitingForTheRowLockChecksExpiryAfterTheWait() throws Exception {
+        String code = "Sta6";
+        Instant before = Instant.parse("2026-10-01T00:00:00Z");
+        Instant expiry = before.plusSeconds(60);
+        doReturn(before).when(clock).instant();
+        insertExpiringMapping(code, ORIGINAL_URL, LocalDateTime.ofInstant(expiry, ZoneOffset.UTC));
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        var query = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        doAnswer(invocation -> { entered.countDown(); return query.answer(invocation); })
+                .when(shortLinkMapper).selectForUpdate(code);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> holder = executor.submit(() -> {
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ? FOR UPDATE",
+                            Boolean.class, code);
+                    held.countDown();
+                    try {
+                        if (!resume.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("Row lock timed out");
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                });
+                return null;
+            });
+            assertThat(held.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<?> operation = executor.submit(() -> {
+                performStateChange(code, false).andExpect(status().isGone())
+                        .andExpect(jsonPath("$.code").value("LINK_EXPIRED"));
+                return null;
+            });
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            doReturn(expiry).when(clock).instant();
+            resume.countDown();
+            holder.get(5, TimeUnit.SECONDS);
+            operation.get(5, TimeUnit.SECONDS);
+            assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                    Boolean.class, code)).isTrue();
+            verify(shortLinkMapper, never()).updateEnabled(code, false);
+            verify(redirectCache, never()).replaceVersion(code);
+        } finally {
+            resume.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void rollingBackACallerTransactionCannotUndoAnAlreadyCoordinatedStateChange() throws Exception {
+        String code = "Sta7";
+        insertMapping(code, ORIGINAL_URL);
+        doAnswer(invocation -> {
+            // Coordination must see the committed state from a separate, non-transactional connection.
+            assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                    Boolean.class, code)).isFalse();
+            return invocation.callRealMethod();
+        }).when(redirectCache).replaceVersion(code);
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            stateService.setEnabled(code, false);
+            status.setRollbackOnly();
+        });
+        assertStateRedirect(code, false);
+        performStateChange(code, false).andExpect(status().isConflict());
+    }
+
+    @Test
+    void realRedisTimeoutReportsCommittedStateAndInternalRecoveryDoesNotRewriteIt() throws Exception {
+        String code = "Sta8";
+        insertMapping(code, ORIGINAL_URL);
+        assertRedirect(code, ORIGINAL_URL);
+        pauseRedis();
+        try {
+            performStateChange(code, false).andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("LINK_STATE_CACHE_COORDINATION_UNCONFIRMED"))
+                    .andExpect(jsonPath("$.shortCode").value(code));
+            assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                    Boolean.class, code)).isFalse();
+            verify(redirectCache, times(3)).replaceVersion(code);
+            verify(shortLinkMapper).updateEnabled(code, false);
+        } finally {
+            resumeRedis();
+        }
+        shortLinkService.recoverCacheCoordination(code);
+        assertStateRedirect(code, false);
+        performStateChange(code, false).andExpect(status().isConflict());
+    }
+
+    @Test
+    void failedDatabaseStateUpdateRollsBackWithoutReportingPartialCompletion() throws Exception {
+        String code = "Sta9";
+        insertMapping(code, ORIGINAL_URL);
+        var update = mockingDetails(shortLinkMapper).getMockCreationSettings().getDefaultAnswer();
+        doAnswer(invocation -> {
+            update.answer(invocation);
+            throw new IllegalStateException("DB failure after update");
+        }).when(shortLinkMapper).updateEnabled(code, false);
+        performStateChange(code, false).andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+        assertRedirect(code, ORIGINAL_URL);
+        verify(redirectCache, never()).replaceVersion(code);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions performStateChange(String code, boolean enabled) throws Exception {
+        return mockMvc.perform(put("/api/links/{code}/enabled", code).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":" + enabled + "}"));
+    }
+
+    private void assertStateRedirect(String code, boolean enabled) throws Exception {
+        if (enabled) {
+            assertRedirect(code, ORIGINAL_URL);
+        } else {
+            mockMvc.perform(get("/s/" + code)).andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("LINK_DISABLED"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+        }
     }
 
     @Test

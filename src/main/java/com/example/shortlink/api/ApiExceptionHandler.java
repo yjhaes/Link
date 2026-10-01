@@ -5,6 +5,8 @@ import com.example.shortlink.service.error.CreateCacheCoordinationException;
 import com.example.shortlink.service.error.LinkDisabledException;
 import com.example.shortlink.service.error.LinkExpiredException;
 import com.example.shortlink.service.error.LinkNotFoundException;
+import com.example.shortlink.service.error.LinkStateConflictException;
+import com.example.shortlink.service.error.StateCacheCoordinationException;
 import com.example.shortlink.service.error.ShortCodeGenerationException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -17,6 +19,15 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(StateCacheCoordinationException.class)
+    public ResponseEntity<StateCacheCoordinationError> handleStateCoordinationFailure(
+            StateCacheCoordinationException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .cacheControl(CacheControl.noStore())
+                .body(new StateCacheCoordinationError("LINK_STATE_CACHE_COORDINATION_UNCONFIRMED",
+                        exception.getMessage(), exception.shortCode()));
+    }
 
     @ExceptionHandler(CreateCacheCoordinationException.class)
     public ResponseEntity<CreateCacheCoordinationError> handleCreateCoordinationFailure(
@@ -40,6 +51,13 @@ public class ApiExceptionHandler {
     @ExceptionHandler(LinkDisabledException.class)
     public ResponseEntity<ApiError> handleDisabled(LinkDisabledException exception) {
         return error(HttpStatus.FORBIDDEN, "LINK_DISABLED", "Short link is disabled.");
+    }
+
+    @ExceptionHandler(LinkStateConflictException.class)
+    public ResponseEntity<ApiError> handleStateConflict(LinkStateConflictException exception) {
+        return error(HttpStatus.CONFLICT,
+                exception.enabled() ? "LINK_ALREADY_ENABLED" : "LINK_ALREADY_DISABLED",
+                exception.enabled() ? "Short link is already enabled." : "Short link is already disabled.");
     }
 
     @ExceptionHandler({InvalidRequestException.class, MethodArgumentNotValidException.class,

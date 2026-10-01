@@ -1,6 +1,6 @@
 # Short Link
 
-一个用于 Java 后端实习项目的短链接服务。当前实现覆盖匿名创建永久与限时短链接、MySQL 持久化、302 跳转，以及到期和禁用状态判断。
+一个用于 Java 后端实习项目的短链接服务。当前实现覆盖匿名创建永久与限时短链接、MySQL 持久化、302 跳转，以及内部启用/禁用接口、到期判断和有限缓存同步重试。
 
 ## 技术栈
 
@@ -95,44 +95,55 @@ applicationContext.getBean(ShortLinkCreationService.class).recoverCacheCoordinat
 
 访问未过期且启用的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`；未过期但已禁用时返回 `403 LINK_DISABLED`。过期判断优先于禁用状态。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
 
-维护者可直接在 MySQL 中禁用或重新启用映射；当前没有对应的公开 API。每次维护都必须先确认 MySQL 状态变更已提交，再在受信任内部应用上下文调用同一短码的 `recoverCacheCoordination`，正常返回后才报告维护完成。禁用示例：
+内部管理者通过以下接口禁用映射；启用时将 `enabled` 改为 `true`。本次不增加页面按钮或鉴权体系，该接口应仅向受信任内部管理流量开放：
 
-```sql
-START TRANSACTION;
-UPDATE short_link SET enabled = FALSE WHERE short_code = 'Ab12';
-COMMIT;
+```http
+PUT /api/links/Ab12/enabled
+Content-Type: application/json
+
+{"enabled":false}
 ```
 
-MySQL 提交后，在连接同一 MySQL 主写库及 Redis 的内部维护代码中协调缓存：
+`enabled` 必须是真正的 JSON 布尔值，不能省略、设为 `null`、字符串或数字。成功返回 `200`、`Cache-Control: no-store`，以及：
 
-```java
-applicationContext.getBean(ShortLinkCreationService.class).recoverCacheCoordination("Ab12");
+```json
+{"shortCode":"Ab12","enabled":false}
 ```
 
-重新启用时同样先提交 MySQL，再调用上述协调入口：
+响应表示本次已提交操作的状态，后续合法变更仍可能覆盖它。短码、原始 URL 和有效期保持不变。非法或不存在短码返回 `404 LINK_NOT_FOUND`；已过期映射的任何状态操作返回 `410 LINK_EXPIRED`，到期当刻也拒绝，过期优先于重复状态；重复启用和重复禁用分别返回 `409 LINK_ALREADY_ENABLED`、`409 LINK_ALREADY_DISABLED`。这些业务拒绝不更新数据库、不同步缓存，均带 `no-store`。无效请求体返回 `400 INVALID_REQUEST`。
 
-```sql
-START TRANSACTION;
-UPDATE short_link SET enabled = TRUE WHERE short_code = 'Ab12';
-COMMIT;
+同一码的判断和更新使用 MySQL 行锁事务，等待锁之后重新判断当前状态和有效期；并发操作按数据库提交顺序生效。数据库只更新一次，提交后轮换缓存版本并清除结果，确认成功才返回 `200`。完成后新开始的访问看到当前状态；重叠的旧访问允许按原快照完成，其迟到旧回填会被版本校验拒绝。自然过期与后续合法变更仍正常生效。
+
+缓存同步在当前请求内总共最多尝试三次，两次重试前分别等待 50ms、100ms；任何一次成功立即停止。只重试缓存版本轮换，不重写数据库状态，所以早期操作的延迟重试不会覆盖后来提交的反向操作。创建接口的原有同步策略保持不变。
+
+三次均未确认成功时，数据库仍保留已提交状态，返回专用 `503` 和 `no-store`：
+
+```json
+{
+  "code":"LINK_STATE_CACHE_COORDINATION_UNCONFIRMED",
+  "message":"Database state update committed; cache coordination unconfirmed.",
+  "shortCode":"Ab12"
+}
 ```
 
-若协调入口异常返回，记录并报告缓存协调未确认，Redis 恢复后按同一短码重试。MySQL 状态变更已经提交，不要因此回滚或反向修改 MySQL，也不要用简单手工删除 Key 替代该受控完成步骤。
+收到 `503` 后保留短码。服务不在后台继续尝试，也没有持久恢复任务；长故障或进程退出后不保证自动恢复。等待被中断时保留线程中断状态并停止尝试，同样报告数据库已提交、协调未确认。Redis 的 200ms 单次超时与累计 150ms 等待不是整个 HTTP 请求的耗时上限。
 
-维护记录分两步报告：“数据库状态变更已提交”和“缓存协调已确认、操作完成”。仅 COMMIT、仅 DEL 或绕过受控流程的直接 SQL 都不代表阶段 4 操作完成。协调重试仅轮换版本并清除结果，不重设之前的 enabled 值、不重新创建映射。
+恢复时仍由受信任内部应用上下文调用先前的 `recoverCacheCoordination(shortCode)`，仅同步缓存，不回写旧 enabled。重复 PUT 同一状态仍会返回 `409`，不能代替协调恢复。同步超时可能发生在 Redis 已执行之后，因此恢复允许安全重复。数据库更新失败或提交未确认使用普通 `500`，不同步缓存，不能声明状态已提交。
+
+历史直接 SQL 维护仍必须区分“数据库状态变更已提交”和“缓存协调已确认、操作完成”；仅 COMMIT、仅 DEL 或绕过受控流程都不代表维护完成。直接 SQL 绕过接口业务校验，不应作为普通管理操作或过期后修改状态的依据。
 
 未过期的禁用映射缓存独立 DISABLED 结果，保留 expiresAt；`short-link.redirect-cache.disabled-ttl`（环境变量 `SHORT_LINK_DISABLED_CACHE_TTL`）默认上限 15 秒，实际抖动为 13.5～15 秒，命中不续期。命中时业务到期则返回 410，并按版本条件转换为 EXPIRED。
 
-禁用不会删除映射或释放短码；重新启用同一映射后，短码可恢复跳转。重新启用已过期的映射仍返回 `410 LINK_EXPIRED`。完成 MySQL 提交并确认缓存版本轮换后，新请求会加载当前数据库状态；先前查询不能再用旧版本回填，与维护操作重叠的请求仍可能按之前读到的快照完成。
+禁用不会删除映射或释放短码；未过期映射重新启用后原短链接恢复跳转。启用与过期仍为独立状态，但管理 API 禁止过期后的启用和禁用。已提交的合法操作在同步重试期间过期仍继续同步，后续跳转按有效期返回 `410 LINK_EXPIRED`。
 
-将来若增加应用内启用、禁用、删除映射或修改原始 URL／有效时长的操作，也必须在对应的 MySQL 事务提交后轮换该短码的缓存版本；本项目当前不增加这些接口。
+将来若增加删除映射或修改原始 URL／有效时长的操作，也必须在对应的 MySQL 事务提交后轮换该短码的缓存版本；本次不增加这些接口。状态管理与有限重试的决策见 [ADR-0005](docs/adr/0005-enabled-state-api.md)，缓存故障边界仍见 [受控恢复说明](docs/redis-recovery.md)。
 
 ## 测试
 
-不依赖外部 MySQL 或 Redis 的五组测试可单独运行：
+不依赖外部 MySQL 或 Redis 的六组测试可单独运行：
 
 ```powershell
-.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest' test
+.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,ShortLinkStateServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest' test
 ```
 
 `PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集除上述测试外还包含下述两个集成测试。
