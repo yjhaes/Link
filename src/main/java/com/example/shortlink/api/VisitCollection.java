@@ -22,11 +22,13 @@ public class VisitCollection {
     private final VisitRecorder recorder;
     private final VisitIdentity identity;
     private final boolean secure;
+    private final VisitWriteObservations observations;
 
     public VisitCollection(VisitStatsProperties properties, VisitRecorder recorder,
-            @Value("${short-link.base-url}") String baseUrl) {
+            @Value("${short-link.base-url}") String baseUrl, VisitWriteObservations observations) {
         this.properties = properties;
         this.recorder = recorder;
+        this.observations = observations;
         this.identity = properties.enabled() ? new VisitIdentity(properties.visitorKey(), properties.visitorKeyVersion()) : null;
         this.secure = "https".equalsIgnoreCase(java.net.URI.create(baseUrl).getScheme());
     }
@@ -55,6 +57,7 @@ public class VisitCollection {
                     VisitMetadata.peerNetwork(request.getRemoteAddr()), VisitMetadata.userAgent(request.getHeader("User-Agent")),
                     VisitMetadata.refererHost(request.getHeader("Referer"))));
         } catch (Exception failure) {
+            observations.collectionFailed();
             LOG.warn("Visit collection failed: category=collection");
         }
         return cookie;

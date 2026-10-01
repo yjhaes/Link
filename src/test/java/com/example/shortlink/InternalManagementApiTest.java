@@ -185,6 +185,9 @@ class InternalManagementApiTest {
     @Import({ShortLinkCreationService.class, ShortLinkStateService.class, RedirectService.class,
             MySqlShortLinkWriter.class, PermutedShortCodeEncoder.class, FutureManagementController.class})
     static class WebConfiguration {
+        @Bean com.example.shortlink.stats.VisitWriteObservations visitWriteObservations() {
+            return new com.example.shortlink.stats.VisitWriteObservations(mock(javax.sql.DataSource.class));
+        }
         @Bean com.example.shortlink.stats.VisitStatsProperties visitStatsProperties() {
             return new com.example.shortlink.stats.VisitStatsProperties(
                     false, null, null, null, null, null, null, null, null);
