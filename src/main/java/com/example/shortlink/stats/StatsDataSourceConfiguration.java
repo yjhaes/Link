@@ -29,10 +29,11 @@ public class StatsDataSourceConfiguration {
         pool.setInitializationFailTimeout(-1);
         pool.setConnectionTimeout(properties.connectionTimeoutMs());
         pool.setValidationTimeout(properties.validationTimeoutMs());
-        pool.addDataSourceProperty("connectTimeout", properties.connectTimeoutMs());
-        pool.addDataSourceProperty("socketTimeout", properties.socketTimeoutMs());
+        // DriverDataSource passes Properties through; Connector/J reads string values.
+        pool.addDataSourceProperty("connectTimeout", properties.connectTimeoutMs().toString());
+        pool.addDataSourceProperty("socketTimeout", properties.socketTimeoutMs().toString());
         pool.addDataSourceProperty("connectionTimeZone", "UTC");
-        pool.addDataSourceProperty("forceConnectionTimeZoneToSession", true);
+        pool.addDataSourceProperty("forceConnectionTimeZoneToSession", "true");
         pool.setConnectionInitSql("SET SESSION innodb_lock_wait_timeout=" + properties.lockTimeoutSeconds());
         return pool;
     }

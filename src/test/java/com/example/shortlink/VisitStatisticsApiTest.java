@@ -21,6 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {"short-link.stats.enabled=true",
         "short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         "short-link.stats.visitor-key-version=1", "short-link.base-url=https://short.local",
+        "short-link.internal-token=0123456789abcdef0123456789abcdef",
+        "short-link.stats.socket-timeout-ms=5000", "short-link.stats.statement-timeout-seconds=3",
         "short-link.redirect-cache.load-wait=5s"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -38,6 +40,76 @@ class VisitStatisticsApiTest {
     @Autowired @org.springframework.beans.factory.annotation.Qualifier("statsDataSource")
     com.zaxxer.hikari.HikariDataSource statsPool;
     @Autowired javax.sql.DataSource corePool;
+    @Autowired com.example.shortlink.stats.VisitWriteObservations observations;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name = "statsDataSource")
+    com.zaxxer.hikari.HikariDataSource controlledStatsPool;
+
+    @Test
+    void savedButLostSqlConfirmationIsUncertainWithoutRetryAndKeepsRedirect() throws Exception {
+        var before = observations.snapshot();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            var real = (java.sql.Connection) invocation.callRealMethod();
+            return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{java.sql.Connection.class}, (proxy, method, args) -> {
+                        Object result = invoke(real, method, args);
+                        if (!method.getName().equals("prepareStatement")) return result;
+                        var statement = (java.sql.PreparedStatement) result;
+                        return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                                new Class<?>[]{java.sql.PreparedStatement.class}, (p, m, a) -> {
+                                    Object value = invoke(statement, m, a);
+                                    if (m.getName().equals("executeUpdate")) throw new java.sql.SQLException("private reply lost", "08S01");
+                                    return value;
+                                });
+                    });
+        }).when(controlledStatsPool).getConnection();
+        http.perform(get("/s/Ab12")).andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://example.com/"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1);
+        assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.UNCERTAIN))
+                .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.UNCERTAIN) + 1);
+        assertThat(observations.snapshot().attempted()).isEqualTo(before.attempted() + 1);
+        org.mockito.Mockito.doCallRealMethod().when(controlledStatsPool).getConnection();
+        http.perform(get("/s/Ab12")).andExpect(status().isFound());
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(2);
+    }
+
+    private static Object invoke(Object target, java.lang.reflect.Method method, Object[] args) throws Throwable {
+        try { return method.invoke(target, args); }
+        catch (java.lang.reflect.InvocationTargetException failure) { throw failure.getCause(); }
+    }
+
+    @Test
+    void exhaustedStatisticsPoolDoesNotTakeOverCoreCreationIssuanceOrStateTransactions() throws Exception {
+        http.perform(get("/s/Ab12")).andExpect(status().isFound());
+        var before = observations.snapshot();
+        var held = new java.util.ArrayList<java.sql.Connection>();
+        try {
+            for (int i = 0; i < 4; i++) held.add(statsPool.getConnection());
+            assertThat(observations.snapshot().poolActive()).isEqualTo(4);
+            var created = http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/links")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .content("{\"originalUrl\":\"https://example.com/core\"}"))
+                    .andExpect(status().isCreated()).andReturn();
+            String code = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(created.getResponse().getContentAsString()).get("shortCode").asText();
+            http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/links/" + code + "/enabled")
+                    .header("X-Internal-Token", "0123456789abcdef0123456789abcdef")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content("{\"enabled\":false}"))
+                    .andExpect(status().isOk());
+            assertThat(db.queryForObject("SELECT enabled FROM short_link WHERE short_code=?", Boolean.class, code)).isFalse();
+            long start = System.nanoTime();
+            http.perform(get("/s/Ab12")).andExpect(status().isFound())
+                    .andExpect(header().string("Location", "https://example.com/"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isBetween(
+                    java.time.Duration.ofMillis(800), java.time.Duration.ofSeconds(5));
+            assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.FAILED))
+                    .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.FAILED) + 1);
+        } finally { for (var connection : held) connection.close(); }
+        http.perform(get("/s/Ab12")).andExpect(status().isFound());
+        assertThat(observations.snapshot().inFlight()).isZero();
+    }
 
     @Test
     void sharedLoadProducesTwoVisitsWithSeparateDecisionTimes() throws Exception {
@@ -79,6 +151,7 @@ class VisitStatisticsApiTest {
         var event = new com.example.shortlink.stats.VisitEvent(new java.util.UUID(buffer.getLong(), buffer.getLong()),
                 "Ab12", clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
         var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        var before = observations.snapshot();
         try (var lock = corePool.getConnection()) {
             lock.setAutoCommit(false);
             try (var statement = lock.prepareStatement("SELECT id FROM short_link_visit_log WHERE event_id=? FOR UPDATE")) {
@@ -91,12 +164,20 @@ class VisitStatisticsApiTest {
                     statsPool.getHikariPoolMXBean().getActiveConnections() == 2);
             long start = System.nanoTime();
             http.perform(get("/s/Ab12")).andExpect(status().isFound()).andExpect(header().exists("Set-Cookie"));
+            assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED))
+                    .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED) + 1);
+            assertThat(first.isCancelled()).isFalse();
+            assertThat(second.isCancelled()).isFalse();
             assertThat(java.time.Duration.ofNanos(System.nanoTime()-start)).isLessThan(java.time.Duration.ofMillis(500));
             first.get(5, java.util.concurrent.TimeUnit.SECONDS);
             second.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(observations.snapshot().categories().get(com.example.shortlink.stats.VisitWriteObservations.Category.TIMEOUT))
+                    .isEqualTo(before.categories().get(com.example.shortlink.stats.VisitWriteObservations.Category.TIMEOUT) + 2);
             lock.rollback();
             assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1);
             recorder.record(event); // Internal replay after the lock releases is an ordinary duplicate.
+            assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DUPLICATE))
+                    .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DUPLICATE) + 1);
             assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1);
             http.perform(get("/s/Ab12")).andExpect(status().isFound());
             assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(2);

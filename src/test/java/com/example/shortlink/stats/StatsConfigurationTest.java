@@ -31,6 +31,8 @@ class StatsConfigurationTest {
             assertThat(stats.getMaximumPoolSize()).isEqualTo(4);
             assertThat(stats.getMinimumIdle()).isZero();
             assertThat(stats.getInitializationFailTimeout()).isEqualTo(-1);
+            assertThat(stats.getDataSourceProperties()).containsEntry("connectTimeout", "500")
+                    .containsEntry("socketTimeout", "1000").containsEntry("forceConnectionTimeZoneToSession", "true");
             assertThat(stats.getHikariPoolMXBean()).isNull();
             assertThat(app.getBean(VisitStatsProperties.class).enabled()).isFalse();
         });
