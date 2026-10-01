@@ -24,6 +24,7 @@ class VisitStatsQueryApiTest {
     @Autowired JdbcTemplate db;
     @Autowired ShortLinkApiTest.ControllableClock clock;
     @org.springframework.boot.test.web.server.LocalServerPort int port;
+    @Autowired com.example.shortlink.stats.VisitQueryObservations queryObservations;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name = "statsDataSource")
     com.zaxxer.hikari.HikariDataSource pool;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
@@ -214,8 +215,13 @@ class VisitStatsQueryApiTest {
     /** Controls only the JDBC boundary; all reads and mutations still execute against real MySQL. */
     private void controlReads(java.util.function.UnaryOperator<String> sql,
             java.util.function.BiConsumer<String, java.sql.Connection> afterRead) throws Exception {
+        controlReads(sql, afterRead, null);
+    }
+
+    private void controlReads(java.util.function.UnaryOperator<String> sql,
+            java.util.function.BiConsumer<String, java.sql.Connection> afterRead, javax.sql.DataSource source) throws Exception {
         org.mockito.Mockito.doAnswer(invocation -> {
-            var real = (java.sql.Connection) invocation.callRealMethod();
+            var real = source == null ? (java.sql.Connection) invocation.callRealMethod() : source.getConnection();
             return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{java.sql.Connection.class},
                     (proxy, method, args) -> {
                         if (!method.getName().equals("prepareStatement")) return invoke(real, method, args);
@@ -281,6 +287,7 @@ class VisitStatsQueryApiTest {
 
     @Test
     void realStatementTimeoutReturnsExplicitErrorAndSubsequentQueryRecovers() throws Exception {
+        long timeoutsBefore = queryObservations.timeouts();
         controlReads(sql -> sql.startsWith("SELECT short_code") ? sql + " AND SLEEP(5)=0" : sql, (sql, connection) -> {});
         long start = System.nanoTime();
         http.perform(stats("Ab12")).andExpect(status().isServiceUnavailable())
@@ -288,7 +295,46 @@ class VisitStatsQueryApiTest {
                 .andExpect(header().string("Cache-Control", "no-store"));
         org.assertj.core.api.Assertions.assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
                 .isBetween(java.time.Duration.ofMillis(700), java.time.Duration.ofSeconds(4));
+        org.assertj.core.api.Assertions.assertThat(queryObservations.timeouts()).isEqualTo(timeoutsBefore + 1);
         org.mockito.Mockito.doCallRealMethod().when(pool).getConnection();
+        http.perform(stats("Ab12")).andExpect(status().isOk());
+    }
+
+    @Test
+    void realSocketTimeoutIsRecognizedThroughConnectorCauseAndObserved() throws Exception {
+        long timeoutsBefore = queryObservations.timeouts();
+        try (var socketPool = new com.zaxxer.hikari.HikariDataSource()) {
+            socketPool.setJdbcUrl(pool.getJdbcUrl());
+            socketPool.setUsername(pool.getUsername());
+            socketPool.setPassword(pool.getPassword());
+            socketPool.setMaximumPoolSize(1);
+            socketPool.setMinimumIdle(0);
+            socketPool.addDataSourceProperty("socketTimeout", "300");
+            socketPool.addDataSourceProperty("connectTimeout", "500");
+            controlReads(sql -> sql.startsWith("SELECT short_code") ? sql + " AND SLEEP(5)=0" : sql,
+                    (sql, connection) -> {}, socketPool);
+            long start = System.nanoTime();
+            try {
+                http.perform(stats("Ab12")).andExpect(status().isServiceUnavailable())
+                        .andExpect(jsonPath("$.code").value("STATS_QUERY_TIMEOUT"))
+                        .andExpect(header().string("Cache-Control", "no-store"));
+                org.assertj.core.api.Assertions.assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
+                        .isBetween(java.time.Duration.ofMillis(200), java.time.Duration.ofSeconds(2));
+                org.assertj.core.api.Assertions.assertThat(queryObservations.timeouts()).isEqualTo(timeoutsBefore + 1);
+            } finally { org.mockito.Mockito.doCallRealMethod().when(pool).getConnection(); }
+        }
+        http.perform(stats("Ab12")).andExpect(status().isOk());
+    }
+
+    @Test
+    void exhaustedStatisticsPoolTimesOutWithoutUsingTheCorePoolAndRecovers() throws Exception {
+        http.perform(stats("Ab12")).andExpect(status().isOk());
+        var held = new java.util.ArrayList<java.sql.Connection>();
+        try {
+            for (int i = 0; i < 4; i++) held.add(pool.getConnection());
+            http.perform(stats("Ab12")).andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("STATS_QUERY_TIMEOUT"));
+        } finally { for (var connection : held) connection.close(); }
         http.perform(stats("Ab12")).andExpect(status().isOk());
     }
 }

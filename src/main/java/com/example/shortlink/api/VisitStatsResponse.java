@@ -1,4 +1,4 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.api;
 
 import java.time.Instant;
 import java.time.LocalDate;

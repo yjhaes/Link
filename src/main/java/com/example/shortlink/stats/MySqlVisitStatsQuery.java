@@ -5,7 +5,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import javax.sql.DataSource;
 import java.sql.*;
-import java.time.Clock;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.Semaphore;
@@ -16,17 +15,17 @@ public class MySqlVisitStatsQuery {
             + " AND stat_date>=? AND stat_date<=? AND occurred_at>=? AND occurred_at<?";
     private final DataSource pool;
     private final VisitStatsProperties properties;
-    private final Clock clock;
+    private final VisitQueryObservations observations;
     private final Semaphore queries = new Semaphore(1);
 
     public MySqlVisitStatsQuery(@Qualifier("statsDataSource") DataSource pool,
-            VisitStatsProperties properties, Clock clock) {
+            VisitStatsProperties properties, VisitQueryObservations observations) {
         this.pool = pool;
         this.properties = properties;
-        this.clock = clock;
+        this.observations = observations;
     }
 
-    public VisitStatsResponse query(String code, StatsDateRange range) {
+    public VisitStatsResult query(String code, StatsDateRange range) {
         if (!queries.tryAcquire()) throw new StatsQueryException(StatsQueryException.Reason.BUSY);
         try (Connection connection = pool.getConnection()) {
             connection.setReadOnly(true);
@@ -49,13 +48,13 @@ public class MySqlVisitStatsQuery {
                     pv = rows.getLong(1);
                     uv = rows.getLong(2);
                 }
-                Map<LocalDate, VisitStatsResponse.Day> days = new HashMap<>();
+                Map<LocalDate, VisitStatsResult.Day> days = new HashMap<>();
                 try (var statement = prepare(connection,
                         "SELECT stat_date,COUNT(*),COUNT(DISTINCT visitor_key_version,visitor_hash)" + RANGE + " GROUP BY stat_date", code, range);
                         var rows = statement.executeQuery()) {
                     while (rows.next()) {
                         LocalDate date = rows.getObject(1, LocalDate.class);
-                        days.put(date, new VisitStatsResponse.Day(date, rows.getLong(2), rows.getLong(3), date.equals(range.today())));
+                        days.put(date, new VisitStatsResult.Day(date, rows.getLong(2), rows.getLong(3), date.equals(range.today())));
                     }
                 }
                 List<Integer> versions = new ArrayList<>();
@@ -65,17 +64,18 @@ public class MySqlVisitStatsQuery {
                     while (rows.next()) versions.add(rows.getInt(1));
                 }
                 var daily = range.from().datesUntil(range.to().plusDays(1))
-                        .map(date -> days.getOrDefault(date, new VisitStatsResponse.Day(date, 0, 0, date.equals(range.today())))).toList();
+                        .map(date -> days.getOrDefault(date, new VisitStatsResult.Day(date, 0, 0, date.equals(range.today())))).toList();
                 connection.commit();
-                return new VisitStatsResponse(code, range.from(), range.to(), StatsDateRange.ZONE.getId(), pv, uv,
-                        "anonymous-cookie", "best-effort", properties.enabled(), List.copyOf(versions), clock.instant(), daily);
+                return new VisitStatsResult(pv, uv, List.copyOf(versions), daily);
             } catch (SQLException | RuntimeException failure) {
                 try { connection.rollback(); }
                 catch (SQLException cleanup) { failure.addSuppressed(cleanup); }
                 throw failure;
             }
         } catch (SQLException failure) {
-            throw new StatsQueryException(timeout(failure) ? StatsQueryException.Reason.TIMEOUT : StatsQueryException.Reason.DATABASE);
+            boolean timedOut = timeout(failure);
+            if (timedOut) observations.timedOut();
+            throw new StatsQueryException(timedOut ? StatsQueryException.Reason.TIMEOUT : StatsQueryException.Reason.DATABASE);
         } finally {
             queries.release();
         }
@@ -100,6 +100,11 @@ public class MySqlVisitStatsQuery {
 
     private boolean timeout(SQLException failure) {
         for (SQLException error = failure; error != null; error = error.getNextException()) {
+            // Connector/J wraps socket timeouts in an 08S01 CommunicationsException.
+            Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (Throwable cause = error; cause != null && seen.add(cause); cause = cause.getCause()) {
+                if (cause instanceof java.net.SocketTimeoutException || cause instanceof SQLTimeoutException) return true;
+            }
             String state = error.getSQLState();
             if (error instanceof SQLTimeoutException || error instanceof SQLTransientConnectionException
                     || "S1T00".equals(state) || "HYT00".equals(state) || "HYT01".equals(state)

@@ -12,6 +12,7 @@
 映射存在性、汇总、趋势及版本全部使用统计池，在一个短只读 REPEATABLE READ 事务中普通一致性读取，不锁映射。
 每实例查询准入为 1，无容量立即 503 `STATS_BUSY`；明确查询超时为 503 `STATS_QUERY_TIMEOUT`；其他数据库错误为 500 `INTERNAL_ERROR`。
 无重试，错误不返回伪造零值。阶段超时不保证 HTTP 总墙钟截止时间。
+明确的语句、统计池获取及 socket 读取超时按超时响应处理；一般断连仍为数据库错误。`VisitQueryObservations` 提供进程内查询超时计数，不包含请求或身份标签。
 
 响应包含 `shortCode/from/to/timeZone/pv/uv/uvBasis/collectionPolicy/collectionEnabled/identityVersions/generatedAt/daily`。
 `daily` 每项为 `date/pv/uv/isOngoing`，有效范围内无日志日期补零，今天标为进行中。
