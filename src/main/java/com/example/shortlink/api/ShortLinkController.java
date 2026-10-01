@@ -3,13 +3,16 @@ package com.example.shortlink.api;
 import com.example.shortlink.service.ShortLinkCreationService;
 import com.example.shortlink.service.RedirectService;
 import com.example.shortlink.service.CreatedShortLink;
+import com.example.shortlink.service.ShortLinkStateService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,14 +23,17 @@ public class ShortLinkController {
 
     private final ShortLinkCreationService creationService;
     private final RedirectService redirectService;
+    private final ShortLinkStateService stateService;
     private final String baseUrl;
 
     public ShortLinkController(
             ShortLinkCreationService creationService,
             RedirectService redirectService,
+            ShortLinkStateService stateService,
             @Value("${short-link.base-url}") String baseUrl) {
         this.creationService = creationService;
         this.redirectService = redirectService;
+        this.stateService = stateService;
         this.baseUrl = baseUrl.replaceAll("/+$", "");
     }
 
@@ -41,6 +47,14 @@ public class ShortLinkController {
                 createdLink.expiresAt());
 
         return ResponseEntity.created(URI.create(shortUrl)).body(response);
+    }
+
+    @PutMapping("/api/links/{code}/enabled")
+    public ResponseEntity<EnabledStateResponse> setEnabled(@PathVariable String code,
+            @Valid @RequestBody SetEnabledRequest request) {
+        stateService.setEnabled(code, request.enabled());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new EnabledStateResponse(code, request.enabled()));
     }
 
     @GetMapping("/s/{code}")

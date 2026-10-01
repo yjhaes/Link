@@ -8,7 +8,7 @@
 src/main/java/com/example/shortlink/
   LinkApplication.java
   api/                 HTTP 控制器、请求与响应、参数反序列化、错误响应
-  service/             创建、跳转与缓存协调恢复流程，以及用例结果
+  service/             创建、状态维护、跳转与缓存协调恢复流程，以及用例结果
     error/             业务失败类型，由 api 映射为 HTTP 响应
   shortcode/           发号契约与确定性短码编码规则
   persistence/         MyBatis-Plus 映射、MySQL 发号与映射保存错误分类
@@ -20,7 +20,7 @@ src/main/resources/
 src/test/java/com/example/shortlink/
   ShortLinkApiTest.java
   RedisRedirectIntegrationTest.java
-  service/             创建、跳转、协调恢复及请求合并测试
+  service/             创建、状态维护、跳转、协调恢复及请求合并测试
   shortcode/           短码编码测试
   cache/               Redis 缓存行为测试
 src/test/resources/
@@ -28,6 +28,8 @@ src/test/resources/
 ```
 
 ## 模块与依赖
+
+`ShortLinkStateService` 承担状态维护用例。入口挂起调用者事务，在独立事务中通过 Mapper 的行锁读取当前映射，获取锁后检查有效期和重复目标，再仅更新 enabled；独立事务确认提交后才轮换缓存版本。缓存同步失败在当前请求内最多尝试三次，等待 50/100ms，耗尽或等待中断报告专用部分完成错误；时间等待通过包级构造器的可控依赖进行测试。该用例复用现有 Mapper、Clock 和 RedirectCache，不新增通用仓储或后台任务。详见 [ADR-0005](adr/0005-enabled-state-api.md)。
 
 `ShortLinkCreationService` 承担完整创建用例：URL 与有效时长校验、发号编码、短码冲突重试、提交后的缓存协调和内部协调恢复。`RedirectService` 承担完整跳转用例：短码格式校验、缓存回退、跳转拒绝判定、版本条件回填、实例内加载合并与逐请求到期复查。`api` 直接调用对应服务，把结果或错误转换为 HTTP 响应；没有保留纯转发的旧 façade，请求 DTO 不作为数据库记录使用。
 
