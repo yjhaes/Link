@@ -219,6 +219,19 @@ class ShortLinkApiTest {
     }
 
     @Test
+    void trailingJsonTokensAreRejectedWithoutChangingEnabledState() throws Exception {
+        insertMapping("Ab12", ORIGINAL_URL);
+        for (String body : List.of("{\"enabled\":false} garbage", "{\"enabled\":false} {}",
+                "{\"enabled\":false} true")) {
+            mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+            assertRedirectsTo("Ab12", ORIGINAL_URL);
+        }
+    }
+
+    @Test
     void creatingAPermanentLinkReturnsAUsableRedirect() throws Exception {
         long issuedCountBefore = issuedCount();
         MvcResult creation = mockMvc.perform(post("/api/links")
