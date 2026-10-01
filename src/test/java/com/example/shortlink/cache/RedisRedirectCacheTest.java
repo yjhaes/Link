@@ -1,7 +1,5 @@
 package com.example.shortlink.cache;
 
-import com.example.shortlink.service.RedirectCacheEntry;
-import com.example.shortlink.service.RedirectCacheRead;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;

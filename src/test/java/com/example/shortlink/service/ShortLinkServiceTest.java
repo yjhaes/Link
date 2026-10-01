@@ -1,10 +1,14 @@
 package com.example.shortlink.service;
 
+import com.example.shortlink.cache.RedirectCache;
+import com.example.shortlink.cache.RedirectCacheEntry;
+import com.example.shortlink.cache.RedirectCacheRead;
+import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
+import com.example.shortlink.shortcode.ShortCodeIdIssuer;
 import com.example.shortlink.service.error.LinkDisabledException;
 import com.example.shortlink.service.error.LinkExpiredException;
 import com.example.shortlink.service.error.LinkNotFoundException;
 import com.example.shortlink.service.error.ShortCodeGenerationException;
-import com.example.shortlink.service.RedirectCacheRead;
 import com.example.shortlink.persistence.ShortLinkEntity;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import org.junit.jupiter.api.BeforeEach;

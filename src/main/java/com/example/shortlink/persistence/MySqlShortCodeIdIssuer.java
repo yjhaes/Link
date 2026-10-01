@@ -1,6 +1,6 @@
 package com.example.shortlink.persistence;
 
-import com.example.shortlink.service.ShortCodeIdIssuer;
+import com.example.shortlink.shortcode.ShortCodeIdIssuer;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;

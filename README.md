@@ -11,6 +11,10 @@
 - Redis，用版本化缓存加速已访问的可跳转短链接；Redis 不可用时跳转会回退到 MySQL
 - Maven 3.9.16（通过 Maven Wrapper 固定）
 
+## 代码组织
+
+应用根包为 `com.example.shortlink`：`api` 处理 HTTP 输入输出，`service` 编排创建、跳转与协调恢复，`service.error` 表达业务失败，`shortcode` 保存发号契约与编码规则，`cache` 集中跳转缓存契约、快照与 Redis 实现，`persistence` 负责数据库映射和 MySQL 发号。完整目录、依赖方向与扩展位置见 [架构说明](docs/architecture.md)。
+
 ## 初始化数据库
 
 在本地 MySQL 中创建数据库：
@@ -124,6 +128,14 @@ COMMIT;
 将来若增加应用内启用、禁用、删除映射或修改原始 URL／有效时长的操作，也必须在对应的 MySQL 事务提交后轮换该短码的缓存版本；本项目当前不增加这些接口。
 
 ## 测试
+
+不依赖外部 MySQL 或 Redis 的四组测试可单独运行：
+
+```powershell
+.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest' test
+```
+
+`PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集除上述测试外还包含下述两个集成测试。
 
 `ShortLinkApiTest` 连接真实 MySQL。默认测试库为本机 `short_link_test`，用户名为 `root`，密码为 `123456`；其他环境可按需设置测试连接变量：
 

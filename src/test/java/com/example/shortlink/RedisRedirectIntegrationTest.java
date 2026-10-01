@@ -1,12 +1,12 @@
 package com.example.shortlink;
 
 import com.example.shortlink.LinkApplication;
-import com.example.shortlink.service.RedirectCache;
-import com.example.shortlink.service.RedirectCacheEntry;
-import com.example.shortlink.service.RedirectCacheRead;
+import com.example.shortlink.cache.RedirectCache;
+import com.example.shortlink.cache.RedirectCacheEntry;
+import com.example.shortlink.cache.RedirectCacheRead;
 import com.example.shortlink.service.CreatedShortLink;
 import com.example.shortlink.service.ShortLinkService;
-import com.example.shortlink.service.PermutedShortCodeEncoder;
+import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import com.example.shortlink.persistence.ShortLinkEntity;
 import com.fasterxml.jackson.databind.JsonNode;

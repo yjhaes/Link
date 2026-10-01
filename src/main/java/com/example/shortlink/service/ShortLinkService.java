@@ -1,5 +1,10 @@
 package com.example.shortlink.service;
 
+import com.example.shortlink.cache.RedirectCache;
+import com.example.shortlink.cache.RedirectCacheEntry;
+import com.example.shortlink.cache.RedirectCacheRead;
+import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
+import com.example.shortlink.shortcode.ShortCodeIdIssuer;
 import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.service.error.CreateCacheCoordinationException;
 import com.example.shortlink.service.error.LinkDisabledException;

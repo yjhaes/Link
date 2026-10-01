@@ -1,4 +1,4 @@
-package com.example.shortlink.service;
+package com.example.shortlink.cache;
 
 public interface RedirectCache {
 
