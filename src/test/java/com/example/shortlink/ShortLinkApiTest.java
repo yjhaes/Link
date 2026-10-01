@@ -29,6 +29,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.net.URI;
@@ -64,7 +65,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "short-link.internal-token=0123456789abcdef0123456789abcdef")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(ShortLinkApiTest.ControlledTimeConfiguration.class)
@@ -102,6 +103,11 @@ class ShortLinkApiTest {
         shortCodeEncoder.reset();
     }
 
+    private MockHttpServletRequestBuilder authorizedStateRequest(String code) {
+        return put("/api/links/{code}/enabled", code)
+                .header("X-Internal-Token", "0123456789abcdef0123456789abcdef");
+    }
+
     @Test
     void collectionDefaultsToOffAndLeavesRedirectWithoutVisitorCookie() throws Exception {
         insertMapping("Ab12", ORIGINAL_URL);
@@ -112,7 +118,7 @@ class ShortLinkApiTest {
     @Test
     void disablingThroughTheApiReturnsTheCommittedStateAndStopsRedirecting() throws Exception {
         insertMapping("Ab12", ORIGINAL_URL);
-        mockMvc.perform(put("/api/links/Ab12/enabled")
+        mockMvc.perform(authorizedStateRequest("Ab12")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isOk())
@@ -125,16 +131,16 @@ class ShortLinkApiTest {
     @Test
     void repeatedStateChangesReturnConflictsWithoutChangingTheMapping() throws Exception {
         insertMapping("Ab12", ORIGINAL_URL);
-        mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":true}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("LINK_ALREADY_ENABLED"))
                 .andExpect(header().string("Cache-Control", "no-store"));
         assertRedirectsTo("Ab12", ORIGINAL_URL);
-        mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("LINK_ALREADY_DISABLED"));
@@ -146,12 +152,12 @@ class ShortLinkApiTest {
         String code = createLink(1);
         Instant expiry = BASE_TIME.truncatedTo(ChronoUnit.MILLIS).plusSeconds(60);
         clock.setInstant(expiry.minusMillis(1));
-        mockMvc.perform(put("/api/links/{code}/enabled", code).contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest(code).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isOk());
         clock.setInstant(expiry);
         for (boolean target : new boolean[]{false, true}) {
-            mockMvc.perform(put("/api/links/{code}/enabled", code).contentType(MediaType.APPLICATION_JSON)
+            mockMvc.perform(authorizedStateRequest(code).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"enabled\":" + target + "}"))
                     .andExpect(status().isGone())
                     .andExpect(jsonPath("$.code").value("LINK_EXPIRED"))
@@ -162,7 +168,7 @@ class ShortLinkApiTest {
         assertThat(jdbcTemplate.queryForObject("SELECT expires_at FROM short_link WHERE short_code = ?",
                 LocalDateTime.class, code)).isEqualTo(LocalDateTime.ofInstant(expiry, ZoneOffset.UTC));
         clock.setInstant(expiry.plusMillis(1));
-        mockMvc.perform(put("/api/links/{code}/enabled", code).contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest(code).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":true}"))
                 .andExpect(status().isGone());
     }
@@ -173,7 +179,7 @@ class ShortLinkApiTest {
         for (String body : List.of("{}", "{\"enabled\":null}", "{\"enabled\":\"false\"}",
                 "{\"enabled\":\"true\"}", "{\"enabled\":0}", "{\"enabled\":1}",
                 "{\"enabled\":[]}", "{\"enabled\":{}}", "{", "null")) {
-            mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON).content(body))
+            mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                     .andExpect(header().string("Cache-Control", "no-store"));
@@ -186,7 +192,7 @@ class ShortLinkApiTest {
         insertMapping("Ab12", ORIGINAL_URL);
         doThrow(new IllegalStateException("Temporary Redis failure")).doCallRealMethod()
                 .when(redirectCache).replaceVersion("Ab12");
-        mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(false));
@@ -197,7 +203,7 @@ class ShortLinkApiTest {
     void exhaustedCoordinationReturnsPartialCompletionAndCannotBeRecoveredByRepeatingThePut() throws Exception {
         insertMapping("Ab12", ORIGINAL_URL);
         doThrow(new IllegalStateException("Redis unavailable")).when(redirectCache).replaceVersion("Ab12");
-        mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value("LINK_STATE_CACHE_COORDINATION_UNCONFIRMED"))
@@ -206,7 +212,7 @@ class ShortLinkApiTest {
                 .andExpect(header().string("Cache-Control", "no-store"));
         assertDisabled("Ab12");
         doCallRealMethod().when(redirectCache).replaceVersion("Ab12");
-        mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON)
+        mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"enabled\":false}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("LINK_ALREADY_DISABLED"));
@@ -216,7 +222,7 @@ class ShortLinkApiTest {
     void stateMaintenanceKeepsShortCodeFormatAndCaseSensitiveNotFoundSemantics() throws Exception {
         insertMapping("Ab12", ORIGINAL_URL);
         for (String code : List.of("abc", "123456789", "Ab_1", "Nope", "ab12")) {
-            mockMvc.perform(put("/api/links/{code}/enabled", code).contentType(MediaType.APPLICATION_JSON)
+            mockMvc.perform(authorizedStateRequest(code).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"enabled\":false}"))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"))
@@ -230,7 +236,7 @@ class ShortLinkApiTest {
         insertMapping("Ab12", ORIGINAL_URL);
         for (String body : List.of("{\"enabled\":false} garbage", "{\"enabled\":false} {}",
                 "{\"enabled\":false} true")) {
-            mockMvc.perform(put("/api/links/Ab12/enabled").contentType(MediaType.APPLICATION_JSON).content(body))
+            mockMvc.perform(authorizedStateRequest("Ab12").contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
                     .andExpect(header().string("Cache-Control", "no-store"));

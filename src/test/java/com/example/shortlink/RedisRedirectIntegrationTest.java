@@ -80,6 +80,7 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -87,7 +88,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(classes = LinkApplication.class, properties = "short-link.redirect-cache.load-wait=5s")
+@SpringBootTest(classes = LinkApplication.class, properties = {"short-link.redirect-cache.load-wait=5s",
+        "short-link.internal-token=0123456789abcdef0123456789abcdef"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
@@ -641,13 +643,51 @@ class RedisRedirectIntegrationTest {
                 .andExpect(jsonPath("$.shortCode").value(code))
                 .andExpect(jsonPath("$.enabled").value(false))
                 .andExpect(header().string("Cache-Control", "no-store"));
+        assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                Boolean.class, code)).isFalse();
         assertStateRedirect(code, false);
         assertStateRedirect(code, false);
         performStateChange(code, true).andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
+        assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                Boolean.class, code)).isTrue();
         assertRedirect(code, ORIGINAL_URL);
         assertThat(jdbcTemplate.queryForObject("SELECT expires_at FROM short_link WHERE short_code = ?",
                 LocalDateTime.class, code)).isEqualTo(expiry);
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_code_issuance", Long.class)).isZero();
+    }
+
+    @Test
+    void unauthorizedStateRequestsLeaveDatabaseAndCachedRedirectUntouched() throws Exception {
+        String code = "Auth";
+        insertMapping(code, ORIGINAL_URL);
+        assertRedirect(code, ORIGINAL_URL);
+        String cached = redisTemplate.opsForValue().get(cacheKey(code));
+        clearInvocations(shortLinkMapper, redirectCache);
+        for (String[] headers : new String[][]{{}, {"wrong"},
+                {"0123456789abcdef0123456789abcdef", "0123456789abcdef0123456789abcdef"}}) {
+            for (String body : new String[]{"{", "{\"enabled\":false}"}) {
+                var request = put("/api/links/{code}/enabled", code)
+                        .contentType(MediaType.APPLICATION_JSON).content(body);
+                if (headers.length > 0) request.header("X-Internal-Token", (Object[]) headers);
+                mockMvc.perform(request).andExpect(status().isUnauthorized())
+                        .andExpect(jsonPath("$.code").value("INTERNAL_UNAUTHORIZED"))
+                        .andExpect(header().string("Cache-Control", "no-store"));
+            }
+        }
+        verifyNoInteractions(shortLinkMapper, redirectCache);
+        assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM short_link WHERE short_code = ?",
+                Boolean.class, code)).isTrue();
+        assertThat(redisTemplate.opsForValue().get(cacheKey(code))).isEqualTo(cached);
+        assertRedirect(code, ORIGINAL_URL);
+    }
+
+    @Test
+    void authorizedUnknownMappingKeepsExistingNotFoundContract() throws Exception {
+        performStateChange("Auth", false).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("LINK_NOT_FOUND"))
+                .andExpect(header().string("Cache-Control", "no-store"));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM short_link", Integer.class)).isZero();
+        verify(redirectCache, never()).replaceVersion(anyString());
     }
 
     @Test
@@ -882,7 +922,9 @@ class RedisRedirectIntegrationTest {
     }
 
     private org.springframework.test.web.servlet.ResultActions performStateChange(String code, boolean enabled) throws Exception {
-        return mockMvc.perform(put("/api/links/{code}/enabled", code).contentType(MediaType.APPLICATION_JSON)
+        return mockMvc.perform(put("/api/links/{code}/enabled", code)
+                .header("X-Internal-Token", "0123456789abcdef0123456789abcdef")
+                .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"enabled\":" + enabled + "}"));
     }
 

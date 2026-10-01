@@ -36,6 +36,8 @@ src/test/resources/
 自动提交，不加入核心事务、不重新读取映射。统计配置显式声明主核心池，保留原有
 MyBatis/JDBC/事务及初始化归属。详见 [采集部署说明](visit-collection.md)。
 
+管理访问边界位于 `api`：`@InternalManagement` 标记控制器方法或整个控制器，`InternalManagementAccess` 在 MVC 参数与请求体解析前通过独立配置的 `X-Internal-Token` 精确安全比较鉴权。未配置关闭、拒绝无业务调用，并统一设置 `no-store`。现有状态 PUT 使用该标记；后续内部统计控制器可复用它，包含 GET 隐式支持的 HEAD。令牌不进入业务服务，公开创建和跳转无需管理令牌。访问控制规则见 [ADR-0006](adr/0006-synchronous-visit-statistics.md)。
+
 `ShortLinkStateService` 承担状态维护用例。入口挂起调用者事务，在独立事务中通过 Mapper 的行锁读取当前映射，获取锁后检查有效期和重复目标，再仅更新 enabled；独立事务确认提交后才轮换缓存版本。缓存同步失败在当前请求内最多尝试三次，等待 50/100ms，耗尽或等待中断报告专用部分完成错误；时间等待通过包级构造器的可控依赖进行测试。该用例复用现有 Mapper、Clock 和 RedirectCache，不新增通用仓储或后台任务。详见 [ADR-0005](adr/0005-enabled-state-api.md)。
 
 `ShortLinkCreationService` 承担完整创建用例：URL 与有效时长校验、发号编码、短码冲突重试、提交后的缓存协调和内部协调恢复。`RedirectService` 承担完整跳转用例：短码格式校验、缓存回退、跳转拒绝判定、版本条件回填、实例内加载合并与逐请求到期复查。`api` 直接调用对应服务，把结果或错误转换为 HTTP 响应；没有保留纯转发的旧 façade，请求 DTO 不作为数据库记录使用。

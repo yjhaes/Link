@@ -24,6 +24,7 @@ short-link:
     enabled: ${SHORT_LINK_STATS_ENABLED:false}
     visitor-key: ${SHORT_LINK_VISITOR_HMAC_KEY:}
     visitor-key-version: ${SHORT_LINK_VISITOR_KEY_VERSION:}
+  internal-token: ${SHORT_LINK_INTERNAL_TOKEN:}
   base-url: ${SHORT_LINK_BASE_URL:http://localhost:8080}
   redirect-cache:
     enabled: ${SHORT_LINK_REDIRECT_CACHE_ENABLED:true}
