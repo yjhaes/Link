@@ -95,11 +95,16 @@ applicationContext.getBean(ShortLinkCreationService.class).recoverCacheCoordinat
 
 访问未过期且启用的短码 `GET /s/{code}` 后，系统返回 `302` 和原始 URL 的 `Location`；到期时或之后访问返回 `410 LINK_EXPIRED`；未过期但已禁用时返回 `403 LINK_DISABLED`。过期判断优先于禁用状态。格式错误或不存在的短码返回 `404 LINK_NOT_FOUND`。失败和跳转响应均带 `Cache-Control: no-store`。
 
-内部管理者通过以下接口禁用映射；启用时将 `enabled` 改为 `true`。本次不增加页面按钮或鉴权体系，该接口应仅向受信任内部管理流量开放：
+内部管理者通过以下接口禁用映射；启用时将 `enabled` 改为 `true`。通过独立环境变量 `SHORT_LINK_INTERNAL_TOKEN` 配置管理秘密（对应 `short-link.internal-token`），无默认秘密；未配置或配置为空时接口关闭，返回 `404 RESOURCE_NOT_FOUND`。非空值必须至少包含 32 个 UTF-8 字节，否则启动失败。部署时使用 HTTPS，令牌仅通过 `X-Internal-Token` 请求头传递。
+
+秘密应由密码学随机源生成至少 32 个随机字节，再编码为适合 HTTP 请求头的文本，例如在 PowerShell 7 中用 `[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))` 生成后存入部署秘密配置。不要使用示例测试令牌；管理秘密应与将来的访客摘要 HMAC 密钥独立，不放入 URL、Cookie、页面存储、响应或日志。
+
+配置后，缺失、错误或重复的令牌头返回 `401 INTERNAL_UNAUTHORIZED`；精确安全比较不 trim。鉴权在请求体及参数解析前完成，拒绝请求不进入 MySQL/Redis 状态业务；管理成功和错误响应均带 `Cache-Control: no-store`。公开创建与普通跳转继续无需令牌，不增加用户或恢复 HTTP API。
 
 ```http
 PUT /api/links/Ab12/enabled
 Content-Type: application/json
+X-Internal-Token: <部署配置中的管理秘密>
 
 {"enabled":false}
 ```
@@ -140,13 +145,13 @@ Content-Type: application/json
 
 ## 测试
 
-不依赖外部 MySQL 或 Redis 的六组测试可单独运行：
+不依赖外部 MySQL 或 Redis 的测试可单独运行：
 
 ```powershell
-.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,ShortLinkStateServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest' test
+.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,ShortLinkStateServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest,InternalManagementApiTest,InternalManagementDisabledApiTest,InternalManagementConfigurationTest' test
 ```
 
-`PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集除上述测试外还包含下述两个集成测试。
+`PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。管理边界测试使用真实 MVC 和业务服务，以及数据库/缓存边界的测试替身，独立验证拒绝无副作用、鉴权先于损坏请求体解析、精确比较、重复头、未配置关闭、配置长度及公开接口不需令牌。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集除上述测试外还包含下述两个集成测试。
 
 `ShortLinkApiTest` 连接真实 MySQL。默认测试库为本机 `short_link_test`，用户名为 `root`，密码为 `123456`；其他环境可按需设置测试连接变量：
 

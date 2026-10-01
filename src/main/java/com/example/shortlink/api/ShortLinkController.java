@@ -50,6 +50,7 @@ public class ShortLinkController {
     }
 
     @PutMapping("/api/links/{code}/enabled")
+    @InternalManagement
     public ResponseEntity<EnabledStateResponse> setEnabled(@PathVariable String code,
             @Valid @RequestBody SetEnabledRequest request) {
         stateService.setEnabled(code, request.enabled());
