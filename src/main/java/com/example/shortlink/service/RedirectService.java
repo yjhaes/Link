@@ -39,7 +39,9 @@ public class RedirectService {
         this.loadWaitNanos = properties.getLoadWait().toNanos();
     }
 
-    public String findOriginalUrl(String code) {
+    public String findOriginalUrl(String code) { return decide(code).originalUrl(); }
+
+    public RedirectDecision decide(String code) {
         if (code == null || !code.matches("[A-Za-z0-9]{4,8}")) {
             throw new LinkNotFoundException();
         }
@@ -128,11 +130,11 @@ public class RedirectService {
         return new LoadedRedirect(status, entry, read == null ? null : read.generation());
     }
 
-    private String useResult(String code, RedirectCacheRead result) {
+    private RedirectDecision useResult(String code, RedirectCacheRead result) {
         return useResult(code, new LoadedRedirect(result.status(), result.entry(), result.generation()));
     }
 
-    private String useResult(String code, LoadedRedirect result) {
+    private RedirectDecision useResult(String code, LoadedRedirect result) {
         if (result.status() == RedirectCacheRead.Status.NOT_FOUND) {
             throw new LinkNotFoundException();
         }
@@ -140,7 +142,8 @@ public class RedirectService {
             throw new LinkExpiredException();
         }
         RedirectCacheEntry entry = result.entry();
-        if (isExpired(entry == null ? null : entry.expiresAt())) {
+        Instant decidedAt = clock.instant();
+        if (entry != null && entry.expiresAt() != null && !decidedAt.isBefore(entry.expiresAt())) {
             if (result.generation() != null) {
                 try {
                     redirectCache.storeIfVersion(code, result.generation(), RedirectCacheRead.Status.EXPIRED, null);
@@ -153,7 +156,7 @@ public class RedirectService {
         if (result.status() == RedirectCacheRead.Status.DISABLED) {
             throw new LinkDisabledException();
         }
-        return entry.originalUrl();
+        return new RedirectDecision(entry.originalUrl(), decidedAt);
     }
 
     private record LoadKey(String code, String generation) { }

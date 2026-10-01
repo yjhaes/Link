@@ -13,6 +13,7 @@ src/main/java/com/example/shortlink/
   shortcode/           发号契约与确定性短码编码规则
   persistence/         MyBatis-Plus 映射、MySQL 发号与映射保存错误分类
   cache/               跳转缓存契约、读取状态、快照、配置与 Redis 实现
+  stats/               独立访问事件、身份与元数据规范化、统计池、同步日志记录
 src/main/resources/
   application.yml      数据库、Redis 和服务地址配置
   schema.sql           MySQL 表结构
@@ -28,6 +29,12 @@ src/test/resources/
 ```
 
 ## 模块与依赖
+
+`RedirectDecision` 携带原始 URL 和最终逐请求检查时冻结的时刻。HTTP 边界的
+`VisitCollection` 仅在正常 GET 决定后识别 Cookie、摘要和脱敏，再将独立 `VisitEvent`
+交给 `VisitRecorder`。`MySqlVisitRecorder` 使用显式统计池、容量 2 的立即准入和独立
+自动提交，不加入核心事务、不重新读取映射。统计配置显式声明主核心池，保留原有
+MyBatis/JDBC/事务及初始化归属。详见 [采集部署说明](visit-collection.md)。
 
 `ShortLinkStateService` 承担状态维护用例。入口挂起调用者事务，在独立事务中通过 Mapper 的行锁读取当前映射，获取锁后检查有效期和重复目标，再仅更新 enabled；独立事务确认提交后才轮换缓存版本。缓存同步失败在当前请求内最多尝试三次，等待 50/100ms，耗尽或等待中断报告专用部分完成错误；时间等待通过包级构造器的可控依赖进行测试。该用例复用现有 Mapper、Clock 和 RedirectCache，不新增通用仓储或后台任务。详见 [ADR-0005](adr/0005-enabled-state-api.md)。
 
