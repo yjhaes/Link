@@ -64,23 +64,23 @@ class VisitWriteObservationTest {
         logs.start();
         logger.addAppender(logs);
         try {
-        DataSource pool = mock(DataSource.class);
-        when(pool.getConnection()).thenThrow(new SQLException("secret", "08001"));
-        var observations = new VisitWriteObservations(pool);
-        var recorder = new MySqlVisitRecorder(pool,
-                new VisitStatsProperties(false, null, null, null, null, null, null, null, null), observations);
-        for (int i = 0; i < 3; i++) recorder.record(new VisitEvent(UUID.randomUUID(), "Ab12",
-                Instant.EPOCH, LocalDate.of(1970, 1, 1), new byte[32], 1, null, null, null));
-        var snapshot = observations.snapshot();
-        assertThat(snapshot.attempted()).isEqualTo(3);
-        assertThat(snapshot.outcomes().get(VisitWriteObservations.Outcome.FAILED)).isEqualTo(3);
-        assertThat(snapshot.categories().get(VisitWriteObservations.Category.CONNECTION)).isEqualTo(3);
-        assertThat(snapshot.inFlight()).isZero();
-        assertThat(snapshot.durationNanos()).isPositive();
-        assertThat(logs.list).allSatisfy(log -> {
-            assertThat(log.getFormattedMessage()).contains("category=CONNECTION", "phase=connection").doesNotContain("secret");
-            assertThat(log.getThrowableProxy()).isNull();
-        });
+            DataSource pool = mock(DataSource.class);
+            when(pool.getConnection()).thenThrow(new SQLException("secret", "08001"));
+            var observations = new VisitWriteObservations(pool);
+            var recorder = new MySqlVisitRecorder(pool,
+                    new VisitStatsProperties(false, null, null, null, null, null, null, null, null), observations);
+            for (int i = 0; i < 3; i++) recorder.record(new VisitEvent(UUID.randomUUID(), "Ab12",
+                    Instant.EPOCH, LocalDate.of(1970, 1, 1), new byte[32], 1, null, null, null));
+            var snapshot = observations.snapshot();
+            assertThat(snapshot.attempted()).isEqualTo(3);
+            assertThat(snapshot.outcomes().get(VisitWriteObservations.Outcome.FAILED)).isEqualTo(3);
+            assertThat(snapshot.categories().get(VisitWriteObservations.Category.CONNECTION)).isEqualTo(3);
+            assertThat(snapshot.inFlight()).isZero();
+            assertThat(snapshot.durationNanos()).isPositive();
+            assertThat(logs.list).allSatisfy(log -> {
+                assertThat(log.getFormattedMessage()).contains("category=CONNECTION", "phase=CONNECTION").doesNotContain("secret");
+                assertThat(log.getThrowableProxy()).isNull();
+            });
         } finally { logger.detachAppender(logs); logs.stop(); }
     }
 }

@@ -22,6 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         "short-link.stats.visitor-key-version=1", "short-link.base-url=https://short.local",
         "short-link.internal-token=0123456789abcdef0123456789abcdef",
+        "short-link.stats.socket-timeout-ms=5000", "short-link.stats.statement-timeout-seconds=3",
         "short-link.redirect-cache.load-wait=5s"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
