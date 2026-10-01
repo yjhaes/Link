@@ -3,8 +3,6 @@ package com.example.shortlink.service;
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheEntry;
 import com.example.shortlink.cache.RedirectCacheRead;
-import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
-import com.example.shortlink.shortcode.ShortCodeIdIssuer;
 import com.example.shortlink.persistence.ShortLinkEntity;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import com.example.shortlink.service.error.LinkDisabledException;
@@ -216,7 +214,7 @@ class RedirectLoadCoalescingTest {
             assertThatThrownBy(() -> scenario.service(Duration.ZERO)).isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> scenario.service(Duration.ofMillis(-1))).isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> scenario.service(Duration.ofSeconds(Long.MAX_VALUE)))
-                    .isInstanceOf(ArithmeticException.class);
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
@@ -230,7 +228,7 @@ class RedirectLoadCoalescingTest {
         return entity;
     }
 
-    private static int status(ShortLinkService service, String code) {
+    private static int status(RedirectService service, String code) {
         try {
             assertThat(service.findOriginalUrl(code)).isEqualTo("https://example.com/");
             return 302;
@@ -261,16 +259,17 @@ class RedirectLoadCoalescingTest {
         final CountDownLatch entered = new CountDownLatch(1);
         final CountDownLatch release = new CountDownLatch(1);
         final List<Request> requests = new ArrayList<>();
-        final ShortLinkService service;
+        final RedirectService service;
 
         Scenario(Duration wait) {
             when(clock.instant()).thenAnswer(call -> now.get());
             when(cache.find(anyString())).thenAnswer(call -> RedirectCacheRead.miss(generation.get()));
             service = service(wait);
         }
-        ShortLinkService service(Duration wait) {
-            return new ShortLinkService(mapper, mock(ShortCodeIdIssuer.class),
-                    new PermutedShortCodeEncoder(), clock, cache, wait);
+        RedirectService service(Duration wait) {
+            return new RedirectService(mapper, clock, cache,
+                    new com.example.shortlink.cache.RedirectCacheProperties(true, Duration.ofMinutes(5),
+                            Duration.ofSeconds(30), Duration.ofMinutes(5), Duration.ofSeconds(15), wait));
         }
         void blockFirstQuery(ShortLinkEntity first) {
             blockFirstQuery(first, first);
@@ -290,7 +289,7 @@ class RedirectLoadCoalescingTest {
         }
         int status(String code) { return RedirectLoadCoalescingTest.status(service, code); }
         Request start(String code) { return start(code, service); }
-        Request start(String code, ShortLinkService target) {
+        Request start(String code, RedirectService target) {
             FutureTask<Integer> task = new FutureTask<>(() -> RedirectLoadCoalescingTest.status(target, code));
             Request request = new Request(task, new Thread(task));
             requests.add(request);

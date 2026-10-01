@@ -5,7 +5,8 @@ import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheEntry;
 import com.example.shortlink.cache.RedirectCacheRead;
 import com.example.shortlink.service.CreatedShortLink;
-import com.example.shortlink.service.ShortLinkService;
+import com.example.shortlink.service.ShortLinkCreationService;
+import com.example.shortlink.service.RedirectService;
 import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
 import com.example.shortlink.persistence.ShortLinkMapper;
 import com.example.shortlink.persistence.ShortLinkEntity;
@@ -118,7 +119,7 @@ class RedisRedirectIntegrationTest {
     private PermutedShortCodeEncoder shortCodeEncoder;
 
     @Autowired
-    private ShortLinkService shortLinkService;
+    private ShortLinkCreationService shortLinkService;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -218,6 +219,17 @@ class RedisRedirectIntegrationTest {
 
     @Test
     void creationConfirmsItsOwnCommitEvenWhenACallingTransactionRollsBack() throws Exception {
+        assertThat(org.springframework.aop.support.AopUtils.isAopProxy(shortLinkService)).isTrue();
+        doAnswer(invocation -> {
+            assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                    .isActualTransactionActive()).isFalse();
+            // This independent database read occurs before cache coordination, while the caller is suspended.
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM short_link WHERE short_code = ?", Long.class,
+                    invocation.getArgument(0, String.class))).isEqualTo(1);
+            assertThat(issuanceCount()).isEqualTo(1);
+            return invocation.callRealMethod();
+        }).when(redirectCache).replaceVersion(anyString());
         String shortCode = new TransactionTemplate(transactionManager).execute(transaction -> {
             CreatedShortLink created = shortLinkService.create(ORIGINAL_URL, null);
             transaction.setRollbackOnly();
@@ -227,6 +239,33 @@ class RedisRedirectIntegrationTest {
         assertRedirect(shortCode, ORIGINAL_URL);
         assertThat(mappingCount()).isEqualTo(1);
         assertThat(issuanceCount()).isEqualTo(1);
+    }
+
+    @Test
+    void httpCreationCannotReportCompletionWhileCoordinationIsWaiting() throws Exception {
+        CountDownLatch coordinating = new CountDownLatch(1);
+        CountDownLatch confirm = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            assertThat(mappingCount()).isEqualTo(1);
+            coordinating.countDown();
+            assertThat(confirm.await(5, TimeUnit.SECONDS)).isTrue();
+            return invocation.callRealMethod();
+        }).when(redirectCache).replaceVersion(anyString());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<Integer> response = executor.submit(() -> mockMvc.perform(post("/api/links")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"originalUrl\":\"https://confirmation.example/\"}"))
+                .andReturn().getResponse().getStatus());
+        try {
+            assertThat(coordinating.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(response.isDone()).isFalse();
+            confirm.countDown();
+            assertThat(response.get(5, TimeUnit.SECONDS)).isEqualTo(201);
+        } finally {
+            confirm.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test
@@ -304,7 +343,7 @@ class RedisRedirectIntegrationTest {
             assertThat(snapshotRead.await(5, TimeUnit.SECONDS)).isTrue();
             String oldGeneration = redirectCache.find(shortCode).generation();
 
-            CreatedShortLink created = creator.getBean(ShortLinkService.class).create(ORIGINAL_URL, null);
+            CreatedShortLink created = creator.getBean(ShortLinkCreationService.class).create(ORIGINAL_URL, null);
             assertThat(created.shortCode()).isEqualTo(shortCode);
             assertThat(redirectCache.find(shortCode).generation()).isNotEqualTo(oldGeneration);
             // This request starts after create returned, while the old snapshot is still paused.
@@ -790,7 +829,7 @@ class RedisRedirectIntegrationTest {
             assertThat(snapshotRead.await(5, TimeUnit.SECONDS)).isTrue();
             maintainer.getBean(JdbcTemplate.class).update(
                     "UPDATE short_link SET enabled = true WHERE short_code = ?", code);
-            maintainer.getBean(ShortLinkService.class).recoverCacheCoordination(code);
+            maintainer.getBean(ShortLinkCreationService.class).recoverCacheCoordination(code);
             Future<?> currentRequest = executor.submit(() -> {
                 assertRedirect(code, ORIGINAL_URL);
                 return null;
@@ -1030,11 +1069,11 @@ class RedisRedirectIntegrationTest {
                 "{\"originalUrl\":\"https://old.example/\",\"expiresAt\":null}");
         redisTemplate.opsForValue().set("other:keep", "unrelated");
         try (ConfigurableApplicationContext disabled = independentInstance(CoalescingConfiguration.class, false)) {
-            ShortLinkService service = disabled.getBean(ShortLinkService.class);
+            RedirectService service = disabled.getBean(RedirectService.class);
             assertThat(service.findOriginalUrl(code)).isEqualTo(ORIGINAL_URL);
             assertThat(service.findOriginalUrl(code)).isEqualTo(ORIGINAL_URL);
             verify(disabled.getBean(ShortLinkMapper.class), times(2)).selectById(code);
-            assertThatThrownBy(() -> service.recoverCacheCoordination(code)).isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> disabled.getBean(ShortLinkCreationService.class).recoverCacheCoordination(code)).isInstanceOf(IllegalStateException.class);
             assertThat(redisTemplate.opsForValue().get(cacheKey(code))).isEqualTo(oldSnapshot);
         }
         // All callers are idle here; production must stop and drain every cache-enabled instance.
@@ -1090,8 +1129,8 @@ class RedisRedirectIntegrationTest {
         List<Thread> threads = new ArrayList<>();
         try (ConfigurableApplicationContext first = independentInstance(CoalescingConfiguration.class);
              ConfigurableApplicationContext second = independentInstance(CoalescingConfiguration.class)) {
-            ShortLinkService firstService = first.getBean(ShortLinkService.class);
-            ShortLinkService secondService = second.getBean(ShortLinkService.class);
+            RedirectService firstService = first.getBean(RedirectService.class);
+            RedirectService secondService = second.getBean(RedirectService.class);
             ShortLinkMapper firstMapper = first.getBean(ShortLinkMapper.class);
             ShortLinkMapper secondMapper = second.getBean(ShortLinkMapper.class);
             assertThat(firstService).isNotSameAs(secondService);
@@ -1132,7 +1171,7 @@ class RedisRedirectIntegrationTest {
     }
 
     private FutureTask<String> startRedirect(
-            ShortLinkService service, String code, List<Thread> threads) {
+            RedirectService service, String code, List<Thread> threads) {
         var task = new FutureTask<String>(() -> service.findOriginalUrl(code));
         Thread thread = new Thread(task);
         threads.add(thread);

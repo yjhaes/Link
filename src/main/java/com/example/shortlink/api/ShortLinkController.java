@@ -1,6 +1,7 @@
 package com.example.shortlink.api;
 
-import com.example.shortlink.service.ShortLinkService;
+import com.example.shortlink.service.ShortLinkCreationService;
+import com.example.shortlink.service.RedirectService;
 import com.example.shortlink.service.CreatedShortLink;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,19 +18,22 @@ import java.net.URI;
 @RestController
 public class ShortLinkController {
 
-    private final ShortLinkService shortLinkService;
+    private final ShortLinkCreationService creationService;
+    private final RedirectService redirectService;
     private final String baseUrl;
 
     public ShortLinkController(
-            ShortLinkService shortLinkService,
+            ShortLinkCreationService creationService,
+            RedirectService redirectService,
             @Value("${short-link.base-url}") String baseUrl) {
-        this.shortLinkService = shortLinkService;
+        this.creationService = creationService;
+        this.redirectService = redirectService;
         this.baseUrl = baseUrl.replaceAll("/+$", "");
     }
 
     @PostMapping("/api/links")
     public ResponseEntity<CreateLinkResponse> create(@Valid @RequestBody CreateLinkRequest request) {
-        CreatedShortLink createdLink = shortLinkService.create(request.originalUrl(), request.validMinutes());
+        CreatedShortLink createdLink = creationService.create(request.originalUrl(), request.validMinutes());
         String shortUrl = baseUrl + "/s/" + createdLink.shortCode();
         CreateLinkResponse response = new CreateLinkResponse(
                 createdLink.shortCode(),
@@ -41,7 +45,7 @@ public class ShortLinkController {
 
     @GetMapping("/s/{code}")
     public ResponseEntity<Void> redirect(@PathVariable String code) {
-        String originalUrl = shortLinkService.findOriginalUrl(code);
+        String originalUrl = redirectService.findOriginalUrl(code);
         return ResponseEntity.status(302)
                 .header(HttpHeaders.LOCATION, originalUrl)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")

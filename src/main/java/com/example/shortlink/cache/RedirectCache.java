@@ -11,6 +11,4 @@ public interface RedirectCache {
             RedirectCacheEntry entry);
 
     String replaceVersion(String shortCode);
-
-    boolean deleteIfVersion(String shortCode, String generation);
 }

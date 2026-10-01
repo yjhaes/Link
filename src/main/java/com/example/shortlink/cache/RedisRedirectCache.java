@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -53,14 +52,6 @@ public class RedisRedirectCache implements RedirectCache {
             return 1
             """, Long.class);
 
-    private static final DefaultRedisScript<Long> DELETE_IF_VERSION = new DefaultRedisScript<>("""
-            local value = redis.call('GET', KEYS[1])
-            if not value then return 0 end
-            local ok, entry = pcall(cjson.decode, value)
-            if not ok or entry.schemaVersion ~= 2 or entry.generation ~= ARGV[1] then return 0 end
-            return redis.call('DEL', KEYS[1])
-            """, Long.class);
-
     private static final DefaultRedisScript<Long> DELETE_IF_VALUE_MATCHES = new DefaultRedisScript<>("""
             if redis.call('GET', KEYS[1]) == ARGV[1] then
                 return redis.call('DEL', KEYS[1])
@@ -76,58 +67,25 @@ public class RedisRedirectCache implements RedirectCache {
     private final long notFoundTtlMillis;
     private final long expiredTtlMillis;
     private final long disabledTtlMillis;
-    private boolean enabled = true;
+    private final boolean enabled;
 
     @Autowired
-    public RedisRedirectCache(
-            StringRedisTemplate redisTemplate,
-            ObjectMapper objectMapper,
-            Clock clock,
-            @Value("${short-link.redirect-cache.ttl:5m}") Duration ttl,
-            @Value("${short-link.redirect-cache.not-found-ttl:30s}") Duration notFoundTtl,
-            @Value("${short-link.redirect-cache.expired-ttl:5m}") Duration expiredTtl,
-            @Value("${short-link.redirect-cache.disabled-ttl:15s}") Duration disabledTtl,
-            @Value("${short-link.redirect-cache.enabled:true}") boolean enabled) {
-        this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, expiredTtl, disabledTtl, () -> ThreadLocalRandom.current().nextDouble());
-        this.enabled = enabled;
+    public RedisRedirectCache(StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock,
+            RedirectCacheProperties properties) {
+        this(redisTemplate, objectMapper, clock, properties, () -> ThreadLocalRandom.current().nextDouble());
     }
 
-    public RedisRedirectCache(
-            StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock, Duration ttl) {
-        this(redisTemplate, objectMapper, clock, ttl, Duration.ofSeconds(30), Duration.ofMinutes(5), Duration.ofSeconds(15), () -> ThreadLocalRandom.current().nextDouble());
-    }
-
-    RedisRedirectCache(
-            StringRedisTemplate redisTemplate,
-            ObjectMapper objectMapper,
-            Clock clock,
-            Duration ttl,
-            Duration notFoundTtl,
-            DoubleSupplier jitterSource) {
-        this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, Duration.ofMinutes(5), jitterSource);
-    }
-
-    RedisRedirectCache(
-            StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock,
-            Duration ttl, Duration notFoundTtl, Duration expiredTtl, DoubleSupplier jitterSource) {
-        this(redisTemplate, objectMapper, clock, ttl, notFoundTtl, expiredTtl, Duration.ofSeconds(15), jitterSource);
-    }
-
-    RedisRedirectCache(
-            StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock,
-            Duration ttl, Duration notFoundTtl, Duration expiredTtl, Duration disabledTtl,
-            DoubleSupplier jitterSource) {
+    RedisRedirectCache(StringRedisTemplate redisTemplate, ObjectMapper objectMapper, Clock clock,
+            RedirectCacheProperties properties, DoubleSupplier jitterSource) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.jitterSource = jitterSource;
-        this.ttlMillis = ttl.toMillis();
-        this.notFoundTtlMillis = notFoundTtl.toMillis();
-        this.expiredTtlMillis = expiredTtl.toMillis();
-        this.disabledTtlMillis = disabledTtl.toMillis();
-        if (ttlMillis < 1 || notFoundTtlMillis < 1 || expiredTtlMillis < 1 || disabledTtlMillis < 1) {
-            throw new IllegalArgumentException("Redirect cache TTL must be at least one millisecond.");
-        }
+        this.ttlMillis = properties.getTtl().toMillis();
+        this.notFoundTtlMillis = properties.getNotFoundTtl().toMillis();
+        this.expiredTtlMillis = properties.getExpiredTtl().toMillis();
+        this.disabledTtlMillis = properties.getDisabledTtl().toMillis();
+        this.enabled = properties.isEnabled();
     }
 
     @Override
@@ -204,18 +162,6 @@ public class RedisRedirectCache implements RedirectCache {
             throw new IllegalStateException("Redis did not replace the redirect cache version.");
         }
         return generation;
-    }
-
-    @Override
-    public boolean deleteIfVersion(String shortCode, String generation) {
-        if (!enabled) {
-            return false;
-        }
-        Long deleted = redisTemplate.execute(
-                DELETE_IF_VERSION,
-                List.of(keyFor(shortCode)),
-                generation);
-        return Long.valueOf(1).equals(deleted);
     }
 
     private long ttlMillisFor(RedirectCacheRead.Status status, RedirectCacheEntry entry) {

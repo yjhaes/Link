@@ -6,7 +6,7 @@ import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheEntry;
 import com.example.shortlink.cache.RedirectCacheRead;
-import com.example.shortlink.service.ShortLinkService;
+import com.example.shortlink.service.ShortLinkCreationService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -503,11 +503,11 @@ class ShortLinkApiTest {
 
         try (ConfigurableApplicationContext firstInstance = startSeparateApplicationInstance();
              ConfigurableApplicationContext secondInstance = startSeparateApplicationInstance()) {
-            ShortLinkService firstService = firstInstance.getBean(ShortLinkService.class);
-            ShortLinkService secondService = secondInstance.getBean(ShortLinkService.class);
+            ShortLinkCreationService firstService = firstInstance.getBean(ShortLinkCreationService.class);
+            ShortLinkCreationService secondService = secondInstance.getBean(ShortLinkCreationService.class);
             List<Callable<CreatedShortLink>> requests = IntStream.range(0, CONCURRENT_CREATION_COUNT)
                     .<Callable<CreatedShortLink>>mapToObj(index -> () -> {
-                        ShortLinkService service = index % 2 == 0 ? firstService : secondService;
+                        ShortLinkCreationService service = index % 2 == 0 ? firstService : secondService;
                         return service.create("https://example.com/multi-instance/" + index, null);
                     })
                     .toList();
@@ -732,10 +732,6 @@ class ShortLinkApiTest {
                     return "00000000-0000-0000-0000-000000000001";
                 }
 
-                @Override
-                public boolean deleteIfVersion(String shortCode, String generation) {
-                    return true;
-                }
             };
         }
 
