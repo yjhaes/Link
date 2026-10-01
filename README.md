@@ -26,7 +26,7 @@ CREATE DATABASE short_link_test CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 应用启动时会执行版本控制中的 `schema.sql`。表使用短码作主键，映射记录中的到期时间允许为空。
 
-通过环境变量提供连接信息；默认开发地址为 `localhost:3306/short_link`，用户名默认为 `root`，密码默认为空。需要密码时设置 `DB_PASSWORD`，不要把真实凭据提交到仓库。
+通过环境变量提供连接信息；默认开发地址为 `localhost:3306/short_link`，用户名默认为 `root`，密码默认为 `123456`。需要其他密码时设置 `DB_PASSWORD`，不要把真实凭据提交到仓库。
 
 跳转缓存默认连接 `localhost:6379`，可通过 `REDIS_HOST` 和 `REDIS_PORT` 配置 Redis 地址。正值缓存 TTL 上限默认 5 分钟，可通过 `SHORT_LINK_REDIRECT_CACHE_TTL` 调整；每次写入会随机缩短 0%～10%，命中不会续期。
 
@@ -86,7 +86,7 @@ Content-Type: application/json
 维护者在连接同一 MySQL 主写库与 Redis 的受信任内部应用上下文中调用恢复入口：
 
 ```java
-applicationContext.getBean(ShortLinkService.class).recoverCacheCoordination("Ab12");
+applicationContext.getBean(ShortLinkCreationService.class).recoverCacheCoordination("Ab12");
 ```
 
 该入口不暴露为公开 HTTP API，需由维护代码取得 Spring 管理的服务实例。它确认映射存在后，仅轮换缓存版本并清除结果，正常返回表示协调已确认；异常表示需按同一短码重试。重复调用安全，不再次发号、不插入映射，也不按旧请求改写启用状态。数据库状态已变更时也可复用这一协调步骤，必须先确认 SQL 已提交。
@@ -106,7 +106,7 @@ COMMIT;
 MySQL 提交后，在连接同一 MySQL 主写库及 Redis 的内部维护代码中协调缓存：
 
 ```java
-applicationContext.getBean(ShortLinkService.class).recoverCacheCoordination("Ab12");
+applicationContext.getBean(ShortLinkCreationService.class).recoverCacheCoordination("Ab12");
 ```
 
 重新启用时同样先提交 MySQL，再调用上述协调入口：
@@ -129,10 +129,10 @@ COMMIT;
 
 ## 测试
 
-不依赖外部 MySQL 或 Redis 的四组测试可单独运行：
+不依赖外部 MySQL 或 Redis 的五组测试可单独运行：
 
 ```powershell
-.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest' test
+.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest' test
 ```
 
 `PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集除上述测试外还包含下述两个集成测试。

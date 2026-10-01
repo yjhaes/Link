@@ -28,12 +28,11 @@ class RedisRedirectCacheTest {
     void disabledCacheCannotReadRefillOrConfirmCoordination() {
         StringRedisTemplate redis = mock(StringRedisTemplate.class);
         RedisRedirectCache cache = new RedisRedirectCache(redis, new ObjectMapper(),
-                Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofMinutes(5), Duration.ofSeconds(30),
-                Duration.ofMinutes(5), Duration.ofSeconds(15), false);
+                Clock.fixed(NOW, ZoneOffset.UTC), new RedirectCacheProperties(false, Duration.ofMinutes(5), Duration.ofSeconds(30),
+                Duration.ofMinutes(5), Duration.ofSeconds(15), Duration.ofMillis(200)));
 
         assertThatThrownBy(() -> cache.find("Ab12")).isInstanceOf(IllegalStateException.class);
         assertThat(cache.storeIfVersion("Ab12", "old-version", RedirectCacheRead.Status.NOT_FOUND, null)).isFalse();
-        assertThat(cache.deleteIfVersion("Ab12", "old-version")).isFalse();
         assertThatThrownBy(() -> cache.replaceVersion("Ab12")).isInstanceOf(IllegalStateException.class);
         verifyNoInteractions(redis);
     }
@@ -48,8 +47,8 @@ class RedisRedirectCacheTest {
                 return 1L;
             }).when(redis).execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString());
             RedisRedirectCache cache = new RedisRedirectCache(redis, new ObjectMapper(),
-                    Clock.fixed(NOW, ZoneOffset.UTC), Duration.ofSeconds(1), Duration.ofSeconds(30),
-                    Duration.ofMinutes(5), Duration.ofSeconds(15), () -> random);
+                    Clock.fixed(NOW, ZoneOffset.UTC), new RedirectCacheProperties(true, Duration.ofSeconds(1), Duration.ofSeconds(30),
+                    Duration.ofMinutes(5), Duration.ofSeconds(15), Duration.ofMillis(200)), () -> random);
             assertThat(cache.storeIfVersion("Dis1", "00000000-0000-0000-0000-000000000001",
                     RedirectCacheRead.Status.DISABLED, new RedirectCacheEntry(null, NOW.plusMillis(1)))).isTrue();
             assertThat(ttl.get()).isEqualTo(random == 0 ? 15_000L : 13_500L);
@@ -89,8 +88,8 @@ class RedisRedirectCacheTest {
             return 1L;
         }).when(redisTemplate).execute(any(RedisScript.class), anyList(), anyString(), anyString(), anyString());
         RedisRedirectCache cache = new RedisRedirectCache(redisTemplate, new ObjectMapper(),
-                Clock.fixed(NOW, ZoneOffset.UTC), positiveMaximum, notFoundMaximum,
-                expiredMaximum, () -> randomValue);
+                Clock.fixed(NOW, ZoneOffset.UTC), new RedirectCacheProperties(true, positiveMaximum, notFoundMaximum,
+                expiredMaximum, Duration.ofSeconds(15), Duration.ofMillis(200)), () -> randomValue);
         assertThat(cache.storeIfVersion("Exp1", "00000000-0000-0000-0000-000000000001",
                 status, null)).isTrue();
         assertThat(actualMillis.get()).isEqualTo(expectedMillis);
@@ -103,7 +102,8 @@ class RedisRedirectCacheTest {
                 redisTemplate,
                 new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                Duration.ofMinutes(5));
+                new RedirectCacheProperties(true, Duration.ofMinutes(5), Duration.ofSeconds(30),
+                        Duration.ofMinutes(5), Duration.ofSeconds(15), Duration.ofMillis(200)));
 
         cache.storeIfVersion(
                 "Ab12",
@@ -121,7 +121,8 @@ class RedisRedirectCacheTest {
                 redisTemplate,
                 new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
-                Duration.ofMinutes(5));
+                new RedirectCacheProperties(true, Duration.ofMinutes(5), Duration.ofSeconds(30),
+                        Duration.ofMinutes(5), Duration.ofSeconds(15), Duration.ofMillis(200)));
 
         cache.storeIfVersion(
                 "Ab12",

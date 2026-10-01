@@ -11,8 +11,8 @@ src/main/java/com/example/shortlink/
   service/             创建、跳转与缓存协调恢复流程，以及用例结果
     error/             业务失败类型，由 api 映射为 HTTP 响应
   shortcode/           发号契约与确定性短码编码规则
-  persistence/         MyBatis-Plus 映射与 MySQL 发号实现
-  cache/               跳转缓存契约、读取状态、快照与 Redis 实现
+  persistence/         MyBatis-Plus 映射、MySQL 发号与映射保存错误分类
+  cache/               跳转缓存契约、读取状态、快照、配置与 Redis 实现
 src/main/resources/
   application.yml      数据库、Redis 和服务地址配置
   schema.sql           MySQL 表结构
@@ -29,13 +29,13 @@ src/test/resources/
 
 ## 模块与依赖
 
-`ShortLinkService` 是创建和跳转的主模块；调用方只需了解 `create`、`findOriginalUrl` 的输入、结果和错误类型。它负责 URL 校验、有效期与禁用判定、短码主键冲突处理和缓存回退。`api` 将 HTTP 请求交给该模块，并把结果或错误转换为响应；请求 DTO 不作为数据库记录使用。
+`ShortLinkCreationService` 承担完整创建用例：URL 与有效时长校验、发号编码、短码冲突重试、提交后的缓存协调和内部协调恢复。`RedirectService` 承担完整跳转用例：短码格式校验、缓存回退、跳转拒绝判定、版本条件回填、实例内加载合并与逐请求到期复查。`api` 直接调用对应服务，把结果或错误转换为 HTTP 响应；没有保留纯转发的旧 façade，请求 DTO 不作为数据库记录使用。
 
 `service` 保留流程编排和 `CreatedShortLink` 这一创建用例的结果。它不包含 HTTP 请求与响应 DTO、缓存协议类型或短码编码实现。`CreatedShortLink` 只包含短码与到期时间，由控制器转换为包含完整短链接的 `CreateLinkResponse`；不为单个用例结果额外建立 `model` 包。
 
-`ShortLinkService` 通过构造函数接收 `shortcode/ShortCodeIdIssuer`、`shortcode/PermutedShortCodeEncoder`、`cache/RedirectCache` 和 `Clock`。发号契约与编码规则归属 `shortcode`；实际执行 JDBC 的 `MySqlShortCodeIdIssuer` 留在 `persistence`。`RedirectCache`、`RedirectCacheRead` 与 `RedirectCacheEntry` 同归 `cache`，`RedisRedirectCache` 提供生产实现，封装 Lua、序列化与 TTL。测试仍可在原有发号和缓存接缝上替换实现，无需新增接口或兼容类。
+创建服务通过构造函数接收 Mapper、`persistence/MySqlShortLinkWriter`、`shortcode/ShortCodeIdIssuer`、`shortcode/PermutedShortCodeEncoder`、`cache/RedirectCache` 和 `Clock`；跳转服务只接收 Mapper、缓存、Clock 和已有等待预算配置。发号契约与编码规则归属 `shortcode`；实际执行 JDBC 的 `MySqlShortCodeIdIssuer` 留在 `persistence`。`RedirectCache`、`RedirectCacheRead` 与 `RedirectCacheEntry` 同归 `cache`，`RedisRedirectCache` 提供生产实现，封装 Lua、序列化与 TTL。测试仍可在原有发号和缓存接缝上替换实现，无需新增接口或兼容类。
 
-`ShortLinkMapper` 和带表字段注解的 `ShortLinkEntity` 仍由 MyBatis-Plus 管理；当前只有一张映射表，不增加透传的仓储接口或一套对应的纯领域实体。
+`MySqlShortLinkWriter` 集中插入确认和 MySQL 1062／PRIMARY 错误分类，只将短码主键冲突翻译为 `ShortCodeCollisionException`；其他唯一约束和数据库失败原样传播。创建服务决定重新发号重试一次，数据库知识不进入用例。该 adapter 不提供通用 CRUD。`ShortLinkMapper` 和带表字段注解的 `ShortLinkEntity` 仍由 MyBatis-Plus 管理；当前只有一张映射表，不增加透传的仓储接口或一套对应的纯领域实体。
 
 生产代码的包依赖方向为：
 
@@ -55,14 +55,22 @@ persistence -> shortcode
 
 Redis 使用 `shortlink:redirect:v2:` 命名空间，结果与版本占位都有有限 TTL。正值、不存在、已过期与已禁用结果各按配置上限写入，并向下抖动 0%～10%；限时正值的 TTL 还受业务剩余有效时长限制。命中不续期，缓存 TTL 不代替业务到期判断。Redis 不可用时回源 MySQL，没有拿到版本就跳过条件回填。
 
-每个 `ShortLinkService` 实例按“短码＋缓存版本”共享正在进行的数据库加载，成功或失败后清理任务。不同短码或不同版本可以并行；版本无法确认时独立回源，不加入旧任务。等待共享任务的预算默认 200ms，超时后重读一次缓存，仍未命中则独立查询，不取消其他请求正在使用的任务。各请求在使用共享结果时再次检查业务到期时间。该机制允许多个实例各回源一次，也允许超时后的额外查询，不是全局互斥或 HTTP 总耗时保证。
+每个 `RedirectService` 实例按“短码＋缓存版本”共享正在进行的数据库加载，成功或失败后清理任务。不同短码或不同版本可以并行；版本无法确认时独立回源，不加入旧任务。等待共享任务的预算默认 200ms，超时后重读一次缓存，仍未命中则独立查询，不取消其他请求正在使用的任务。各请求在使用共享结果时再次检查业务到期时间。该机制允许多个实例各回源一次，也允许超时后的额外查询，不是全局互斥或 HTTP 总耗时保证。
 
 创建、维护和恢复协调仍遵守数据库提交后轮换缓存版本的协议；即时可见依赖所有实例使用同一协议、同一 Redis 主实例且已确认更新未丢失。重启、切换或恢复旧快照时须按 [Redis 受控恢复说明](redis-recovery.md) 清理旧结果与版本。具体规则和一致性范围见 [ADR-0002](adr/0002-permuted-auto-id-base62.md)、[ADR-0003](adr/0003-redis-cache-aside-for-redirects.md) 与 [ADR-0004](adr/0004-negative-cache-for-redirects.md)。
 
-测试目录与生产包对应。HTTP 和 MySQL/Redis 集成测试位于测试根包，覆盖接口可见行为；`service` 测试覆盖创建、恢复协调和并发加载，`shortcode` 测试覆盖固定编码向量及长度边界，`cache` 测试覆盖 TTL 和缓存开关。`RedisRedirectCacheTest` 与实现保持同包，以使用包级可见的可控随机源构造器。运行方式见 [README](../README.md)。
+测试目录与生产包对应。HTTP 和 MySQL/Redis 集成测试位于测试根包，覆盖接口可见行为；`service` 测试覆盖创建、恢复协调和并发加载，`shortcode` 测试覆盖固定编码向量及长度边界，`cache` 测试覆盖 TTL 和缓存开关。`RedirectCachePropertiesTest` 验证配置绑定及启动失败；`RedisRedirectCacheTest` 与实现保持同包，以使用包级可见的可控随机源构造器。运行方式见 [README](../README.md)。
 
 ## 后续功能的归属
 
 访问统计、RabbitMQ 消息发布与消费、消费者幂等处理应归未来的 `stats` 功能；限流策略与存储归 `ratelimit`，HTTP 拦截入口可留在 `api`。少量类先在功能包内集中，出现实际代码后再细分，不预建空包，也不继续把新功能装入短链接的 `service`。
 
 统计需要按每次访问请求记录，不能放在缓存未命中或共享数据库加载内部，否则会漏记命中请求或把多个访问者合并计数。HTTP 元数据在 Web 入口提取，成功解析后逐请求复查业务到期时间，再触发统计。统计事件不复用缓存状态、HTTP 请求 DTO 或映射实体；消费者去重与统计变更应在同一数据库事务中完成。消息投递、失败处理和限流策略属于后续功能设计，本次包整理不实现这些能力。
+
+## 已有缓存配置与维护操作
+
+`RedirectCacheProperties` 通过 `@ConfigurationProperties("short-link.redirect-cache")` 集中绑定，启动时校验。原配置键与 application.yml 中的环境变量占位保持不变：默认启用，正值／已过期 TTL 上限各 5 分钟，不存在 30 秒，已禁用 15 秒，加载等待预算 200ms。时长显式空值、非法格式、非正值或转换溢出都会导致启动失败；TTL 至少能表示为 1 毫秒，等待预算至少能表示为 1 纳秒。Redis adapter 与跳转用例各自只取得所需的配置值。
+
+已核对所有生产引用和受信任维护说明：`deleteIfVersion` 没有调用或独立维护用途，已删除 interface 操作、Lua 和对应测试桩。维护完成仍通过 `ShortLinkCreationService.recoverCacheCoordination` 轮换版本，而不是手工删除。坏值按原值条件删除的 Redis 私有操作继续保留，用于避免删除并发写入的新值。
+
+这两个用例集中各自的复杂规则；删除创建用例会把验证、重试和完成状态散回 HTTP，删除跳转用例会把并发与版本规则散回调用方。持久化保存 adapter 集中数据库特有分类，缓存 adapter 保留协议深度；已有发号、缓存和 Clock seam 继续支持测试与复用。

@@ -31,13 +31,19 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class ShortLinkServiceTest {
+class ShortLinkUseCasesTest {
+    private static com.example.shortlink.cache.RedirectCacheProperties defaults() {
+        return new com.example.shortlink.cache.RedirectCacheProperties(true, java.time.Duration.ofMinutes(5),
+                java.time.Duration.ofSeconds(30), java.time.Duration.ofMinutes(5),
+                java.time.Duration.ofSeconds(15), java.time.Duration.ofMillis(200));
+    }
 
     private static final Instant BASE_TIME = Instant.parse("2026-09-28T12:00:00Z");
     private static final String GENERATION = "00000000-0000-0000-0000-000000000001";
 
     private ShortLinkMapper shortLinkMapper;
-    private ShortLinkService shortLinkService;
+    private ShortLinkCreationService creationService;
+    private RedirectService redirectService;
     private ShortCodeIdIssuer shortCodeIdIssuer;
     private RedirectCache redirectCache;
 
@@ -46,12 +52,14 @@ class ShortLinkServiceTest {
         shortLinkMapper = mock(ShortLinkMapper.class);
         shortCodeIdIssuer = mock(ShortCodeIdIssuer.class);
         redirectCache = mock(RedirectCache.class);
-        shortLinkService = new ShortLinkService(
-                shortLinkMapper,
+        creationService = new ShortLinkCreationService(
+                shortLinkMapper, new com.example.shortlink.persistence.MySqlShortLinkWriter(shortLinkMapper),
                 shortCodeIdIssuer,
                 new PermutedShortCodeEncoder(),
                 Clock.fixed(BASE_TIME, ZoneOffset.UTC),
                 redirectCache);
+        redirectService = new RedirectService(shortLinkMapper, Clock.fixed(BASE_TIME, ZoneOffset.UTC),
+                redirectCache, defaults());
     }
 
     @Test
@@ -61,7 +69,7 @@ class ShortLinkServiceTest {
             when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.result(
                     RedirectCacheRead.Status.DISABLED, GENERATION, new RedirectCacheEntry(null, expiresAt)));
             boolean expired = expiresAt != null && !BASE_TIME.isBefore(expiresAt);
-            assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+            assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                     .isInstanceOf(expired ? LinkExpiredException.class : LinkDisabledException.class);
             if (expired) {
                 verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.EXPIRED, null);
@@ -80,7 +88,7 @@ class ShortLinkServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("Redis unavailable")).when(redirectCache)
                 .storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.DISABLED,
                         new RedirectCacheEntry(null, BASE_TIME.plusSeconds(1)));
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12")).isInstanceOf(LinkDisabledException.class);
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12")).isInstanceOf(LinkDisabledException.class);
         verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.DISABLED,
                 new RedirectCacheEntry(null, BASE_TIME.plusSeconds(1)));
     }
@@ -88,7 +96,7 @@ class ShortLinkServiceTest {
     void expiredResultHitDoesNotReadMySqlOrRenewTtl() {
         when(redirectCache.find("Ab12"))
                 .thenReturn(RedirectCacheRead.result(RedirectCacheRead.Status.EXPIRED, GENERATION));
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkExpiredException.class);
         org.mockito.Mockito.verifyNoInteractions(shortLinkMapper);
         verify(redirectCache).find("Ab12");
@@ -101,7 +109,7 @@ class ShortLinkServiceTest {
                 .thenReturn(RedirectCacheRead.redirect(
                         GENERATION, new RedirectCacheEntry("https://cached.example/", null)));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://cached.example/");
         verify(shortLinkMapper, never()).selectById("Ab12");
@@ -112,7 +120,7 @@ class ShortLinkServiceTest {
         when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.redirect(
                 GENERATION, new RedirectCacheEntry("https://cached.example/", BASE_TIME.plusMillis(1))));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://cached.example/");
         verify(shortLinkMapper, never()).selectById("Ab12");
@@ -133,7 +141,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.selectById("Ab12")).thenReturn(redirectableMapping(
                 "Ab12", "https://expired.example/", LocalDateTime.ofInstant(BASE_TIME, ZoneOffset.UTC), false));
 
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkExpiredException.class);
         verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.EXPIRED, null);
         verify(redirectCache, never()).storeIfVersion(
@@ -147,7 +155,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.selectById("Ab12")).thenReturn(entity);
         when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.miss(GENERATION));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://mysql.example/");
         verify(shortLinkMapper).selectById("Ab12");
@@ -161,7 +169,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.selectById("Ab12"))
                 .thenReturn(redirectableMapping("Ab12", "https://mysql.example/", null, true));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://mysql.example/");
         verify(shortLinkMapper).selectById("Ab12");
@@ -176,7 +184,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.selectById("Ab12")).thenReturn(entity);
         when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.miss(GENERATION));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://timed.example/");
         verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.REDIRECT,
@@ -190,7 +198,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.selectById("Ab12"))
                 .thenReturn(redirectableMapping("Ab12", "https://mysql.example/", null, true));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://mysql.example/");
         verify(shortLinkMapper).selectById("Ab12");
@@ -207,14 +215,14 @@ class ShortLinkServiceTest {
                 .when(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.REDIRECT,
                         new RedirectCacheEntry("https://mysql.example/", null));
 
-        String originalUrl = shortLinkService.findOriginalUrl("Ab12");
+        String originalUrl = redirectService.findOriginalUrl("Ab12");
 
         assertThat(originalUrl).isEqualTo("https://mysql.example/");
     }
 
     @Test
     void invalidShortCodeDoesNotReadRedirectCache() {
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("bad"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("bad"))
                 .isInstanceOf(LinkNotFoundException.class);
 
         verify(redirectCache, never()).find("bad");
@@ -227,14 +235,14 @@ class ShortLinkServiceTest {
                 .thenReturn(redirectableMapping(
                         "Ab12", "https://expired.example/", LocalDateTime.parse("2026-09-28T12:00:00"), true));
 
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkExpiredException.class);
         verify(redirectCache, never()).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.REDIRECT,
                 new RedirectCacheEntry("https://expired.example/", BASE_TIME));
 
         when(shortLinkMapper.selectById("Ab12"))
                 .thenReturn(redirectableMapping("Ab12", "https://disabled.example/", null, false));
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkDisabledException.class);
         verify(redirectCache, never()).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.REDIRECT,
                 new RedirectCacheEntry("https://disabled.example/", null));
@@ -245,7 +253,7 @@ class ShortLinkServiceTest {
         when(redirectCache.find("Ab12")).thenReturn(RedirectCacheRead.miss(GENERATION));
         when(shortLinkMapper.selectById("Ab12")).thenReturn(null);
 
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkNotFoundException.class);
 
         verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.NOT_FOUND, null);
@@ -256,7 +264,7 @@ class ShortLinkServiceTest {
         when(redirectCache.find("Ab12"))
                 .thenReturn(RedirectCacheRead.result(RedirectCacheRead.Status.NOT_FOUND, GENERATION));
 
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkNotFoundException.class);
         verify(shortLinkMapper, never()).selectById("Ab12");
         verify(redirectCache).find("Ab12");
@@ -271,7 +279,7 @@ class ShortLinkServiceTest {
         org.mockito.Mockito.doThrow(new IllegalStateException("Redis unavailable"))
                 .when(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.EXPIRED, null);
 
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkExpiredException.class);
         verify(shortLinkMapper, never()).selectById("Ab12");
         verify(redirectCache).storeIfVersion("Ab12", GENERATION, RedirectCacheRead.Status.EXPIRED, null);
@@ -280,12 +288,7 @@ class ShortLinkServiceTest {
     private void assertExpiredCacheHit(Instant now, Instant expiresAt) {
         ShortLinkMapper mapper = mock(ShortLinkMapper.class);
         RedirectCache cache = mock(RedirectCache.class);
-        ShortLinkService service = new ShortLinkService(
-                mapper,
-                shortCodeIdIssuer,
-                new PermutedShortCodeEncoder(),
-                Clock.fixed(now, ZoneOffset.UTC),
-                cache);
+        RedirectService service = new RedirectService(mapper, Clock.fixed(now, ZoneOffset.UTC), cache, defaults());
         when(cache.find("Ab12")).thenReturn(RedirectCacheRead.redirect(
                 GENERATION, new RedirectCacheEntry("https://cached.example/", expiresAt)));
 
@@ -312,7 +315,7 @@ class ShortLinkServiceTest {
                 .thenThrow(primaryKeyCollision())
                 .thenReturn(1);
 
-        CreatedShortLink createdLink = shortLinkService.create("https://example.com/path", null);
+        CreatedShortLink createdLink = creationService.create("https://example.com/path", null);
 
         assertThat(createdLink.shortCode()).isEqualTo("1ZXuEkNa");
         verify(shortCodeIdIssuer, times(2)).issue();
@@ -325,14 +328,14 @@ class ShortLinkServiceTest {
                 .thenReturn(redirectableMapping("Ab12", "https://example.com/", null, false));
         when(redirectCache.replaceVersion("Ab12")).thenReturn(GENERATION);
 
-        shortLinkService.recoverCacheCoordination("Ab12");
-        shortLinkService.recoverCacheCoordination("Ab12");
+        creationService.recoverCacheCoordination("Ab12");
+        creationService.recoverCacheCoordination("Ab12");
 
         verify(redirectCache, times(2)).replaceVersion("Ab12");
         org.mockito.Mockito.verifyNoInteractions(shortCodeIdIssuer);
         verify(shortLinkMapper, times(2)).selectById("Ab12");
         org.mockito.Mockito.verifyNoMoreInteractions(shortLinkMapper);
-        assertThatThrownBy(() -> shortLinkService.findOriginalUrl("Ab12"))
+        assertThatThrownBy(() -> redirectService.findOriginalUrl("Ab12"))
                 .isInstanceOf(LinkDisabledException.class);
     }
 
@@ -342,7 +345,7 @@ class ShortLinkServiceTest {
         IllegalStateException databaseFailure = new IllegalStateException("Commit acknowledgement lost");
         when(shortLinkMapper.insert(any(ShortLinkEntity.class))).thenThrow(databaseFailure);
 
-        assertThatThrownBy(() -> shortLinkService.create("https://example.com/", null))
+        assertThatThrownBy(() -> creationService.create("https://example.com/", null))
                 .isSameAs(databaseFailure);
         verify(redirectCache, never()).replaceVersion(anyString());
     }
@@ -352,7 +355,7 @@ class ShortLinkServiceTest {
         when(shortCodeIdIssuer.issue()).thenReturn(1L);
         when(shortLinkMapper.insert(any(ShortLinkEntity.class))).thenReturn(0);
 
-        assertThatThrownBy(() -> shortLinkService.create("https://example.com/", null))
+        assertThatThrownBy(() -> creationService.create("https://example.com/", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("MySQL did not confirm inserting the short-link mapping.");
         verify(redirectCache, never()).replaceVersion(anyString());
@@ -360,11 +363,11 @@ class ShortLinkServiceTest {
 
     @Test
     void recoveryRejectsAnUnknownOrMalformedCodeWithoutCoordinating() {
-        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination("Nope"))
+        assertThatThrownBy(() -> creationService.recoverCacheCoordination("Nope"))
                 .isInstanceOf(LinkNotFoundException.class);
-        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination("bad"))
+        assertThatThrownBy(() -> creationService.recoverCacheCoordination("bad"))
                 .isInstanceOf(LinkNotFoundException.class);
-        assertThatThrownBy(() -> shortLinkService.recoverCacheCoordination(null))
+        assertThatThrownBy(() -> creationService.recoverCacheCoordination(null))
                 .isInstanceOf(LinkNotFoundException.class);
         org.mockito.Mockito.verifyNoInteractions(redirectCache, shortCodeIdIssuer);
         verify(shortLinkMapper).selectById("Nope");
@@ -376,7 +379,7 @@ class ShortLinkServiceTest {
         when(shortCodeIdIssuer.issue()).thenReturn(1L, 2L);
         when(shortLinkMapper.insert(any(ShortLinkEntity.class))).thenThrow(primaryKeyCollision());
 
-        assertThatThrownBy(() -> shortLinkService.create("https://example.com/path", null))
+        assertThatThrownBy(() -> creationService.create("https://example.com/path", null))
                 .isInstanceOf(ShortCodeGenerationException.class);
 
         verify(shortCodeIdIssuer, times(2)).issue();
@@ -393,7 +396,7 @@ class ShortLinkServiceTest {
         when(shortLinkMapper.insert(any(ShortLinkEntity.class)))
                 .thenThrow(new DuplicateKeyException(sqlException.getMessage(), sqlException));
 
-        assertThatThrownBy(() -> shortLinkService.create("https://example.com/path", null))
+        assertThatThrownBy(() -> creationService.create("https://example.com/path", null))
                 .isInstanceOf(DuplicateKeyException.class);
 
         verify(shortCodeIdIssuer, times(1)).issue();
@@ -404,7 +407,7 @@ class ShortLinkServiceTest {
     void anUnencodableIssuedIdFailsWithoutAttemptingToCreateAMapping() {
         when(shortCodeIdIssuer.issue()).thenReturn(0L);
 
-        assertThatThrownBy(() -> shortLinkService.create("https://example.com/path", null))
+        assertThatThrownBy(() -> creationService.create("https://example.com/path", null))
                 .isInstanceOf(ShortCodeGenerationException.class);
 
         verify(shortCodeIdIssuer, times(1)).issue();
@@ -417,6 +420,32 @@ class ShortLinkServiceTest {
                 "23000",
                 1062);
         return new DuplicateKeyException(sqlException.getMessage(), sqlException);
+    }
+
+    @Test
+    void onlyMySqlPrimaryKeyDuplicatesAreRetriedIncludingChainedSqlExceptions() {
+        for (String key : new String[]{"PRIMARY", "short_link.PRIMARY", "`PRIMARY`", "\"PRIMARY\""}) {
+            org.mockito.Mockito.reset(shortLinkMapper, shortCodeIdIssuer);
+            SQLException outer = new SQLException("Batch error", "HY000", 0);
+            outer.setNextException(new SQLException("Duplicate entry 'x' for key '" + key + "'", "23000", 1062));
+            when(shortCodeIdIssuer.issue()).thenReturn(1L, 2L);
+            when(shortLinkMapper.insert(any(ShortLinkEntity.class)))
+                    .thenThrow(new DuplicateKeyException("Insert error", outer)).thenReturn(1);
+            assertThat(creationService.create("https://example.com/", null).shortCode()).isEqualTo("1ZXuEkNa");
+            verify(shortCodeIdIssuer, times(2)).issue();
+        }
+        for (SQLException failure : new SQLException[]{
+                new SQLException("Duplicate entry 'x' for key 'PRIMARY'", "23000", 999),
+                new SQLException("Duplicate entry 'x' for key 'uq_other'", "23000", 1062),
+                new SQLException("Duplicate entry 'x'", "23000", 1062),
+                new SQLException(null, "23000", 1062)}) {
+            org.mockito.Mockito.reset(shortLinkMapper, shortCodeIdIssuer);
+            DuplicateKeyException original = new DuplicateKeyException("Insert error", failure);
+            when(shortCodeIdIssuer.issue()).thenReturn(1L);
+            when(shortLinkMapper.insert(any(ShortLinkEntity.class))).thenThrow(original);
+            assertThatThrownBy(() -> creationService.create("https://example.com/", null)).isSameAs(original);
+            verify(shortCodeIdIssuer).issue();
+        }
     }
 
 }
