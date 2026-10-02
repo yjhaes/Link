@@ -22,12 +22,14 @@ public class AsyncVisitRecorder implements VisitRecorder {
  private final class Attempt {
   final CorrelationData correlation; final long began=System.nanoTime(); final AtomicBoolean terminal=new AtomicBoolean(), released=new AtomicBoolean();
   Attempt(VisitEvent event){correlation=new CorrelationData(UUID.randomUUID().toString());}
-  void finish(String result){if(terminal.compareAndSet(false,true))count(result);}
+  void finish(String result){if(terminal.compareAndSet(false,true)){count(result);publishDurationNanos.add(System.nanoTime()-began);}}
   void retire(){if(released.compareAndSet(false,true)){attempts.remove(this);permits.release();}}
  }
  private final ArrayBlockingQueue<Pending> pending;
  private final Semaphore permits;
  private final Set<Attempt> attempts=ConcurrentHashMap.newKeySet();
+ private final LongAdder publishDurationNanos=new LongAdder();
+ private static final Set<String> EVENT_CATEGORIES=Set.of("local-accepted","shutdown-lost","full","expired","limited","encoding");
  private final Map<String,LongAdder> outcomes=new ConcurrentHashMap<>();
  private final RabbitTemplate template;
  private final RabbitAdmin admin;
@@ -49,8 +51,13 @@ public class AsyncVisitRecorder implements VisitRecorder {
   pending=new ArrayBlockingQueue<>(properties.bufferCapacity());permits=new Semaphore(properties.unconfirmedLimit());
   for(String category:List.of("local-accepted","shutdown-lost","full","expired","limited","attempt","accepted","return","nack","unknown","send-failed","encoding","recovery","recovery-failed"))outcomes.put(category,new LongAdder());
  }
- public record Snapshot(int pending,int unconfirmed,boolean recovering,Map<String,Long> outcomes){}
- public Snapshot snapshot(){var counts=new HashMap<String,Long>();outcomes.forEach((k,v)->counts.put(k,v.sum()));return new Snapshot(pending.size(),properties.unconfirmedLimit()-permits.availablePermits(),recovering.get(),Map.copyOf(counts));}
+ public record Snapshot(int pending,int unconfirmed,boolean recovering,Map<String,Long> outcomes,Map<String,Long> eventOutcomes,Map<String,Long> publishOutcomes,long localOldestQueuedAgeNanos,long publishDurationNanos){}
+ public Snapshot snapshot(){
+  var counts=new HashMap<String,Long>();var events=new HashMap<String,Long>();var publishes=new HashMap<String,Long>();
+  outcomes.forEach((k,v)->{long value=v.sum();counts.put(k,value);if(EVENT_CATEGORIES.contains(k))events.put(k,value);else publishes.put(k,value);});
+  var oldest=pending.peek();long age=oldest==null?0:Math.max(0,System.nanoTime()-oldest.acceptedAt());
+  return new Snapshot(pending.size(),properties.unconfirmedLimit()-permits.availablePermits(),recovering.get(),Map.copyOf(counts),Map.copyOf(events),Map.copyOf(publishes),age,publishDurationNanos.sum());
+ }
  private void count(String category){outcomes.get(category).increment();}
  @Override public void record(VisitEvent event){synchronized(admissionLock){if(accepting.get())count(pending.offer(new Pending(event,System.nanoTime()))?"local-accepted":"full");}}
  @EventListener(ApplicationReadyEvent.class) public void ready(){synchronized(admissionLock){if(!started.compareAndSet(false,true)||!accepting.get())return;sender.execute(this::sendLoop);observer.scheduleWithFixedDelay(this::observe,100,100,TimeUnit.MILLISECONDS);startup.execute(this::startupLoop);}}
@@ -124,10 +131,3 @@ public class AsyncVisitRecorder implements VisitRecorder {
   }catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
  }
 }
-
-
-
-
-
-
-

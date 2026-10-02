@@ -49,20 +49,12 @@ public class VisitRabbitConfiguration {
  @Bean DirectExchange visitDeadLetterExchange(){return new DirectExchange(DLX,true,false);}
  @Bean Queue visitDeadLetterQueue(){return QueueBuilder.durable(DLQ).withArgument("x-queue-type","classic").build();}
  @Bean Binding visitDeadLetterBinding(){return BindingBuilder.bind(visitDeadLetterQueue()).to(visitDeadLetterExchange()).with(DEAD_KEY);}
-@Bean(name="visitListener") SimpleMessageListenerContainer listener(@Qualifier("visitConsumerConnectionFactory") CachingConnectionFactory factory,VisitMessageCodec codec,VisitPersistence persistence,java.time.Clock clock,@Qualifier("visitListenerExecutor") java.util.concurrent.ExecutorService executor){
+ @Bean VisitConsumer visitConsumer(VisitMessageCodec codec,VisitPersistence persistence,java.time.Clock clock){return new VisitConsumer(codec,persistence,clock);}
+@Bean(name="visitListener") SimpleMessageListenerContainer listener(@Qualifier("visitConsumerConnectionFactory") CachingConnectionFactory factory,VisitConsumer consumer,@Qualifier("visitListenerExecutor") java.util.concurrent.ExecutorService executor){
   var c=new VisitListenerContainer(factory); c.setTaskExecutor(executor);c.setConsumerStartTimeout(1500);c.setPossibleAuthenticationFailureFatal(false);c.setAutoDeclare(false); c.setQueueNames(QUEUE);c.setAutoStartup(false);c.setConcurrentConsumers(1);c.setMaxConcurrentConsumers(1);c.setPrefetchCount(10);c.setBatchSize(1);c.setAcknowledgeMode(AcknowledgeMode.AUTO);c.setDefaultRequeueRejected(false);c.setMissingQueuesFatal(false);c.setShutdownTimeout(1000);c.setForceStop(true);
-  c.setMessageListener(new VisitConsumer(codec,persistence,clock));
+  c.setMessageListener(consumer);
 
   c.setErrorHandler(failure -> org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class).warn("Visit listener failed: category=consumption"));
   return c;
  }
 }
-
-
-
-
-
-
-
-
-

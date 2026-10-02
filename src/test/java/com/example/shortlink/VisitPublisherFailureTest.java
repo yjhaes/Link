@@ -10,6 +10,18 @@ import java.util.concurrent.*;
 import static org.mockito.Mockito.*;
 import static org.assertj.core.api.Assertions.*;
 class VisitPublisherFailureTest {
+ @Test void localAgeAndLayeredCountersDoNotPretendBrokerWatermarks() {
+  var recorder=new AsyncVisitRecorder(new VisitRabbitProperties(null,null,null,null,null,1,null,null,null,null,null,null,false),mock(RabbitTemplate.class),mock(RabbitAdmin.class),mock(SimpleMessageListenerContainer.class),new VisitMessageCodec(),mock(CachingConnectionFactory.class));
+  try {
+   recorder.record(event());recorder.record(event());
+   var snapshot=recorder.snapshot();
+   assertThat(snapshot.eventOutcomes().get("local-accepted")).isEqualTo(1);
+   assertThat(snapshot.eventOutcomes().get("full")).isEqualTo(1);
+   assertThat(snapshot.publishOutcomes().get("attempt")).isZero();
+   assertThat(snapshot.localOldestQueuedAgeNanos()).isPositive();
+   recorder.close();assertThat(recorder.snapshot().localOldestQueuedAgeNanos()).isZero();
+  } finally {recorder.close();}
+ }
  @Test void unknownIsTerminalEvenWhenSenderCannotReturnAndLateAckArrives() throws Exception {
   var template=mock(RabbitTemplate.class); var factory=mock(CachingConnectionFactory.class);
   var entered=new CountDownLatch(1);var release=new CountDownLatch(1);var cleanup=new CountDownLatch(1);
@@ -50,5 +62,3 @@ class VisitPublisherFailureTest {
  }
  static VisitEvent event(){var now=Instant.now();return new VisitEvent(UUID.randomUUID(),"Ab123",now,now.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(),new byte[32],1,null,null,null);}
 }
-
-

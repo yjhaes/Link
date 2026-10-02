@@ -6,7 +6,11 @@
     "priority": 20,
     "definition": {
       "dead-letter-exchange": "shortlink.visit.dlx",
-      "dead-letter-routing-key": "visit.failed.v1"
+      "dead-letter-routing-key": "visit.failed.v1",
+      "max-length": 10000,
+      "max-length-bytes": 16777216,
+      "message-ttl": 86400000,
+      "overflow": "reject-publish"
     }
   },
   {

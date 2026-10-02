@@ -10,6 +10,32 @@ class VisitConsumerTest {
  private VisitConsumer consumer(VisitMessageCodec codec, VisitPersistence persistence) { return new VisitConsumer(codec, persistence, clock); }
  private final VisitMessageCodec codec = new VisitMessageCodec();
  private VisitEvent event() {var at=Instant.parse("2026-10-02T00:00:00.123Z");return new VisitEvent(UUID.randomUUID(),"Ab12",at,LocalDate.of(2026,10,2),new byte[32],1,null,null,null);}
+ @Test void observationsSeparateDeliveredEventsFromPersistenceAttemptsAndProcessedEventDelay() {
+  var calls=new AtomicInteger();
+  var c=consumer(codec,e->{if(calls.incrementAndGet()<3)throw new VisitPersistenceException(VisitPersistenceException.Failure.TRANSIENT);return VisitPersistence.Outcome.SAVED;});
+  var older=new VisitEvent(UUID.randomUUID(),"Ab12",Instant.parse("2026-10-01T23:59:58.877Z"),LocalDate.of(2026,10,2),new byte[32],1,null,null,null);
+  c.onMessage(new Message(codec.encode(older),new MessageProperties()));
+  var snapshot=c.snapshot();
+  assertThat(snapshot.deliveries()).isEqualTo(1);
+  assertThat(snapshot.persistenceAttempts()).isEqualTo(3);
+  assertThat(snapshot.outcomes().get(VisitConsumer.Category.SAVED)).isEqualTo(1);
+  assertThat(snapshot.outcomes().get(VisitConsumer.Category.ATTEMPT_FAILED)).isEqualTo(2);
+  assertThat(snapshot.processingNanos()).isPositive();
+  assertThat(snapshot.processedEventDelayCount()).isEqualTo(1);
+  assertThat(snapshot.processedEventDelayMillis()).isEqualTo(1123); // frozen clock; retries must not change occurredAt
+  assertThat(snapshot.completedPerSecond()).isPositive();
+ }
+ @Test void exhaustedFailureAndInvalidDataHaveFixedDistinctTerminalCategories() {
+  var c=consumer(codec,e->{throw new VisitPersistenceException(VisitPersistenceException.Failure.BUSY);});
+  assertThatThrownBy(()->c.onMessage(new Message(codec.encode(event()),new MessageProperties()))).hasNoCause();
+  assertThatThrownBy(()->c.onMessage(new Message("payload-secret".getBytes(),new MessageProperties()))).hasNoCause();
+  var snapshot=c.snapshot();
+  assertThat(snapshot.deliveries()).isEqualTo(2);
+  assertThat(snapshot.persistenceAttempts()).isEqualTo(3);
+  assertThat(snapshot.outcomes().get(VisitConsumer.Category.EXHAUSTED)).isEqualTo(1);
+  assertThat(snapshot.outcomes().get(VisitConsumer.Category.INVALID)).isEqualTo(1);
+  assertThat(snapshot.inFlight()).isZero();
+ }
  @Test void expiredEventIsAnExplicitSuccessfulTerminalOutcomeWithoutPersistence() {
   var old = new VisitEvent(UUID.randomUUID(), "Ab12", Instant.parse("2026-09-01T00:00:00Z"), LocalDate.of(2026,9,1),new byte[32],1,null,null,null);
   var attempts = new AtomicInteger();
@@ -17,6 +43,8 @@ class VisitConsumerTest {
   assertThat(consumer.consume(new Message(codec.encode(old),new MessageProperties()))).isEqualTo(VisitConsumer.Outcome.EXPIRED);
   assertThat(attempts).hasValue(0);
   assertThat(consumer.expiredCount()).isEqualTo(1);
+  assertThat(consumer.snapshot().outcomes().get(VisitConsumer.Category.EXPIRED)).isEqualTo(1);
+  assertThat(consumer.snapshot().persistenceAttempts()).isZero();
  }
  @Test void transientFailureRecoversOnThirdAttemptUsingFrozenEvent() {
   var e=event(); var attempts=new AtomicInteger();var seen=new ArrayList<VisitEvent>();var times=new ArrayList<Long>();
