@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties={"short-link.stats.enabled=false","short-link.stats.rabbit.consumer-enabled=true","short-link.stats.rabbit.port=${RABBIT_TEST_PORT:5672}","short-link.stats.rabbit.virtual-host=${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:link-lifecycle-test}","short-link.internal-token=0123456789abcdef0123456789abcdef","short-link.redirect-cache.enabled=false"})
-@AutoConfigureMockMvc @ActiveProfiles("test") @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
+@AutoConfigureMockMvc @ActiveProfiles("test") @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class VisitCollectionLifecycleTest {
  @Autowired MockMvc http;
  @Autowired JdbcTemplate db;
@@ -73,25 +73,28 @@ class VisitCollectionLifecycleTest {
   String code="U"+UUID.randomUUID().toString().replace("-","").substring(0,7);
   var event=event(code,Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS));
   var saved=new java.util.concurrent.CountDownLatch(1);var release=new java.util.concurrent.CountDownLatch(1);
+  var deliveryChannel=new java.util.concurrent.atomic.AtomicReference<com.rabbitmq.client.Channel>();
   var closed=new java.util.concurrent.CountDownLatch(1);var duplicate=new java.util.concurrent.atomic.AtomicInteger();
   listener.stop();
-  listener.setMessageListener(new VisitConsumer(codec,value->{
+  var blocked=new VisitConsumer(codec,value->{
    var result=persistence.persist(value);
-   if(result==VisitPersistence.Outcome.SAVED){saved.countDown();try{release.await(15,java.util.concurrent.TimeUnit.SECONDS);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}}
+   if(result==VisitPersistence.Outcome.SAVED){saved.countDown();boolean interrupted=false;long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(20);try{while(release.getCount()>0){long left=deadline-System.nanoTime();if(left<=0)throw new AssertionError("ACK gap was not released.");try{release.await(left,java.util.concurrent.TimeUnit.NANOSECONDS);}catch(InterruptedException stop){interrupted=true;}}}finally{if(interrupted)Thread.currentThread().interrupt();}}
    return result;
-  }));
+  },java.time.Clock.systemUTC());
+  listener.setMessageListener((org.springframework.amqp.rabbit.listener.api.ChannelAwareMessageListener)(message,channel)->{deliveryChannel.set(channel);blocked.onMessage(message);});
   CachingConnectionFactory resumedFactory=null;SimpleMessageListenerContainer resumed=null;
   try {
    listener.start();publish(event);assertThat(saved.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
    listener.stop(closed::countDown);
    assertThat(closed.await(4,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
    assertThat(release.getCount()).isEqualTo(1);
-   release.countDown();
+   assertThat(deliveryChannel.get().isOpen()).isFalse();
    resumedFactory=new CachingConnectionFactory("127.0.0.1",Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","5672")));
    resumedFactory.setVirtualHost(System.getenv().getOrDefault("SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST","link-lifecycle-test"));
    resumedFactory.setCloseTimeout(500);
    var resumedAdmin=new RabbitAdmin(resumedFactory);
    await(()->assertThat(resumedAdmin.getQueueInfo(VisitRabbitConfiguration.QUEUE).getMessageCount()).isEqualTo(1));
+   release.countDown();
    resumed=new SimpleMessageListenerContainer(resumedFactory);resumed.setQueueNames(VisitRabbitConfiguration.QUEUE);resumed.setConcurrentConsumers(1);resumed.setPrefetchCount(1);resumed.setShutdownTimeout(1000);
    resumed.setMessageListener(new VisitConsumer(codec,value->{var result=persistence.persist(value);if(result==VisitPersistence.Outcome.DUPLICATE)duplicate.incrementAndGet();return result;},java.time.Clock.systemUTC()));
    resumed.afterPropertiesSet();resumed.start();
@@ -99,5 +102,3 @@ class VisitCollectionLifecycleTest {
    assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE short_code=?",Integer.class,code)).isEqualTo(1);
   }finally{release.countDown();if(resumed!=null)resumed.stop();if(resumedFactory!=null)resumedFactory.destroy();db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);}
  }}
-
-
