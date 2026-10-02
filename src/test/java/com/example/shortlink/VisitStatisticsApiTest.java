@@ -173,10 +173,14 @@ class VisitStatisticsApiTest {
             var second = executor.submit(() -> recorder.record(event));
             org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(3)).until(() ->
                     statsPool.getHikariPoolMXBean().getActiveConnections() == 2);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    ((com.example.shortlink.stats.VisitPersistence) recorder).persist(event))
+                    .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                    .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.BUSY);
             long start = System.nanoTime();
             http.perform(get("/s/Ab12")).andExpect(status().isFound()).andExpect(header().exists("Set-Cookie"));
             assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED))
-                    .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED) + 1);
+                    .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED) + 2);
             assertThat(first.isCancelled()).isFalse();
             assertThat(second.isCancelled()).isFalse();
             assertThat(java.time.Duration.ofNanos(System.nanoTime()-start)).isLessThan(java.time.Duration.ofMillis(500));
@@ -250,6 +254,106 @@ class VisitStatisticsApiTest {
         assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(2);
     }
 
+    @Test
+    void persistenceConfirmsSaveAndOnlyEventReplayAsDuplicate() {
+        var event = new com.example.shortlink.stats.VisitEvent(java.util.UUID.randomUUID(),
+                "Ab12", clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
+        var persistence = (com.example.shortlink.stats.VisitPersistence) recorder;
+        assertThat(persistence.persist(event)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.SAVED);
+        assertThat(persistence.persist(event)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.DUPLICATE);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1);
+    }
+    @Test
+    void persistenceRejectsOtherConstraintsAndWrongSqlAsPermanent() throws Exception {
+        var persistence = (com.example.shortlink.stats.VisitPersistence) recorder;
+        var invalid = new com.example.shortlink.stats.VisitEvent(java.util.UUID.randomUUID(),
+                null, clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> persistence.persist(invalid))
+                .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.PERMANENT);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            var real = (java.sql.Connection) invocation.callRealMethod();
+            return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{java.sql.Connection.class}, (proxy, method, args) -> {
+                        if (method.getName().equals("prepareStatement")) return real.prepareStatement("INSERT INTO absent_visit_table VALUES (1)");
+                        return invoke(real, method, args);
+                    });
+        }).when(controlledStatsPool).getConnection();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> persistence.persist(invalid))
+                .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.PERMANENT);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isZero();
+        assertThat(observations.snapshot().inFlight()).isZero();
+    }
+    @Test
+    void persistenceExposesLostConfirmationButPreservesConfirmedSaveAfterCleanupFailure() throws Exception {
+        var persistence = (com.example.shortlink.stats.VisitPersistence) recorder;
+        for (String stage : new String[]{"executeUpdate", "close"}) {
+            var event = new com.example.shortlink.stats.VisitEvent(java.util.UUID.randomUUID(),
+                    "Ab12", clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                var real = (java.sql.Connection) invocation.callRealMethod();
+                return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                        new Class<?>[]{java.sql.Connection.class}, (proxy, method, args) -> {
+                            Object result = invoke(real, method, args);
+                            if (!method.getName().equals("prepareStatement")) return result;
+                            var statement = (java.sql.PreparedStatement) result;
+                            return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                                    new Class<?>[]{java.sql.PreparedStatement.class}, (p, m, a) -> {
+                                        Object value = invoke(statement, m, a);
+                                        if (m.getName().equals(stage)) throw new java.sql.SQLException("private reply lost", "08S01");
+                                        return value;
+                                    });
+                        });
+            }).when(controlledStatsPool).getConnection();
+            if (stage.equals("executeUpdate")) {
+                org.assertj.core.api.Assertions.assertThatThrownBy(() -> persistence.persist(event))
+                        .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                        .hasMessage("Visit persistence UNCERTAIN").hasNoCause()
+                        .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.UNCERTAIN);
+            } else assertThat(persistence.persist(event)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.SAVED);
+            org.mockito.Mockito.doCallRealMethod().when(controlledStatsPool).getConnection();
+            assertThat(persistence.persist(event)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.DUPLICATE);
+            assertThat(observations.snapshot().inFlight()).isZero();
+        }
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(2);
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(2)).untilAsserted(() ->
+                assertThat(statsPool.getHikariPoolMXBean().getActiveConnections()).isZero());
+    }
+
+    @Test
+    void persistenceExposesConnectionFailureBeforeExecutionAndReleasesAdmission() throws Exception {
+        var event = new com.example.shortlink.stats.VisitEvent(java.util.UUID.randomUUID(),
+                "Ab12", clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
+        var persistence = (com.example.shortlink.stats.VisitPersistence) recorder;
+        org.mockito.Mockito.doThrow(new java.sql.SQLTransientConnectionException("secret pool detail"))
+                .when(controlledStatsPool).getConnection();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> persistence.persist(event))
+                .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                .hasMessage("Visit persistence TRANSIENT").hasNoCause()
+                .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.TRANSIENT);
+        assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isZero();
+        org.mockito.Mockito.doCallRealMethod().when(controlledStatsPool).getConnection();
+        assertThat(persistence.persist(event)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.SAVED);
+        assertThat(observations.snapshot().inFlight()).isZero();
+    }
+    @Test
+    void duplicateOnAnotherUniqueKeyIsPermanentAndNeverAcknowledged() {
+        var persistence = (com.example.shortlink.stats.VisitPersistence) recorder;
+        var first = new com.example.shortlink.stats.VisitEvent(java.util.UUID.randomUUID(),
+                "Ab12", clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
+        var second = new com.example.shortlink.stats.VisitEvent(java.util.UUID.randomUUID(),
+                "Ab12", clock.instant(), java.time.LocalDate.of(2026,9,30), new byte[32], 1, null, null, null);
+        // A real alternate constraint exercises the driver's unique-key error contract.
+        db.execute("ALTER TABLE short_link_visit_log ADD UNIQUE KEY uq_test_short_code (short_code)");
+        try {
+            assertThat(persistence.persist(first)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.SAVED);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> persistence.persist(second))
+                    .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                    .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.PERMANENT);
+            assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1);
+        } finally { db.execute("ALTER TABLE short_link_visit_log DROP INDEX uq_test_short_code"); }
+    }
     @BeforeEach
     void reset() {
         db.update("DELETE FROM short_link_visit_log");
