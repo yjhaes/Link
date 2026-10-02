@@ -41,5 +41,3 @@ class VisitMqShutdownTest {
   }finally{release.countDown();context.close();close.shutdownNow();}
  }
 }
-
-

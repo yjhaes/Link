@@ -440,4 +440,3 @@ class VisitStatisticsApiTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).untilAsserted(() -> assertThat(db.queryForObject("SELECT user_agent FROM short_link_visit_log", String.class)).isNull());
     }
 }
-

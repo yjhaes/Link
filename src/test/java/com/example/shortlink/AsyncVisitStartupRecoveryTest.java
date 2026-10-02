@@ -33,5 +33,3 @@ class AsyncVisitStartupRecoveryTest {
   }finally {proxy.unavailable=false;db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);db.update("DELETE FROM short_link WHERE short_code=?",code);recorder.close();proxy.close();}
  }
 }
-
-

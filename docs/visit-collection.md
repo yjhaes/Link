@@ -1,4 +1,4 @@
-# 同步访问采集
+# 异步访问采集
 
 采集默认关闭。设置 `SHORT_LINK_STATS_ENABLED=true` 时必须同时提供
 `SHORT_LINK_VISITOR_HMAC_KEY`（至少 32 个安全随机字节的标准 Base64）及
@@ -6,8 +6,11 @@
 所有实例必须使用相同密钥、版本和编码规则；紧急更换密钥必须使用新版本，跨版本 UV 可能增加。
 
 只有正常 GET 跳转决定参与采集。发生时间来自最终逐请求检查，以 UTC 毫秒保存，
-按 Asia/Shanghai 计算统计日。采集是同步 best-effort：没有写入容量立即跳过，
-超时、失败或提交确认丢失后仍返回原 302，不重试；日志只能证明服务端作出了跳转决定。
+按 Asia/Shanghai 计算统计日。请求内冻结事件并立即尝试有界本地交接，后台发布 RabbitMQ，
+独立消费者同步写 MySQL。采集是 best-effort：缓冲满、发布失败/不确定、退出等允许漏记，
+仍返回原 302，不同步回退、不自动重发失败发布；日志只能证明服务端作出了跳转决定。
+消费暂时失败每轮最多三次，永久失败直接拒绝；提交与 ACK 间隙重投由 eventId 唯一键保护。
+查询只反映已记录事件，`generatedAt` 不是消费水位。完整部署及维护步骤见 [运维说明](../ops/README.md)。
 
 `sl_visitor` 保存 128 位随机值，固定 30 天且不续期，host-only、Path=/s、HttpOnly、
 SameSite=Lax；HTTPS 服务地址或 HTTPS 请求设置 Secure。拒绝 Cookie、清除 Cookie、

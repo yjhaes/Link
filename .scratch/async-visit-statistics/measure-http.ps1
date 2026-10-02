@@ -1,6 +1,7 @@
 param(
     [int]$Port = 18080,
     [int]$Requests = 300,
+    [int]$VisibilityWaitSeconds = 30,
     [string]$Output = '.tools/async-baseline/measurement.json'
 )
 $ErrorActionPreference = 'Stop'
@@ -35,6 +36,14 @@ try {
     $sorted = @($latencies | Sort-Object)
     $client.DefaultRequestHeaders.Add('X-Internal-Token', '0123456789abcdef0123456789abcdef')
     $statsJson = $client.GetStringAsync("$base/api/internal/links/$code/stats").GetAwaiter().GetResult() | ConvertFrom-Json
+    $initialPv = $statsJson.pv
+    $initialUv = $statsJson.uv
+    $visibility = [Diagnostics.Stopwatch]::StartNew()
+    while ($statsJson.pv -lt ($Requests + 30) -and $visibility.Elapsed.TotalSeconds -lt $VisibilityWaitSeconds) {
+        Start-Sleep -Milliseconds 100
+        $statsJson = $client.GetStringAsync("$base/api/internal/links/$code/stats").GetAwaiter().GetResult() | ConvertFrom-Json
+    }
+    $visibility.Stop()
     $result = [ordered]@{
         requests = $Requests; warmup = 30; concurrency = 1; shortCode = $code
         elapsedMs = $total.Elapsed.TotalMilliseconds
@@ -42,7 +51,11 @@ try {
         p50Ms = $sorted[[Math]::Ceiling($Requests * 0.50) - 1]
         p95Ms = $sorted[[Math]::Ceiling($Requests * 0.95) - 1]
         p99Ms = $sorted[[Math]::Ceiling($Requests * 0.99) - 1]
-        initiallyVisiblePv = $statsJson.pv; initiallyVisibleUv = $statsJson.uv
+        initiallyVisiblePv = $initialPv; initiallyVisibleUv = $initialUv
+        finallyVisiblePv = $statsJson.pv; finallyVisibleUv = $statsJson.uv
+        visibilityWaitMs = $visibility.Elapsed.TotalMilliseconds
+        missingAfterWait = [Math]::Max(0, ($Requests + 30) - $statsJson.pv)
+        missingFractionAfterWait = [Math]::Max(0, ($Requests + 30) - $statsJson.pv) / ($Requests + 30)
         sampledAt = [DateTimeOffset]::UtcNow.ToString('O')
         latenciesMs = $latencies.ToArray()
     }
