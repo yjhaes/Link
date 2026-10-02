@@ -20,12 +20,12 @@ public class VisitLogCleanup {
     private final Clock clock;
     private final LongSupplier nanoTime;
     private final Semaphore capacity = new Semaphore(1);
-    private volatile Snapshot snapshot = new Snapshot(null, null, null, Outcome.NOT_RUN, 0);
+    private volatile Snapshot snapshot = new Snapshot(null, false, null, null, Outcome.NOT_RUN, 0);
     private volatile boolean catchUp = true;
 
     public enum Outcome { NOT_RUN, COMPLETE, BUDGET, BUSY, FAILED }
     /** Backlog fields are the last successful database observation, possibly stale. */
-    public record Snapshot(Long expiredRows, LocalDate oldestDate, Instant observedAt,
+    public record Snapshot(Long expiredRows, boolean backlogLowerBound, LocalDate oldestDate, Instant observedAt,
                            Outcome outcome, long deletedRows) { }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -52,7 +52,7 @@ public class VisitLogCleanup {
         }
         long started = nanoTime.getAsLong();
         long deleted = 0;
-        LocalDate cutoff = LocalDate.now(clock.withZone(StatsDateRange.ZONE)).minusDays(29);
+        LocalDate cutoff = StatsDateRange.earliestRetainedDate(LocalDate.now(clock.withZone(StatsDateRange.ZONE)));
         catchUp = true;
         try (Connection connection = pool.getConnection()) {
             connection.setAutoCommit(true);
@@ -90,13 +90,16 @@ public class VisitLogCleanup {
     }
 
     private void observe(Connection connection, LocalDate cutoff) throws SQLException {
-        try (var statement = connection.prepareStatement("SELECT COUNT(*),MIN(stat_date)"
-                + " FROM short_link_visit_log WHERE stat_date<?")) {
+        // Bound the observation too: a large backlog must not require a full count before deletion.
+        try (var statement = connection.prepareStatement("SELECT COUNT(*),MIN(stat_date) FROM"
+                + " (SELECT stat_date FROM short_link_visit_log FORCE INDEX (idx_visit_cleanup)"
+                + " WHERE stat_date<? ORDER BY stat_date,id LIMIT 1001) expired")) {
             statement.setQueryTimeout(properties.statementTimeoutSeconds());
             statement.setObject(1, cutoff);
             try (var rows = statement.executeQuery()) {
                 rows.next();
-                snapshot = new Snapshot(rows.getLong(1), rows.getObject(2, LocalDate.class),
+                long count = rows.getLong(1);
+                snapshot = new Snapshot(count, count == 1001, rows.getObject(2, LocalDate.class),
                         clock.instant(), snapshot.outcome(), snapshot.deletedRows());
             }
         }
@@ -104,6 +107,6 @@ public class VisitLogCleanup {
 
     private void publish(Outcome outcome, long deleted) {
         Snapshot previous = snapshot;
-        snapshot = new Snapshot(previous.expiredRows(), previous.oldestDate(), previous.observedAt(), outcome, deleted);
+        snapshot = new Snapshot(previous.expiredRows(), previous.backlogLowerBound(), previous.oldestDate(), previous.observedAt(), outcome, deleted);
     }
 }

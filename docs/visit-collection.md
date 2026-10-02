@@ -81,6 +81,8 @@ socket 和锁超时。按 `(stat_date,id)` 索引排序，每批最多 1000 行�
 
 `VisitLogCleanup.snapshot()` 提供进程内观测，无公开 HTTP 入口：`expiredRows`、`oldestDate`
 和 `observedAt` 表示最近一次成功数据库观测的过期行数、最旧过期统计日和观测时间。
+观测沿清理索引最多读取 1001 行，避免全量计数阻碍大积压追赶；`backlogLowerBound=true`
+表示 `expiredRows=1001` 是“至少1001行”的下界，其余计数为该观测时的实际过期行数。
 未成功观测时为 null；预算耗尽、失败或繁忙后可能陈旧，应同时查看 `outcome`
 （NOT_RUN/COMPLETE/BUDGET/BUSY/FAILED）及本轮确认删除数 `deletedRows`。
 并发实例可能改变积压，观测不是永久精确值，重启后归零。失败仅记录固定类别，不记录驱动秘密。

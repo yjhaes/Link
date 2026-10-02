@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -71,11 +70,14 @@ class VisitCleanupLifecycleTest {
         first.runRound();
         assertThat(first.snapshot().deletedRows()).isEqualTo(1000);
         assertThat(first.snapshot().outcome()).isEqualTo(VisitLogCleanup.Outcome.BUDGET);
+        assertThat(first.snapshot().expiredRows()).isEqualTo(1001);
+        assertThat(first.snapshot().backlogLowerBound()).isTrue();
         assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE stat_date='2026-09-01'", Long.class)).isEqualTo(1001);
         VisitLogCleanup restarted = new VisitLogCleanup(pool, properties, clock);
         restarted.runRound();
         assertThat(restarted.snapshot().deletedRows()).isEqualTo(1001);
         assertThat(restarted.snapshot().expiredRows()).isZero();
+        assertThat(restarted.snapshot().backlogLowerBound()).isFalse();
         assertThat(restarted.snapshot().oldestDate()).isNull();
         assertThat(restarted.needsCatchUp()).isFalse();
         http.perform(stats("2026-09-02")).andExpect(status().isOk()).andExpect(jsonPath("$.pv").value(2));
@@ -110,6 +112,9 @@ class VisitCleanupLifecycleTest {
     void concurrentInstancesDeleteOnlyExpiredRowsWithoutDistributedCoordination() throws Exception {
         visits("2026-09-01", 1100);
         visits("2026-09-02", 1);
+        db.execute("ANALYZE TABLE short_link_visit_log");
+        var plan = db.queryForList("EXPLAIN DELETE FROM short_link_visit_log WHERE stat_date<'2026-09-02' ORDER BY stat_date,id LIMIT 1000");
+        assertThat(plan.get(0).get("key")).isEqualTo("idx_visit_cleanup");
         var one = new VisitLogCleanup(pool, properties, clock);
         var two = new VisitLogCleanup(pool, properties, clock);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -125,7 +130,5 @@ class VisitCleanupLifecycleTest {
             assertThat(one.snapshot().expiredRows()).isZero();
             assertThat(two.snapshot().expiredRows()).isZero();
         } finally { executor.shutdownNow(); }
-        var plan = db.queryForList("EXPLAIN DELETE FROM short_link_visit_log WHERE stat_date<'2026-09-02' ORDER BY stat_date,id LIMIT 1000");
-        assertThat(plan.get(0).get("key")).isEqualTo("idx_visit_cleanup");
     }
 }

@@ -23,7 +23,7 @@ class VisitLogCleanupTest {
         when(connection.prepareStatement(startsWith("SELECT"))).thenReturn(count);
         when(connection.prepareStatement(startsWith("DELETE"))).thenReturn(delete);
         when(count.executeQuery()).thenReturn(rows);
-        when(rows.getLong(1)).thenReturn(2001L);
+        when(rows.getLong(1)).thenReturn(1001L);
         when(rows.getObject(2, LocalDate.class)).thenReturn(LocalDate.parse("2026-09-01"));
         AtomicLong elapsed = new AtomicLong();
         when(delete.executeUpdate()).thenAnswer(invocation -> { elapsed.set(Duration.ofSeconds(30).toNanos()); return 1000; });
@@ -31,7 +31,8 @@ class VisitLogCleanupTest {
         cleanup.runRound();
         assertThat(cleanup.snapshot().outcome()).isEqualTo(VisitLogCleanup.Outcome.BUDGET);
         assertThat(cleanup.snapshot().deletedRows()).isEqualTo(1000);
-        assertThat(cleanup.snapshot().expiredRows()).isEqualTo(2001);
+        assertThat(cleanup.snapshot().expiredRows()).isEqualTo(1001);
+        assertThat(cleanup.snapshot().backlogLowerBound()).isTrue();
         assertThat(cleanup.snapshot().oldestDate()).isEqualTo(LocalDate.parse("2026-09-01"));
         assertThat(cleanup.needsCatchUp()).isTrue();
         verify(connection).setAutoCommit(true);
