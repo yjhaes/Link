@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: claimed
 
 # 阶段 6：RabbitMQ 异步访问统计
 

@@ -137,6 +137,10 @@
 - ADR-0006的统计业务口径继续有效，后续实施以ADR-0007替换请求内同步采集边界。当前代码仍同步，本次仅完成设计，无实施任务或代码改动。
 - 用户随后显式调用`to-spec`，已将已确认设计合成为[完整实施规格](spec.md)，按本地任务跟踪约定标记`Status: ready-for-agent`。只发布规格，不拆子任务、不认领或执行实施；测试接缝沿用Q14已确认的HTTP/真实MQ/MySQL及现有统计提交边界。
 
+- 2026-10-02：用户显式调用 implement-spec，开始已确认八张任务的实施；历史的仅发布/不实施范围不再限制本轮授权。集成分支为 codex/async-visit-statistics，固定实现基线为 8a3d7eb。
+- 已完成并合入 [01 持久化结果](issues/01-visit-persistence-outcomes.md)、[02 异步闭环](issues/02-rabbitmq-visit-roundtrip.md)、[03 发布故障](issues/03-publish-failure-and-backpressure.md)。验收证据和可复现同步基线见 [实施验证](verification.md)。
+- 实施阶段沿用当前模型；最终 Standards Review 和 Spec Review 明确使用 GPT-6.1 Sol / high。
+
 ## 已作决定：任务 04 实施结果
 
 - [04](issues/04-consumer-retry-and-dead-letter.md) 已完成：同步消费仅明确保存/事件重复 ACK；受控暂时 cause 本轮三次与 200/500 ms；永久/格式失败或耗尽直接拒绝且不 requeue；单 durable classic DLQ、精确死信路由及 policy 运维文件。
