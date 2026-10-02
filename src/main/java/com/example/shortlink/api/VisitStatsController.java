@@ -48,12 +48,13 @@ public class VisitStatsController {
             limit = Integer.parseInt(value);
             if (limit < 1 || limit > 100) throw invalidPage();
         }
-        var cursor = parameters.containsKey("cursor") ? VisitCursor.parse(single(parameters, "cursor"), code, range) : null;
+        var cursor = parameters.containsKey("cursor") ? VisitCursorCodec.parse(single(parameters, "cursor"), code, range) : null;
         var result = query.page(code, range, limit, cursor);
         var items = result.items().stream().map(row -> new VisitPageResponse.Item(
                 row.occurredAt().toInstant(ZoneOffset.UTC), row.peerIpNetwork(), row.userAgent(), row.refererHost())).toList();
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
-                new VisitPageResponse(code, range.from(), range.to(), items, result.nextCursor(), result.hasMore()));
+                new VisitPageResponse(code, range.from(), range.to(), items,
+                        result.nextPosition() == null ? null : VisitCursorCodec.encode(result.nextPosition(), code, range), result.hasMore()));
     }
 
     private static String single(MultiValueMap<String, String> parameters, String name) {

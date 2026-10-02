@@ -50,10 +50,10 @@ public class MySqlVisitStatsQuery {
             }
             boolean hasMore = items.size() > limit;
             if (hasMore) items.remove(items.size() - 1);
-            String next = null;
+            VisitCursor next = null;
             if (hasMore) {
                 var last = items.get(items.size() - 1);
-                next = new VisitCursor(last.occurredAt(), last.id()).encode(code, range);
+                next = new VisitCursor(last.occurredAt(), last.id());
             }
             return new VisitPageResult(List.copyOf(items), next, hasMore);
         });
