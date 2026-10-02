@@ -57,4 +57,3 @@ public final class VisitMessageCodec {
     private String optional(JsonNode n,String key,int max) { JsonNode v=n.get(key); if(v==null || v.isNull()) return null; String s=required(n,key); if(s.codePointCount(0,s.length())>max) throw invalid(); return s; }
     private IllegalArgumentException invalid() { return new IllegalArgumentException("Invalid visit message contract."); }
 }
-

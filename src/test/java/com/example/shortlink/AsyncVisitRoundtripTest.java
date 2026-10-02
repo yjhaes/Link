@@ -46,9 +46,3 @@ class AsyncVisitRoundtripTest {
    assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE short_code=?",Integer.class,code)).isZero();
   } finally {release.countDown();org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(10)).until(()->recorder.snapshot().pending()==0 && recorder.snapshot().unconfirmed()==0);db.update("DELETE FROM short_link WHERE short_code=?",code);org.mockito.Mockito.doCallRealMethod().when(publishing).send(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.any(org.springframework.amqp.core.Message.class),org.mockito.ArgumentMatchers.any(org.springframework.amqp.rabbit.connection.CorrelationData.class));}
  }}
-
-
-
-
-
-

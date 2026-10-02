@@ -37,5 +37,3 @@ class VisitMessageCodecTest {
             assertThatThrownBy(()->codec.decode(broken.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
                 .isInstanceOf(IllegalArgumentException.class).hasMessage("Invalid visit message contract.").hasNoCause();
     }}
-
-

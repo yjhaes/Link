@@ -23,4 +23,3 @@ public final class SafeDependencyConsoleEncoder extends PatternLayoutEncoder {
         return super.encode(safe);
     }
 }
-

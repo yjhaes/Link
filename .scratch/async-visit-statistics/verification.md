@@ -37,3 +37,41 @@
 待所有实现切片、整体测试和双轴审查完成后记录。未验证的条件必须明确保留，不能用单元替身结果冒充真实网络故障或 broker 验收。
 
 2026-10-02 按用户要求在 06 完成后暂停；07、08、最终双轴审查尚未执行。续接入口见 [resume.md](resume.md)。
+
+## 08 整体验收与新会话比较
+
+2026-10-02 用户已恢复任务，01～07 resolved。首轮完整 Maven suite **259 项通过，失败/错误/跳过均 0**，包含 RedisRedirectIntegrationTest 的真实 Testcontainers MySQL 8.4 / Redis 7.2（47 项），没有替换成 mock 或跳过 Docker。其余真实 MySQL、RabbitMQ 测试运行已保存本地 `.tools/verification/full-suite.log`。首次非异步上下文后台连接默认5672产生安全降级日志；统一 test profile 的 RABBIT_TEST_PORT 后最终全量再次 **259 项通过，失败/错误/跳过均0**（23:07，3分59秒），保存 `.tools/verification/final-suite.log`；无生产行为修复。
+
+### 场景证据
+
+| 合并验收场景 | 实际通过的测试边界 |
+| --- | --- |
+| 每请求 cache hit/shared loading、Cookie/独立ID/口径 | VisitStatisticsApiTest 18、AsyncVisitRoundtripTest 2；真实 HTTP、RabbitMQ、MySQL 最终结果与闩锁隔离 |
+| 原创建/状态/鉴权、缓存协议 | ShortLinkApiTest 35、RedisRedirectIntegrationTest 47、RedirectLoadCoalescingTest 14、管理 API/configuration 回归 |
+| 范围UV/日期/趋势/分页/查询错误、清理 | VisitStatsQueryApiTest 12、VisitLogsApiTest 7、清理及 timeout/observation 测试 |
+| 启动不可用/运行发布失败/恢复/背压/竞态 | AsyncVisitStartupRecoveryTest、VisitPublisherBrokerTest、VisitPublisherFailureTest；真实 Rabbit/TCP blackout 与可控回调分别提供证据 |
+| 提交至ACK间隙、分类重试、DLQ、时间窗口 | VisitConsumerIntegrationTest 11、VisitConsumerTest；真实独立消费连接重投、MySQL 去重和窗口检查 |
+| 关采继续消费/查询/清理、人工暂停/恢复、有界关闭 | VisitCollectionLifecycleTest 3、VisitPausedRecoveryTest、VisitMqShutdownTest |
+| ready/unacked、满nack无DLQ、TTL/DLQ淘汰、prefetch及DB持续故障暂停 | VisitBacklogIntegrationTest 5；真实 broker 缩小 policy，结束恢复标准 policy |
+| 安全消息/日志、池隔离和超时 | VisitMessageCodecTest、SafeDependencyConsoleEncoderTest、VisitStatisticsApiTest、VisitTimeoutTest 6 |
+
+以上测试计数为对应类独立用例数，首轮完整总数259，不将历史多轮执行相加。此前每张切片自身 Answer 的详细故障方法继续适用；mock 不冒充真实 broker 证据。
+
+### 同环境公平 HTTP 样本
+
+本轮先运行原 `8a3d7eb` 同步 jar，再运行当前异步 jar，均 Java17、本机loopback、同MySQL8.4/Redis7.2、独立 short_link_benchmark DB、同缓存命中且同匿名Cookie、30预热+300顺序GET、并发1、同 measure-http.ps1。异步使用新隔离 link-benchmark-08 vhost 和完整主/DLQ policy，开始前确认消费者已运行；没有关闭 MQ 或同步回退。脚本核验302/Location；测量分布只计300请求，PV含30预热。原日志/逐请求样本保存在被忽略 `.tools/verification`，历史7.386ms只作旧样本，不参与这次比较。
+
+| 本轮 jar | 均值/ms | p50/ms | p95/ms | p99/ms | 总耗时/ms | 首次PV/UV | 最终PV/UV | 追加可见等待/ms | 窗口末缺失 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: |
+| 原同步 | 7.016 | 6.873 | 8.486 | 9.677 | 2128.171 | 330/1 | 330/1 | 0.629 | 0/330 |
+| 当前异步 | 3.126 | 3.041 | 3.928 | 4.165 | 948.222 | 156/1 | 330/1 | 741.181 | 0/330 |
+
+在这一小样本正常依赖环境观察到 HTTP 均值约降低55.4%，代价是异步可见。追加查询等待是请求循环结束后到全量可见的上界观察，**不是单事件处理延迟**。脚本有30秒可见等待预算；若预算末仍缺失，只能报告缺失而不能证明永久丢弃。本次两组最终记录完整，观察缺失率0%；不证明故障丢弃率、并发吞吐、稳定生产p99或 SLA。同机同DB仍共享硬件；同步先运行、单轮顺序样本也存在顺序/预热影响，不宣称通用倍数。
+
+为获得现有内部观测，用同实现 classpath 启动独立应用上下文、同HTTP脚本和独立样本，未增加生产端点/生产测试模式：300请求均值3.273ms；330本地接受/330发布confirm/330 delivery/330 SAVED，满/expired/encoding/nack/return/unknown/send-failed/重试/重复均0，最终pending/unconfirmed/inFlight均0。现有 VisitConsumer.snapshot 的累计 processedEventDelayMillis=142467、count=330，事件冻结至保存平均 **431.718ms**；listener内平均处理耗时 **5.274ms**（1740502300ns/330），实际保存观察而非可见等待。该补充运行不同于上面 jar 测量，不能伪称同一组事件的延迟；只有累计平均，没有延迟分布。同步返回前已完成记录，其请求耗时含落库但未单独测event→commit延迟，不能把7.016ms当其精确处理延迟。
+
+### 阶段边界
+
+部署/开关/人工暂停/关停/policy/固定类别观察/人工死信及面试能力说明同步至 README、ops/README、采集说明和异步设计。只实施必须实现范围：无 outbox/事务消息、quorum、自动重放/补采、批量/扩容、永久去重或端到端恰好一次。所有统计仍来自MySQL已记录事件，业务口径、隐私、核心缓存协议保持；单节点、进程内丢失、classic死信丢失、确认不确定及物理保留延迟继续明确。最终双轴审查由 GPT-6.1 Sol/high 执行，尚未完成，不将本测试验收等同审查通过。
+
+最终公平组在23:08全量回归结束后、无并行DB/MQ测试时重新运行（sync-final-measurement.json、async-final-measurement.json）。前一探索组曾与suite尾部时间重叠，故不用于最终收益比较；补充上下文延迟样本独立运行时无并行测试。

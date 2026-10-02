@@ -151,7 +151,7 @@ X-Internal-Token: <部署配置中的管理秘密>
 .\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,ShortLinkStateServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest,InternalManagementApiTest,InternalManagementDisabledApiTest,InternalManagementConfigurationTest' test
 ```
 
-`PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。管理边界测试使用真实 MVC 和业务服务，以及数据库/缓存边界的测试替身，独立验证拒绝无副作用、鉴权先于损坏请求体解析、精确比较、重复头、未配置关闭、配置长度及公开接口不需令牌。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集除上述测试外还包含下述两个集成测试。
+`PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。管理边界测试使用真实 MVC 和业务服务，以及数据库/缓存边界的测试替身，独立验证拒绝无副作用、鉴权先于损坏请求体解析、精确比较、重复头、未配置关闭、配置长度及公开接口不需令牌。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集还包含原 MySQL/Redis 回归和真实 RabbitMQ 异步、故障、资源与生命周期验收。
 
 `ShortLinkApiTest` 连接真实 MySQL。默认测试库为本机 `short_link_test`，用户名为 `root`，密码为 `123456`；其他环境可按需设置测试连接变量：
 
@@ -179,3 +179,9 @@ Redis 版本无法确认时独立读取 MySQL，不共享旧任务，也不无�
 `SHORT_LINK_REDIRECT_CACHE_ENABLED` 默认 `true`，维护期间设为 `false` 并重启可停用缓存读写，让跳转独立查 MySQL；创建可能已提交但仍返回协调未确认的 503，维护协调也不能报告完成。缓存开关不代替停止和排空所有旧实例。
 
 重启、切换或恢复旧快照后，按 [Redis 受控恢复说明](docs/redis-recovery.md) 停用旧缓存、清理全部旧格式和旧版本，再恢复按需加载。即时可见要求以同一 Redis 主实例且已确认协调更新未丢失为前提；未经清理的故障切换或旧快照恢复不具备这一保证。说明包含 PowerShell 7 清理步骤、真实超时和旧数据恢复演示，以及穿透、集中到期、整体不可用和命中热点的压力边界。
+
+### RabbitMQ 异步访问统计
+
+正常 GET 冻结最小化访问事件后立即尝试有界本地交接，后台发布并消费写 MySQL；HTTP 不等待统计网络或 SQL。采集默认关闭，消费者默认开启；MQ 启动/运行故障仍允许核心跳转，best-effort 允许漏记且无同步回退。查询只计已记录事件，可能晚于刚发生的访问。Cookie、上海统计日、30 日窗口、管理鉴权和原缓存协议保持。
+
+部署、policy、开关、人工暂停及死信处理见 [运维说明](ops/README.md)，消息和成功边界见 [异步设计](docs/async-visit-statistics.md)，完整测试及同条件测量见 [验证记录](.scratch/async-visit-statistics/verification.md)。测试使用 `MYSQL_TEST_URL`、`RABBIT_TEST_PORT`、`RABBIT_MANAGEMENT_URL`、`REDIS_PORT`，另需 Docker 供 RedisRedirectIntegrationTest 启动真实 MySQL/Redis；隔离 vhost 可设置 `SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST`。test profile 默认禁消费，仅真实异步测试显式启用并关闭上下文，避免不同 Clock 的消费者互相抢消息。

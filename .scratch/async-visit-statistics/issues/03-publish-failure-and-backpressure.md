@@ -35,4 +35,3 @@ Blocked by: 02
 
 
 补充验收：AsyncVisitStartupRecoveryTest,VisitPublisherFailureTest,VisitPublisherBrokerTest,AsyncVisitRoundtripTest 合计9测试通过。后台声明启动固定1个daemon worker、500ms重试间隔；原Rabbit驱动DefaultExceptionHandler仅覆盖日志输出为固定category且保持ERROR级别，保留原错误处理语义。
-
