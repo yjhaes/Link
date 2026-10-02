@@ -289,13 +289,16 @@ class VisitStatsQueryApiTest {
     void realStatementTimeoutReturnsExplicitErrorAndSubsequentQueryRecovers() throws Exception {
         long timeoutsBefore = queryObservations.timeouts();
         controlReads(sql -> sql.startsWith("SELECT short_code") ? sql + " AND SLEEP(5)=0" : sql, (sql, connection) -> {});
-        long start = System.nanoTime();
-        http.perform(stats("Ab12")).andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("STATS_QUERY_TIMEOUT"))
-                .andExpect(header().string("Cache-Control", "no-store"));
-        org.assertj.core.api.Assertions.assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
-                .isBetween(java.time.Duration.ofMillis(700), java.time.Duration.ofSeconds(4));
-        org.assertj.core.api.Assertions.assertThat(queryObservations.timeouts()).isEqualTo(timeoutsBefore + 1);
+        for (String endpoint : new String[]{"stats", "visits"}) {
+            long start = System.nanoTime();
+            http.perform(get("/api/internal/links/Ab12/" + endpoint)
+                    .header("X-Internal-Token", "0123456789abcdef0123456789abcdef")).andExpect(status().isServiceUnavailable())
+                    .andExpect(jsonPath("$.code").value("STATS_QUERY_TIMEOUT"))
+                    .andExpect(header().string("Cache-Control", "no-store"));
+            org.assertj.core.api.Assertions.assertThat(java.time.Duration.ofNanos(System.nanoTime() - start))
+                    .isBetween(java.time.Duration.ofMillis(700), java.time.Duration.ofSeconds(4));
+        }
+        org.assertj.core.api.Assertions.assertThat(queryObservations.timeouts()).isEqualTo(timeoutsBefore + 2);
         org.mockito.Mockito.doCallRealMethod().when(pool).getConnection();
         http.perform(stats("Ab12")).andExpect(status().isOk());
     }

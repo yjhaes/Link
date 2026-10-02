@@ -33,9 +33,11 @@ class InternalManagementDisabledApiTest {
     void absentTokenClosesStatisticsGetAndHeadBeforeValidationOrQuery() throws Exception {
         var mvc = MockMvcBuilders.webAppContextSetup(context).build();
         for (var method : new org.springframework.http.HttpMethod[]{org.springframework.http.HttpMethod.GET, org.springframework.http.HttpMethod.HEAD}) {
-            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(method, "/api/internal/links/bad!/stats")
+            for (String endpoint : new String[]{"stats", "visits"}) {
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(method, "/api/internal/links/bad!/" + endpoint)
                             .header("X-Internal-Token", InternalManagementApiTest.TOKEN).param("from", "invalid"))
                     .andExpect(status().isNotFound()).andExpect(header().string("Cache-Control", "no-store"));
+            }
         }
         verifyNoInteractions(query, mapper, cache, transactions, issuer);
     }
