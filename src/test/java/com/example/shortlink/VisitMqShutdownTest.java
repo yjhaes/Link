@@ -14,6 +14,7 @@ class VisitMqShutdownTest {
  @Test void actualContextCloseDoesNotWaitForBlockedPublisherOrCreateReplacementWorkers() throws Exception {
   var entered=new CountDownLatch(1);var release=new CountDownLatch(1);
   var context=new AnnotationConfigApplicationContext();
+  context.registerBean(java.time.Clock.class,java.time.Clock::systemUTC);
   context.registerBean(VisitPersistence.class,()->event->VisitPersistence.Outcome.SAVED);
   context.register(VisitRabbitConfiguration.class,AsyncVisitRecorder.class);
   context.getBeanFactory().addBeanPostProcessor(new org.springframework.beans.factory.config.BeanPostProcessor(){ public Object postProcessAfterInitialization(Object bean,String name){if(name.equals("visitPublisherConnectionFactory")){var instrumented=spy((CachingConnectionFactory)bean);doAnswer(i->{entered.countDown();while(!release.await(1,TimeUnit.SECONDS)){} return null;}).when(instrumented).resetConnection();return instrumented;}return bean;}});
@@ -40,4 +41,5 @@ class VisitMqShutdownTest {
   }finally{release.countDown();context.close();close.shutdownNow();}
  }
 }
+
 

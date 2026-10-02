@@ -93,10 +93,11 @@ class VisitCollectionLifecycleTest {
    var resumedAdmin=new RabbitAdmin(resumedFactory);
    await(()->assertThat(resumedAdmin.getQueueInfo(VisitRabbitConfiguration.QUEUE).getMessageCount()).isEqualTo(1));
    resumed=new SimpleMessageListenerContainer(resumedFactory);resumed.setQueueNames(VisitRabbitConfiguration.QUEUE);resumed.setConcurrentConsumers(1);resumed.setPrefetchCount(1);resumed.setShutdownTimeout(1000);
-   resumed.setMessageListener(new VisitConsumer(codec,value->{var result=persistence.persist(value);if(result==VisitPersistence.Outcome.DUPLICATE)duplicate.incrementAndGet();return result;}));
+   resumed.setMessageListener(new VisitConsumer(codec,value->{var result=persistence.persist(value);if(result==VisitPersistence.Outcome.DUPLICATE)duplicate.incrementAndGet();return result;},java.time.Clock.systemUTC()));
    resumed.afterPropertiesSet();resumed.start();
    await(()->assertThat(duplicate.get()).isEqualTo(1));
    assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE short_code=?",Integer.class,code)).isEqualTo(1);
   }finally{release.countDown();if(resumed!=null)resumed.stop();if(resumedFactory!=null)resumedFactory.destroy();db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);}
  }}
+
 

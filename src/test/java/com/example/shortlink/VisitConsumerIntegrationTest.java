@@ -25,6 +25,7 @@ class VisitConsumerIntegrationTest {
  @Autowired JdbcTemplate db;
  @Autowired javax.sql.DataSource dataSource;
  @Autowired VisitPersistence persistence;
+ @Autowired VisitStatsProperties statsProperties;
  @Autowired VisitWriteObservations writes;
  @Autowired VisitMessageCodec codec;
  @Autowired @Qualifier("visitRabbitAdmin") RabbitAdmin admin;
@@ -49,7 +50,7 @@ class VisitConsumerIntegrationTest {
    request("PUT","policies/"+path(vhost)+"/"+path(policy.get("name").asText()),policy.toString());
   }
   admin.initialize();listener.stop();admin.purgeQueue(VisitRabbitConfiguration.QUEUE);admin.purgeQueue(VisitRabbitConfiguration.DLQ);
-  listener.setMessageListener(new VisitConsumer(codec,persistence));
+  listener.setMessageListener(new VisitConsumer(codec,persistence,Clock.systemUTC()));
   code="C"+UUID.randomUUID().toString().replace("-","").substring(0,7);
   var at=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
   event=new VisitEvent(UUID.randomUUID(),code,at,at.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(),new byte[32],1,null,null,null);
@@ -62,6 +63,44 @@ class VisitConsumerIntegrationTest {
  private void await(Runnable assertion){org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(assertion::run);}
  private int rows(){return db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE short_code=?",Integer.class,code);}
  private int ready(String queue){return admin.getQueueInfo(queue).getMessageCount();}
+ private VisitEvent at(String instant) {
+  var time=Instant.parse(instant);
+  return new VisitEvent(UUID.randomUUID(),code,time,time.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(),new byte[32],1,null,null,null);
+ }
+ private void consumerAt(Instant time) {listener.setMessageListener(new VisitConsumer(codec,persistence,Clock.fixed(time,ZoneOffset.UTC)));}
+ @Test void midnightAndOutOfOrderEventsKeepOriginalTimeIdentityAndDayDespiteMappingState() {
+  var older=at("2026-09-30T15:59:59.123Z");var newer=at("2026-09-30T16:00:00.123Z");
+  db.update("INSERT INTO short_link(short_code,original_url,created_at,expires_at,enabled) VALUES(?,?,?, ?,false)",code,"https://example.com",java.sql.Timestamp.from(older.occurredAt().minusSeconds(10)),java.sql.Timestamp.from(newer.occurredAt().plusSeconds(10)));
+  try {
+   consumerAt(Instant.parse("2026-10-01T01:00:00Z"));listener.start();publish(codec.encode(newer));publish(codec.encode(older));
+   await(()->assertThat(rows()).isEqualTo(2));
+   assertThat(db.queryForList("SELECT stat_date FROM short_link_visit_log WHERE short_code=? ORDER BY occurred_at",java.sql.Date.class,code)).containsExactly(java.sql.Date.valueOf("2026-09-30"),java.sql.Date.valueOf("2026-10-01"));
+   assertThat(db.queryForList("SELECT occurred_at FROM short_link_visit_log WHERE short_code=? ORDER BY occurred_at",java.sql.Timestamp.class,code)).containsExactly(java.sql.Timestamp.from(older.occurredAt()),java.sql.Timestamp.from(newer.occurredAt()));
+   assertThat(db.queryForList("SELECT visitor_hash FROM short_link_visit_log WHERE short_code=?",byte[].class,code)).allSatisfy(hash->assertThat(hash).containsExactly(new byte[32]));
+   assertThat(ready(VisitRabbitConfiguration.DLQ)).isZero();
+  } finally {db.update("DELETE FROM short_link WHERE short_code=?",code);}
+ }
+ @Test void futureDayAndDateMismatchGoToDlqWithoutPersistence() {
+  consumerAt(Instant.parse("2026-10-02T00:00:00Z"));var future=at("2026-10-02T16:00:00Z");
+  long before=writes.snapshot().attempted();listener.start();publish(codec.encode(future));
+  publish(new String(codec.encode(at("2026-10-02T00:00:00Z")),StandardCharsets.UTF_8).replace("2026-10-02\"","2026-10-01\"").getBytes(StandardCharsets.UTF_8));
+  await(()->assertThat(ready(VisitRabbitConfiguration.DLQ)).isEqualTo(2));assertThat(rows()).isZero();assertThat(writes.snapshot().attempted()).isEqualTo(before);
+ }
+ @Test void cleanupThenReplayAcknowledgesExpiredEventWithoutRestoringDeletedRow() {
+  var old=at("2026-09-02T00:00:00Z");assertThat(persistence.persist(old)).isEqualTo(VisitPersistence.Outcome.SAVED);
+  var clock=Clock.fixed(Instant.parse("2026-10-02T00:00:00Z"),ZoneOffset.UTC);
+  var cleaner=new VisitLogCleanup(dataSource,statsProperties,clock);cleaner.runRound();assertThat(cleaner.snapshot().outcome()).isEqualTo(VisitLogCleanup.Outcome.COMPLETE);assertThat(rows()).isZero();
+  var consumer=new VisitConsumer(codec,persistence,clock);listener.setMessageListener(consumer);long before=writes.snapshot().attempted();listener.start();publish(codec.encode(old));
+  await(()->assertThat(consumer.expiredCount()).isEqualTo(1));assertThat(writes.snapshot().attempted()).isEqualTo(before);assertThat(rows()).isZero();assertThat(ready(VisitRabbitConfiguration.DLQ)).isZero();
+ }
+ @Test void retryCrossingShanghaiMidnightRechecksWindowBeforeNextDatabaseAttempt() {
+  var time=new AtomicReference<>(Instant.parse("2026-10-01T15:59:59.900Z"));
+  Clock clock=new Clock(){public ZoneId getZone(){return ZoneOffset.UTC;}public Clock withZone(ZoneId zone){return new Clock(){public ZoneId getZone(){return zone;}public Clock withZone(ZoneId other){return this;}public Instant instant(){return time.get();}};}public Instant instant(){return time.get();}};
+  var oldest=at("2026-09-02T00:00:00Z");var attempts=new AtomicInteger();
+  var consumer=new VisitConsumer(codec,value->{attempts.incrementAndGet();assertThat(persistence.persist(value)).isEqualTo(VisitPersistence.Outcome.SAVED);time.set(Instant.parse("2026-10-01T16:00:00Z"));new VisitLogCleanup(dataSource,statsProperties,clock).runRound();throw new VisitPersistenceException(VisitPersistenceException.Failure.UNCERTAIN);},clock);
+  listener.setMessageListener(consumer);listener.start();publish(codec.encode(oldest));await(()->assertThat(consumer.expiredCount()).isEqualTo(1));
+  assertThat(attempts).hasValue(1);assertThat(rows()).isZero();assertThat(ready(VisitRabbitConfiguration.DLQ)).isZero();
+ }
  @Test void lockFailureThenRecoverySavesFrozenEventWithoutDeadLetter() throws Exception {
   long failed=writes.snapshot().outcomes().get(VisitWriteObservations.Outcome.FAILED)+writes.snapshot().outcomes().get(VisitWriteObservations.Outcome.UNCERTAIN);
   try(var lock=dataSource.getConnection();var s=lock.createStatement()) {
@@ -120,7 +159,7 @@ class VisitConsumerIntegrationTest {
     } catch(Exception failure) {throw new IllegalStateException("Test connection close failed.");}
    } else if(outcome==VisitPersistence.Outcome.DUPLICATE) duplicate.incrementAndGet();
    return outcome;
-  });
+  },Clock.systemUTC());
   listener.setMessageListener((MessageListener)m->{if(m.getMessageProperties().isRedelivered())redelivered.set(true);real.onMessage(m);});
   listener.start();publish(codec.encode(event));await(()->assertThat(duplicate.get()).isEqualTo(1));
   assertThat(redelivered).isTrue();assertThat(saved).hasValue(1);assertThat(rows()).isEqualTo(1);assertThat(ready(VisitRabbitConfiguration.DLQ)).isZero();
