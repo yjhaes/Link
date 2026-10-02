@@ -11,20 +11,31 @@ import org.springframework.context.annotation.*;
 @Configuration(proxyBeanMethods=false)
 @EnableConfigurationProperties(VisitRabbitProperties.class)
 public class VisitRabbitConfiguration {
+ @Bean static org.springframework.beans.factory.support.MergedBeanDefinitionPostProcessor publisherDestructionOwnership(){
+  return new org.springframework.beans.factory.support.MergedBeanDefinitionPostProcessor(){
+   @Override public void postProcessMergedBeanDefinition(org.springframework.beans.factory.support.RootBeanDefinition definition,Class<?> type,String name){
+    if(name.equals("visitPublisherConnectionFactory"))definition.registerExternallyManagedDestroyMethod("destroy");
+   }
+  };
+ }
  public static final String EXCHANGE="shortlink.visit.x", QUEUE="shortlink.visit.stats.q", KEY="visit.occurred.v1";
  public static final String DLX="shortlink.visit.dlx", DLQ="shortlink.visit.stats.dlq", DEAD_KEY="visit.failed.v1";
  @Bean VisitMessageCodec visitMessageCodec(){return new VisitMessageCodec();}
- private CachingConnectionFactory factory(VisitRabbitProperties p, boolean publisher) {
+ private CachingConnectionFactory factory(VisitRabbitProperties p, boolean publisher, java.util.concurrent.ExecutorService executor) {
   var nativeFactory=new com.rabbitmq.client.ConnectionFactory();
   nativeFactory.setHost(p.host()); nativeFactory.setPort(p.port()); nativeFactory.setUsername(p.username()); nativeFactory.setPassword(p.password()); nativeFactory.setVirtualHost(p.virtualHost());
+  nativeFactory.setExceptionHandler(new com.rabbitmq.client.impl.DefaultExceptionHandler(){
+   @Override protected void log(String ignored,Throwable failure){org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class).error("Visit MQ degraded: category=driver");}
+  });
   nativeFactory.setConnectionTimeout(p.connectionTimeoutMs()); nativeFactory.setHandshakeTimeout(p.handshakeTimeoutMs()); nativeFactory.setRequestedHeartbeat(p.heartbeatSeconds()); nativeFactory.setAutomaticRecoveryEnabled(false);
   var factory=new CachingConnectionFactory(nativeFactory);
   factory.setConnectionNameStrategy(ignored -> publisher ? "visit-publisher" : "visit-consumer");
-  if(publisher){ factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED); factory.setPublisherReturns(true); factory.setChannelCacheSize(p.channelLimit()); factory.setChannelCheckoutTimeout(p.channelCheckoutMs()); }
+  if(publisher){ factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED); factory.setPublisherReturns(true); factory.setChannelCacheSize(p.channelLimit()); factory.setChannelCheckoutTimeout(p.channelCheckoutMs()); factory.setCloseTimeout(500); factory.setExecutor(executor); }
   return factory;
  }
- @Bean(name="visitPublisherConnectionFactory") CachingConnectionFactory publisherFactory(VisitRabbitProperties p){return factory(p,true);}
- @Bean(name="visitConsumerConnectionFactory") @Primary CachingConnectionFactory consumerFactory(VisitRabbitProperties p){return factory(p,false);}
+ @Bean(name="visitPublisherFrameworkExecutor",destroyMethod="shutdownNow") java.util.concurrent.ExecutorService publisherFrameworkExecutor(){return new java.util.concurrent.ThreadPoolExecutor(2,2,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<>(32),r -> {var thread=new Thread(r,"visit-publisher-framework");thread.setDaemon(true);return thread;},new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());}
+ @Bean(name="visitPublisherConnectionFactory",destroyMethod="") CachingConnectionFactory publisherFactory(VisitRabbitProperties p,@Qualifier("visitPublisherFrameworkExecutor") java.util.concurrent.ExecutorService executor){return factory(p,true,executor);}
+ @Bean(name="visitConsumerConnectionFactory") @Primary CachingConnectionFactory consumerFactory(VisitRabbitProperties p){return factory(p,false,null);}
  @Bean(name="visitRabbitTemplate") RabbitTemplate template(@Qualifier("visitPublisherConnectionFactory") CachingConnectionFactory factory){var t=new RabbitTemplate(factory);t.setMandatory(true);return t;}
  @Bean(name="visitRabbitAdmin") RabbitAdmin admin(@Qualifier("visitConsumerConnectionFactory") CachingConnectionFactory factory){var a=new RabbitAdmin(factory);a.setAutoStartup(false);return a;}
  @Bean DirectExchange visitExchange(){return new DirectExchange(EXCHANGE,true,false);}
@@ -40,3 +51,9 @@ public class VisitRabbitConfiguration {
   return c;
  }
 }
+
+
+
+
+
+
