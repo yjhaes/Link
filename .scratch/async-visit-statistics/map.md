@@ -140,3 +140,10 @@
 - 2026-10-02：用户显式调用 implement-spec，开始已确认八张任务的实施；历史的仅发布/不实施范围不再限制本轮授权。集成分支为 codex/async-visit-statistics，固定实现基线为 8a3d7eb。
 - 已完成并合入 [01 持久化结果](issues/01-visit-persistence-outcomes.md)、[02 异步闭环](issues/02-rabbitmq-visit-roundtrip.md)、[03 发布故障](issues/03-publish-failure-and-backpressure.md)。验收证据和可复现同步基线见 [实施验证](verification.md)。
 - 实施阶段沿用当前模型；最终 Standards Review 和 Spec Review 明确使用 GPT-6.1 Sol / high。
+
+## 已作决定：任务 04 实施结果
+
+- [04](issues/04-consumer-retry-and-dead-letter.md) 已完成：同步消费仅明确保存/事件重复 ACK；受控暂时 cause 本轮三次与 200/500 ms；永久/格式失败或耗尽直接拒绝且不 requeue；单 durable classic DLQ、精确死信路由及 policy 运维文件。
+- 真实 MySQL/RabbitMQ 验证提交后消费连接在 ACK 前强制中断，重新投递由原 event 唯一键维持单行；其他唯一键及 CHECK 错误不误吞。独立资源为 short_link_consumer_test / link-consumer-test。
+- 共享日志用 console 安全编码保留每条依赖事件与 WARN/ERROR、logger、线程和时间，替换原始 JDBC/AMQP 文本与异常为固定类别；明确包含核心池，未关闭日志。新故障/金丝雀/池隔离矩阵 14 项全部通过，合并发布恢复集成 tip e813f06 后重跑仍全部通过。
+- 后续 06 将容量/TTL扩展到同一主队列 policy，防止较高优先级普通 policy 覆盖 DLX；05 为每次 persist 加窗口检查；07 复核运维和 logging 范围。

@@ -4,7 +4,7 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
-import org.springframework.amqp.AmqpRejectAndDontRequeueException;
+
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.*;
@@ -19,6 +19,7 @@ public class VisitRabbitConfiguration {
   };
  }
  public static final String EXCHANGE="shortlink.visit.x", QUEUE="shortlink.visit.stats.q", KEY="visit.occurred.v1";
+ public static final String DLX="shortlink.visit.dlx", DLQ="shortlink.visit.stats.dlq", DEAD_KEY="visit.failed.v1";
  @Bean VisitMessageCodec visitMessageCodec(){return new VisitMessageCodec();}
  private CachingConnectionFactory factory(VisitRabbitProperties p, boolean publisher, java.util.concurrent.ExecutorService executor) {
   var nativeFactory=new com.rabbitmq.client.ConnectionFactory();
@@ -40,9 +41,12 @@ public class VisitRabbitConfiguration {
  @Bean DirectExchange visitExchange(){return new DirectExchange(EXCHANGE,true,false);}
  @Bean Queue visitQueue(){return QueueBuilder.durable(QUEUE).withArgument("x-queue-type","classic").build();}
  @Bean Binding visitBinding(){return BindingBuilder.bind(visitQueue()).to(visitExchange()).with(KEY);}
+ @Bean DirectExchange visitDeadLetterExchange(){return new DirectExchange(DLX,true,false);}
+ @Bean Queue visitDeadLetterQueue(){return QueueBuilder.durable(DLQ).withArgument("x-queue-type","classic").build();}
+ @Bean Binding visitDeadLetterBinding(){return BindingBuilder.bind(visitDeadLetterQueue()).to(visitDeadLetterExchange()).with(DEAD_KEY);}
  @Bean(name="visitListener") SimpleMessageListenerContainer listener(@Qualifier("visitConsumerConnectionFactory") CachingConnectionFactory factory,VisitMessageCodec codec,VisitPersistence persistence){
   var c=new SimpleMessageListenerContainer(factory); c.setQueueNames(QUEUE);c.setAutoStartup(false);c.setConcurrentConsumers(1);c.setMaxConcurrentConsumers(1);c.setPrefetchCount(10);c.setBatchSize(1);c.setAcknowledgeMode(AcknowledgeMode.AUTO);c.setDefaultRequeueRejected(false);c.setMissingQueuesFatal(false);c.setShutdownTimeout(1000);
-  c.setMessageListener((MessageListener) message -> {try { persistence.persist(codec.decode(message.getBody())); } catch(Exception failure) {throw new AmqpRejectAndDontRequeueException("Visit consumption failed.");}});
+  c.setMessageListener(new VisitConsumer(codec,persistence));
   c.setErrorHandler(failure -> org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class).warn("Visit listener failed: category=consumption"));
   return c;
  }
