@@ -47,7 +47,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
  public AsyncVisitRecorder(VisitRabbitProperties properties,@Qualifier("visitRabbitTemplate") RabbitTemplate template,@Qualifier("visitRabbitAdmin") RabbitAdmin admin,@Qualifier("visitListener") SimpleMessageListenerContainer listener,VisitMessageCodec codec,@Qualifier("visitPublisherConnectionFactory") CachingConnectionFactory publisher){
   this.properties=properties;this.template=template;this.admin=admin;this.listener=listener;this.codec=codec;this.publisher=publisher;
   pending=new ArrayBlockingQueue<>(properties.bufferCapacity());permits=new Semaphore(properties.unconfirmedLimit());
-  for(String category:List.of("local-accepted","full","expired","limited","attempt","accepted","return","nack","unknown","send-failed","encoding","recovery","recovery-failed"))outcomes.put(category,new LongAdder());
+  for(String category:List.of("local-accepted","shutdown-lost","full","expired","limited","attempt","accepted","return","nack","unknown","send-failed","encoding","recovery","recovery-failed"))outcomes.put(category,new LongAdder());
  }
  public record Snapshot(int pending,int unconfirmed,boolean recovering,Map<String,Long> outcomes){}
  public Snapshot snapshot(){var counts=new HashMap<String,Long>();outcomes.forEach((k,v)->counts.put(k,v.sum()));return new Snapshot(pending.size(),properties.unconfirmedLimit()-permits.availablePermits(),recovering.get(),Map.copyOf(counts));}
@@ -66,10 +66,11 @@ public class AsyncVisitRecorder implements VisitRecorder {
   if(!permits.tryAcquire()){count("limited");continue;}
   byte[] body;
   try{body=codec.encode(next.event());}catch(Exception invalid){permits.release();count("encoding");continue;}
-  var attempt=new Attempt(next.event());attempts.add(attempt);senderBusy.set(true);
+  var attempt=new Attempt(next.event());
+  synchronized(admissionLock){if(!accepting.get()){permits.release();count("shutdown-lost");continue;}attempts.add(attempt);senderBusy.set(true);}
   try {
    // Recheck after admission: a concurrent timeout can have closed the recovery gate.
-   if(recovering.get()){attempt.finish("unknown");attempt.retire();continue;}
+   if(!accepting.get()||recovering.get()){attempt.finish("unknown");attempt.retire();continue;}
    attempt.correlation.getFuture().whenComplete((confirm,failure)->{
     if(attempt.correlation.getReturned()!=null)attempt.finish("return");
     else if(failure!=null)attempt.finish("unknown");
@@ -108,7 +109,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
  @EventListener(org.springframework.context.event.ContextClosedEvent.class)
  public void contextClosing(){close();}
  @PreDestroy public void close(){
-  synchronized(admissionLock){if(!accepting.getAndSet(false))return;pending.clear();}
+  synchronized(admissionLock){if(!accepting.getAndSet(false))return;for(int i=pending.size();i>0;i--)count("shutdown-lost");pending.clear();}
   var consumerClosed=new java.util.concurrent.CountDownLatch(1);
   listener.stop(consumerClosed::countDown);observer.shutdownNow();for(var attempt:attempts){attempt.finish("unknown");attempt.retire();}
   sender.shutdownNow();startup.shutdownNow();
@@ -123,6 +124,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
   }catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
  }
 }
+
 
 
 
