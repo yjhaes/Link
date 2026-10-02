@@ -147,3 +147,6 @@
 - 真实 MySQL/RabbitMQ 验证提交后消费连接在 ACK 前强制中断，重新投递由原 event 唯一键维持单行；其他唯一键及 CHECK 错误不误吞。独立资源为 short_link_consumer_test / link-consumer-test。
 - 共享日志用 console 安全编码保留每条依赖事件与 WARN/ERROR、logger、线程和时间，替换原始 JDBC/AMQP 文本与异常为固定类别；明确包含核心池，未关闭日志。新故障/金丝雀/池隔离矩阵 14 项全部通过，合并发布恢复集成 tip e813f06 后重跑仍全部通过。
 - 后续 06 将容量/TTL扩展到同一主队列 policy，防止较高优先级普通 policy 覆盖 DLX；05 为每次 persist 加窗口检查；07 复核运维和 logging 范围。
+
+- 2026-10-02：已合入 [04 消费重试与死信](issues/04-consumer-retry-and-dead-letter.md)、[05 迟到事件与窗口](issues/05-late-visits-and-retention-window.md)、[06 独立采集/消费生命周期](issues/06-collection-and-consumer-lifecycle.md)。06 合并提交 4a3f4c5，针对性10项测试通过。
+- 用户最新要求为06完成后暂停；已停止执行，07、08及最终双轴审查留待续接。[续接记录](resume.md)保存测试环境、已有证据和GPT-6.1 Sol/high审查要求。

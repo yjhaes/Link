@@ -26,7 +26,14 @@
 ## 已合入切片
 
 - 01：明确同步持久化结果和安全失败类别；相关真实 MySQL / HTTP / 查询 / 清理共 52 次测试执行通过。提交 `70fdd03`，集成合并 `6f08548`。完整验收见 [任务 01](issues/01-visit-persistence-outcomes.md)。
+- 02：JSON 协议、真实异步闭环、HTTP 隔离及核心回归共 99 项通过。见 [任务 02](issues/02-rabbitmq-visit-roundtrip.md)。
+- 03：真实路由、return/nack、TCP 黑洞恢复、启动不可用后恢复及竞态共 9 项通过。见 [任务 03](issues/03-publish-failure-and-backpressure.md)。
+- 04：分类重试/DLQ、提交至 ACK 间隙重投、其他约束拒绝、安全日志及池隔离共 14 项通过。见 [任务 04](issues/04-consumer-retry-and-dead-letter.md)。
+- 05：消费测试 17 项及回归测试 43 项执行通过；两组包含重复执行的测试，不能相加为独立用例数。见 [任务 05](issues/05-late-visits-and-retention-window.md)。
+- 06：生命周期与发布故障的 10 项针对性测试分两轮绿色；最终生命周期类 3 项，其他 7 项。见 [任务 06](issues/06-collection-and-consumer-lifecycle.md)。集成合并 `4a3f4c5`。
 
 ## 最终验收
 
 待所有实现切片、整体测试和双轴审查完成后记录。未验证的条件必须明确保留，不能用单元替身结果冒充真实网络故障或 broker 验收。
+
+2026-10-02 按用户要求在 06 完成后暂停；07、08、最终双轴审查尚未执行。续接入口见 [resume.md](resume.md)。
