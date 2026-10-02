@@ -150,3 +150,5 @@
 
 - 2026-10-02：已合入 [04 消费重试与死信](issues/04-consumer-retry-and-dead-letter.md)、[05 迟到事件与窗口](issues/05-late-visits-and-retention-window.md)、[06 独立采集/消费生命周期](issues/06-collection-and-consumer-lifecycle.md)。06 合并提交 4a3f4c5，针对性10项测试通过。
 - 用户最新要求为06完成后暂停；已停止执行，07、08及最终双轴审查留待续接。[续接记录](resume.md)保存测试环境、已有证据和GPT-6.1 Sol/high审查要求。
+
+- 2026-10-02：用户回复继续，恢复07及后续实施/整体验收/最终审查；已启动此前保留的隔离测试容器。
