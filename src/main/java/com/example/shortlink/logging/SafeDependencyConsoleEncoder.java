@@ -11,7 +11,8 @@ public final class SafeDependencyConsoleEncoder extends PatternLayoutEncoder {
         String name = event.getLoggerName();
         String category = name.startsWith("com.zaxxer.hikari") || name.startsWith("com.mysql.cj")
                 || name.startsWith("org.springframework.jdbc") ? "database"
-                : name.startsWith("org.springframework.amqp") || name.startsWith("com.rabbitmq.client")
+                : name.startsWith("org.springframework.amqp") || name.startsWith("com.rabbitmq.client") || name.equals("com.example.shortlink.stats.VisitConnectionFactory")
+                || name.equals("com.example.shortlink.stats.VisitListenerContainer")
                 ? "mq" : null;
         if (category == null) return super.encode(event);
         var safe = new LoggingEvent(null, ((LoggerContext) getContext()).getLogger(name), event.getLevel(),
@@ -22,3 +23,4 @@ public final class SafeDependencyConsoleEncoder extends PatternLayoutEncoder {
         return super.encode(safe);
     }
 }
+

@@ -11,7 +11,7 @@ import java.time.Duration;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.assertj.core.api.Assertions.*;
-@SpringBootTest(properties={"short-link.stats.enabled=true","short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","short-link.stats.visitor-key-version=1"})
+@SpringBootTest(properties={"short-link.stats.rabbit.consumer-enabled=true","short-link.stats.rabbit.virtual-host=${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:/}","short-link.stats.enabled=true","short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","short-link.stats.visitor-key-version=1"})
 @AutoConfigureMockMvc @ActiveProfiles("test") @org.springframework.test.annotation.DirtiesContext
 class AsyncVisitStartupRecoveryTest {
  static final VisitPublisherBrokerTest.TcpBlackout proxy=createProxy();
@@ -33,4 +33,5 @@ class AsyncVisitStartupRecoveryTest {
   }finally {proxy.unavailable=false;db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);db.update("DELETE FROM short_link WHERE short_code=?",code);recorder.close();proxy.close();}
  }
 }
+
 

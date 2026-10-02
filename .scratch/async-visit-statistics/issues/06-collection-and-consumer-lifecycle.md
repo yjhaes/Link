@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 03, 04
 
@@ -21,4 +21,5 @@ Blocked by: 03, 04
 ## Comments
 
 - 2026-10-02：用户已确认8张任务的粒度、交付范围和直接阻塞关系。本轮仅发布任务，尚未认领或开始实施；父规格内容和状态保持不变。
+
 
