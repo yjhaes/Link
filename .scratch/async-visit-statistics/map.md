@@ -136,3 +136,10 @@
 - [ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)及[完整设计](../../docs/async-visit-statistics.md)已接受；根CONTEXT.md补充“已记录访问事件”定义，区分事件发生和成为统计依据。
 - ADR-0006的统计业务口径继续有效，后续实施以ADR-0007替换请求内同步采集边界。当前代码仍同步，本次仅完成设计，无实施任务或代码改动。
 - 用户随后显式调用`to-spec`，已将已确认设计合成为[完整实施规格](spec.md)，按本地任务跟踪约定标记`Status: ready-for-agent`。只发布规格，不拆子任务、不认领或执行实施；测试接缝沿用Q14已确认的HTTP/真实MQ/MySQL及现有统计提交边界。
+
+## 已作决定：任务 04 实施结果
+
+- [04](issues/04-consumer-retry-and-dead-letter.md) 已完成：同步消费仅明确保存/事件重复 ACK；受控暂时 cause 本轮三次与 200/500 ms；永久/格式失败或耗尽直接拒绝且不 requeue；单 durable classic DLQ、精确死信路由及 policy 运维文件。
+- 真实 MySQL/RabbitMQ 验证提交后消费连接在 ACK 前强制中断，重新投递由原 event 唯一键维持单行；其他唯一键及 CHECK 错误不误吞。独立资源为 short_link_consumer_test / link-consumer-test。
+- 共享日志用 console 安全编码保留每条依赖事件与 WARN/ERROR、logger、线程和时间，替换原始 JDBC/AMQP 文本与异常为固定类别；明确包含核心池，未关闭日志。新故障/金丝雀/池隔离矩阵 14 项全部通过，合并发布恢复集成 tip e813f06 后重跑仍全部通过。
+- 后续 06 将容量/TTL扩展到同一主队列 policy，防止较高优先级普通 policy 覆盖 DLX；05 为每次 persist 加窗口检查；07 复核运维和 logging 范围。
