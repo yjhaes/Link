@@ -70,25 +70,26 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
                 observations.outcome(VisitWriteObservations.Outcome.SAVED);
             }
         } catch (SQLException | RuntimeException failure) {
+            SQLException sqlFailure = sqlCause(failure);
             if (phase == Phase.CLEANUP) {
                 observations.category(VisitWriteObservations.Category.CLEANUP);
                 LOG.warn("Visit write confirmed, cleanup failed: event={}, category=CLEANUP, phase={}", event.eventId(), phase);
-            } else if (phase == Phase.EXECUTE && failure instanceof SQLException sql && eventDuplicate(sql)) {
+            } else if (phase == Phase.EXECUTE && sqlFailure != null && eventDuplicate(sqlFailure)) {
                 observations.outcome(VisitWriteObservations.Outcome.DUPLICATE);
                 result = Outcome.DUPLICATE;
             } else {
-                var category = phase == Phase.CONNECTION && failure instanceof SQLTransientConnectionException
-                        ? VisitWriteObservations.Category.TIMEOUT : failure instanceof SQLException sql
-                        ? category(sql) : VisitWriteObservations.Category.UNEXPECTED;
+                var category = phase == Phase.CONNECTION && sqlFailure instanceof SQLTransientConnectionException
+                        ? VisitWriteObservations.Category.TIMEOUT : sqlFailure != null
+                        ? category(sqlFailure) : VisitWriteObservations.Category.UNEXPECTED;
                 // A lost reply, cancellation or unknown driver error cannot prove non-execution.
-                boolean rejected = failure instanceof SQLException sql && explicitlyRejected(sql);
+                boolean rejected = sqlFailure != null && explicitlyRejected(sqlFailure);
                 observations.outcome(phase == Phase.EXECUTE && !rejected ? VisitWriteObservations.Outcome.UNCERTAIN
                         : VisitWriteObservations.Outcome.FAILED);
                 observations.category(category);
                 LOG.warn("Visit write unconfirmed: event={}, category={}, phase={}", event.eventId(), category, phase);
                 var kind = phase == Phase.EXECUTE && !rejected
                         ? VisitPersistenceException.Failure.UNCERTAIN
-                        : failure instanceof SQLException sql && transientFailure(sql)
+                        : sqlFailure != null && transientFailure(sqlFailure)
                         ? VisitPersistenceException.Failure.TRANSIENT
                         : VisitPersistenceException.Failure.PERMANENT;
                 throw new VisitPersistenceException(kind);
@@ -101,15 +102,28 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
         return result;
     }
 
+    private SQLException sqlCause(Throwable failure) {
+        var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        SQLException fallback = null;
+        for (Throwable cause = failure; cause != null && seen.add(cause); cause = cause.getCause()) {
+            if (cause instanceof SQLException sql) {
+                if (sql.getSQLState() != null || fallback == null) fallback = sql;
+            }
+        }
+        return fallback;
+    }
+
     private boolean explicitlyRejected(SQLException failure) {
         String state = failure.getSQLState();
         return (state != null && (state.startsWith("22") || state.startsWith("23") || state.startsWith("42")))
-                || failure.getErrorCode() == 1205 || failure.getErrorCode() == 1213;
+                || failure.getErrorCode() == 1205 || failure.getErrorCode() == 1213
+                || failure.getErrorCode() == 3819 || failure.getErrorCode() == 4025
+                || (failure.getErrorCode() > 0 && !transientFailure(failure));
     }
 
     private boolean transientFailure(SQLException failure) {
         String state = failure.getSQLState();
-        return failure instanceof SQLTransientException
+        return failure.getErrorCode() == 1205 || failure.getErrorCode() == 1213 || failure instanceof SQLTransientException
                 || (state != null && (state.startsWith("08") || state.startsWith("40")))
                 || category(failure) == VisitWriteObservations.Category.TIMEOUT;
     }

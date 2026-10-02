@@ -96,6 +96,7 @@ class VisitStatisticsApiTest {
     @Test
     void exhaustedStatisticsPoolDoesNotTakeOverCoreCreationIssuanceOrStateTransactions() throws Exception {
         http.perform(get("/s/Ab12")).andExpect(status().isFound());
+        awaitCount(1);
         var before = observations.snapshot();
         var held = new java.util.ArrayList<java.sql.Connection>();
         try {
@@ -117,10 +118,10 @@ class VisitStatisticsApiTest {
                     .andExpect(header().string("Location", "https://example.com/"))
                     .andExpect(header().string("Cache-Control", "no-store"));
             assertThat(java.time.Duration.ofNanos(System.nanoTime() - start)).isLessThan(java.time.Duration.ofMillis(800));
-            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).until(() -> observations.snapshot().attempted() > before.attempted());
-            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).until(() -> observations.snapshot().inFlight() == 0);
-            assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.FAILED))
-                    .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.FAILED) + 1);
+            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).untilAsserted(() ->
+                    assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.FAILED))
+                            .isGreaterThanOrEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.FAILED) + 3));
+            assertThat(observations.snapshot().inFlight()).isZero();
         } finally { for (var connection : held) connection.close(); }
         http.perform(get("/s/Ab12")).andExpect(status().isFound());
         awaitCount(2);
@@ -438,7 +439,3 @@ class VisitStatisticsApiTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).untilAsserted(() -> assertThat(db.queryForObject("SELECT user_agent FROM short_link_visit_log", String.class)).isNull());
     }
 }
-
-
-
-
