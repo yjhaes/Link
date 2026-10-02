@@ -8,7 +8,11 @@ public record StatsDateRange(LocalDate from, LocalDate to, LocalDate today) {
     public static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     public StatsDateRange {
-        if (from.isAfter(to) || to.isAfter(today) || from.isBefore(today.minusDays(29))) throw invalid();
+        if (from.isAfter(to) || to.isAfter(today) || from.isBefore(earliestRetainedDate(today))) throw invalid();
+    }
+
+    public static LocalDate earliestRetainedDate(LocalDate today) {
+        return today.minusDays(29);
     }
 
     private static InvalidRequestException invalid() {
