@@ -1,4 +1,4 @@
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02
 
@@ -15,7 +15,7 @@ Blocked by: 02
 - [x] 待发年龄按单调时间判断，超过5秒不再开始发送；满缓冲、未确认或channel限制下跳转立即继续，恢复只处理后续仍符合预算的事件。
 - [x] 独立观察机制不依赖被卡住sender；仅回收/重建publisher子连接，最多一个恢复动作，不reset消费者主连接或无限创建替代线程/连接。
 - [x] 超时、return、关闭产生的framework nack及迟到回调竞争时，每个发布尝试只结算/释放一次，框架关联资源也回收。
-- [ ] 验证MQ从启动不可用到恢复、运行断连、缺binding/错误Exchange和受控背压；静态非法配置与声明/认证问题按既定边界处理，不删除已有队列。
+- [x] 验证MQ从启动不可用到恢复、运行断连、缺binding/错误Exchange和受控背压；静态非法配置与声明/认证问题按既定边界处理，不删除已有队列。
 - [x] 用闩锁阻住真正发送，证明302在解除前返回且请求线程不执行MQ建连/发布；少量真实故障核验框架资源释放及仅发布连接恢复，不把mock异常或5秒观察当总发送截止。
 - [x] 该片提供自身发布结果观测和受控日志，秘密/消息体不进入异常输出；不新增监控平台或公开故障注入接口。
 
@@ -31,4 +31,8 @@ Blocked by: 02
 
 2026-10-02：Maven `VisitPublisherFailureTest,VisitPublisherBrokerTest,AsyncVisitRoundtripTest` 全部8测试通过（0失败/错误）。覆盖真实RabbitMQ路由、return+ACK、错误exchange/nack、2轮TCP黑洞confirm unknown和后续新事件、独立consumer连接身份保持；受控sender/cleanup闩锁、迟到ACK/nack、return无ACK回收、重复event独立correlation；真实HTTP在send阻塞/满缓冲时仍302，真实MySQL原口径最终落库。
 
-边界：TCP黑洞证明确认丢失与连接清理，不证明内核阻塞写被中断，也不承诺整个publish的5秒硬截止。受控闩锁证明observer不依赖sender以及cleanup卡住时不创建替代worker。整体MQ启动不可用→listener恢复和认证/声明冲突验收由任务06集成，当前保留claimed及对应未勾选项，不能把代码实现当这项已验收。
+边界：TCP黑洞证明确认丢失与连接清理，不证明内核阻塞写被中断，也不承诺整个publish的5秒硬截止。受控闩锁证明observer不依赖sender以及cleanup卡住时不创建替代worker。启动不可用→恢复已通过新增真实TCP拒绝代理+HTTP/MySQL测试：核心启动并302；故障事件无DB行，恢复后后台同一startup worker完成声明/listener启动，新GET仅新增一行、不补采历史。静态非法配置保持明确配置错误；声明/认证失败不删除已有队列，后台仅受控类别报告并重试，任务06继续完善人工暂停/关停。
+
+
+补充验收：AsyncVisitStartupRecoveryTest,VisitPublisherFailureTest,VisitPublisherBrokerTest,AsyncVisitRoundtripTest 合计9测试通过。后台声明启动固定1个daemon worker、500ms重试间隔；原Rabbit驱动DefaultExceptionHandler仅覆盖日志输出为固定category且保持ERROR级别，保留原错误处理语义。
+

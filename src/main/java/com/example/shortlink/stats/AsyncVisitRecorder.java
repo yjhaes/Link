@@ -52,7 +52,12 @@ public class AsyncVisitRecorder implements VisitRecorder {
  public Snapshot snapshot(){var counts=new HashMap<String,Long>();outcomes.forEach((k,v)->counts.put(k,v.sum()));return new Snapshot(pending.size(),properties.unconfirmedLimit()-permits.availablePermits(),recovering.get(),Map.copyOf(counts));}
  private void count(String category){outcomes.get(category).increment();}
  @Override public void record(VisitEvent event){if(accepting.get())count(pending.offer(new Pending(event,System.nanoTime()))?"local-accepted":"full");}
- @EventListener(ApplicationReadyEvent.class) public void ready(){if(!started.compareAndSet(false,true)||!accepting.get())return;sender.execute(this::sendLoop);observer.scheduleWithFixedDelay(this::observe,100,100,TimeUnit.MILLISECONDS);startup.execute(()->{try{admin.initialize();if(properties.consumerEnabled())listener.start();}catch(Exception failure){log("startup");}});}
+ @EventListener(ApplicationReadyEvent.class) public void ready(){if(!started.compareAndSet(false,true)||!accepting.get())return;sender.execute(this::sendLoop);observer.scheduleWithFixedDelay(this::observe,100,100,TimeUnit.MILLISECONDS);startup.execute(this::startupLoop);}
+ private void startupLoop(){while(accepting.get()){
+  try{admin.initialize();if(properties.consumerEnabled())listener.start();return;}
+  catch(Exception failure){log("startup");}
+  try{TimeUnit.MILLISECONDS.sleep(500);}catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
+ }}
  private void sendLoop(){while(accepting.get()){try{
   if(recovering.get()){TimeUnit.MILLISECONDS.sleep(50);continue;}
   Pending next=pending.poll(100,TimeUnit.MILLISECONDS);if(next==null)continue;
@@ -108,6 +113,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
   cleanup.shutdown();
  }
 }
+
 
 
 

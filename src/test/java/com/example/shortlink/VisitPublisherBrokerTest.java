@@ -65,13 +65,14 @@ class VisitPublisherBrokerTest {
  /** Drops TCP bytes after a successful handshake; this proves missing confirms, not blocked-write cancellation. */
  static final class TcpBlackout implements AutoCloseable {
   final java.net.ServerSocket server=new java.net.ServerSocket(0);final int brokerPort;
-  final java.util.List<java.net.Socket> sockets=new java.util.concurrent.CopyOnWriteArrayList<>();volatile boolean blackout;
-  TcpBlackout(int port) throws java.io.IOException {brokerPort=port;daemon(()->{try {while(!server.isClosed()){var client=server.accept();var upstream=new java.net.Socket("127.0.0.1",brokerPort);sockets.add(client);sockets.add(upstream);relay(client,upstream,true);relay(upstream,client,false);}}catch(java.io.IOException ignored){}});}
+  final java.util.List<java.net.Socket> sockets=new java.util.concurrent.CopyOnWriteArrayList<>();volatile boolean blackout, unavailable;
+  TcpBlackout(int port) throws java.io.IOException {brokerPort=port;daemon(()->{try {while(!server.isClosed()){var client=server.accept();if(unavailable){client.close();continue;}var upstream=new java.net.Socket("127.0.0.1",brokerPort);sockets.add(client);sockets.add(upstream);relay(client,upstream,true);relay(upstream,client,false);}}catch(java.io.IOException ignored){}});}
   int port(){return server.getLocalPort();}
   void relay(java.net.Socket source,java.net.Socket target,boolean outbound){daemon(()->{try {var bytes=new byte[8192];int n;while((n=source.getInputStream().read(bytes))!=-1){if(!(outbound&&blackout)){target.getOutputStream().write(bytes,0,n);target.getOutputStream().flush();}}}catch(java.io.IOException ignored){}finally{try{target.close();}catch(java.io.IOException ignored){}}});}
   static void daemon(Runnable work){var t=new Thread(work,"visit-test-tcp");t.setDaemon(true);t.start();}
   public void close() throws java.io.IOException {server.close();for(var socket:sockets)socket.close();}
  }}
+
 
 
 

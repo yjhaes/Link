@@ -23,6 +23,9 @@ public class VisitRabbitConfiguration {
  private CachingConnectionFactory factory(VisitRabbitProperties p, boolean publisher, java.util.concurrent.ExecutorService executor) {
   var nativeFactory=new com.rabbitmq.client.ConnectionFactory();
   nativeFactory.setHost(p.host()); nativeFactory.setPort(p.port()); nativeFactory.setUsername(p.username()); nativeFactory.setPassword(p.password()); nativeFactory.setVirtualHost(p.virtualHost());
+  nativeFactory.setExceptionHandler(new com.rabbitmq.client.impl.DefaultExceptionHandler(){
+   @Override protected void log(String ignored,Throwable failure){org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class).error("Visit MQ degraded: category=driver");}
+  });
   nativeFactory.setConnectionTimeout(p.connectionTimeoutMs()); nativeFactory.setHandshakeTimeout(p.handshakeTimeoutMs()); nativeFactory.setRequestedHeartbeat(p.heartbeatSeconds()); nativeFactory.setAutomaticRecoveryEnabled(false);
   var factory=new CachingConnectionFactory(nativeFactory);
   factory.setConnectionNameStrategy(ignored -> publisher ? "visit-publisher" : "visit-consumer");
@@ -44,6 +47,8 @@ public class VisitRabbitConfiguration {
   return c;
  }
 }
+
+
 
 
 
