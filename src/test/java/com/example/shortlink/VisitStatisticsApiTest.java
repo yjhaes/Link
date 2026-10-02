@@ -18,7 +18,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties = {"short-link.stats.enabled=true",
+@org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
+@SpringBootTest(properties = {"short-link.stats.rabbit.consumer-enabled=true","short-link.stats.rabbit.virtual-host=${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:/}","short-link.stats.enabled=true",
         "short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         "short-link.stats.visitor-key-version=1", "short-link.base-url=https://short.local",
         "short-link.internal-token=0123456789abcdef0123456789abcdef",
@@ -439,3 +440,4 @@ class VisitStatisticsApiTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).untilAsserted(() -> assertThat(db.queryForObject("SELECT user_agent FROM short_link_visit_log", String.class)).isNull());
     }
 }
+

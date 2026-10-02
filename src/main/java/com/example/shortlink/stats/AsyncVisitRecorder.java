@@ -37,6 +37,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
  private final VisitRabbitProperties properties;
  private final AtomicBoolean accepting=new AtomicBoolean(true), started=new AtomicBoolean(), recovering=new AtomicBoolean();
  private final Object recoveryLock=new Object();
+ private final Object admissionLock=new Object();
  private final AtomicBoolean senderBusy=new AtomicBoolean(), cleanupDone=new AtomicBoolean();
  private final ExecutorService sender=Executors.newSingleThreadExecutor(r -> daemon(r,"visit-publisher"));
  private final ExecutorService startup=Executors.newSingleThreadExecutor(r -> daemon(r,"visit-mq-startup"));
@@ -46,15 +47,15 @@ public class AsyncVisitRecorder implements VisitRecorder {
  public AsyncVisitRecorder(VisitRabbitProperties properties,@Qualifier("visitRabbitTemplate") RabbitTemplate template,@Qualifier("visitRabbitAdmin") RabbitAdmin admin,@Qualifier("visitListener") SimpleMessageListenerContainer listener,VisitMessageCodec codec,@Qualifier("visitPublisherConnectionFactory") CachingConnectionFactory publisher){
   this.properties=properties;this.template=template;this.admin=admin;this.listener=listener;this.codec=codec;this.publisher=publisher;
   pending=new ArrayBlockingQueue<>(properties.bufferCapacity());permits=new Semaphore(properties.unconfirmedLimit());
-  for(String category:List.of("local-accepted","full","expired","limited","attempt","accepted","return","nack","unknown","send-failed","encoding","recovery","recovery-failed"))outcomes.put(category,new LongAdder());
+  for(String category:List.of("local-accepted","shutdown-lost","full","expired","limited","attempt","accepted","return","nack","unknown","send-failed","encoding","recovery","recovery-failed"))outcomes.put(category,new LongAdder());
  }
  public record Snapshot(int pending,int unconfirmed,boolean recovering,Map<String,Long> outcomes){}
  public Snapshot snapshot(){var counts=new HashMap<String,Long>();outcomes.forEach((k,v)->counts.put(k,v.sum()));return new Snapshot(pending.size(),properties.unconfirmedLimit()-permits.availablePermits(),recovering.get(),Map.copyOf(counts));}
  private void count(String category){outcomes.get(category).increment();}
- @Override public void record(VisitEvent event){if(accepting.get())count(pending.offer(new Pending(event,System.nanoTime()))?"local-accepted":"full");}
- @EventListener(ApplicationReadyEvent.class) public void ready(){if(!started.compareAndSet(false,true)||!accepting.get())return;sender.execute(this::sendLoop);observer.scheduleWithFixedDelay(this::observe,100,100,TimeUnit.MILLISECONDS);startup.execute(this::startupLoop);}
+ @Override public void record(VisitEvent event){synchronized(admissionLock){if(accepting.get())count(pending.offer(new Pending(event,System.nanoTime()))?"local-accepted":"full");}}
+ @EventListener(ApplicationReadyEvent.class) public void ready(){synchronized(admissionLock){if(!started.compareAndSet(false,true)||!accepting.get())return;sender.execute(this::sendLoop);observer.scheduleWithFixedDelay(this::observe,100,100,TimeUnit.MILLISECONDS);startup.execute(this::startupLoop);}}
  private void startupLoop(){while(accepting.get()){
-  try{admin.initialize();if(properties.consumerEnabled())listener.start();return;}
+  try{admin.initialize();if(accepting.get()&&properties.consumerEnabled())listener.start();return;}
   catch(Exception failure){log("startup");}
   try{TimeUnit.MILLISECONDS.sleep(500);}catch(InterruptedException stopped){Thread.currentThread().interrupt();return;}
  }}
@@ -65,10 +66,11 @@ public class AsyncVisitRecorder implements VisitRecorder {
   if(!permits.tryAcquire()){count("limited");continue;}
   byte[] body;
   try{body=codec.encode(next.event());}catch(Exception invalid){permits.release();count("encoding");continue;}
-  var attempt=new Attempt(next.event());attempts.add(attempt);senderBusy.set(true);
+  var attempt=new Attempt(next.event());
+  synchronized(admissionLock){if(!accepting.get()){permits.release();count("shutdown-lost");continue;}attempts.add(attempt);senderBusy.set(true);}
   try {
    // Recheck after admission: a concurrent timeout can have closed the recovery gate.
-   if(recovering.get()){attempt.finish("unknown");attempt.retire();continue;}
+   if(!accepting.get()||recovering.get()){attempt.finish("unknown");attempt.retire();continue;}
    attempt.correlation.getFuture().whenComplete((confirm,failure)->{
     if(attempt.correlation.getReturned()!=null)attempt.finish("return");
     else if(failure!=null)attempt.finish("unknown");
@@ -104,15 +106,27 @@ public class AsyncVisitRecorder implements VisitRecorder {
   });}catch(RejectedExecutionException stopped){/* shutdown retains the gate */}
  }
  private void log(String category){org.slf4j.LoggerFactory.getLogger(AsyncVisitRecorder.class).warn("Visit MQ degraded: category={}",category);}
+ @EventListener(org.springframework.context.event.ContextClosedEvent.class)
+ public void contextClosing(){close();}
  @PreDestroy public void close(){
-  if(!accepting.getAndSet(false))return;
-  pending.clear();observer.shutdownNow();for(var attempt:attempts){attempt.finish("unknown");attempt.retire();}
+  synchronized(admissionLock){if(!accepting.getAndSet(false))return;for(int i=pending.size();i>0;i--)count("shutdown-lost");pending.clear();}
+  var consumerClosed=new java.util.concurrent.CountDownLatch(1);
+  listener.stop(consumerClosed::countDown);observer.shutdownNow();for(var attempt:attempts){attempt.finish("unknown");attempt.retire();}
   sender.shutdownNow();startup.shutdownNow();
   // Never destroy the CCF synchronously: reset can block behind a TCP write.
-  if(recovering.compareAndSet(false,true))try{cleanup.execute(()->{try{publisher.resetConnection();}catch(Exception failure){log("close");}});}catch(RejectedExecutionException ignored){}
+  recovering.set(true);
+  try{cleanup.execute(()->{try{publisher.destroy();}catch(Exception failure){log("close");}});}catch(RejectedExecutionException ignored){}
   cleanup.shutdown();
+  long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(2);
+  try{
+   for(var worker:List.of(sender,startup,observer,cleanup)){long left=deadline-System.nanoTime();if(left>0)worker.awaitTermination(left,TimeUnit.NANOSECONDS);}
+   long left=deadline-System.nanoTime();if(left>0)consumerClosed.await(left,TimeUnit.NANOSECONDS);
+  }catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
  }
 }
+
+
+
 
 
 

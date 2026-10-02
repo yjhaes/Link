@@ -10,8 +10,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.assertj.core.api.Assertions.*;
 import java.time.Duration;
-@SpringBootTest(properties={"short-link.stats.enabled=true","short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","short-link.stats.visitor-key-version=1","short-link.stats.rabbit.port=${RABBIT_TEST_PORT:5672}"})
-@AutoConfigureMockMvc @ActiveProfiles("test")
+@SpringBootTest(properties={"short-link.stats.rabbit.consumer-enabled=true","short-link.stats.rabbit.virtual-host=${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:/}","short-link.stats.enabled=true","short-link.stats.visitor-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","short-link.stats.visitor-key-version=1","short-link.stats.rabbit.port=${RABBIT_TEST_PORT:5672}"})
+@AutoConfigureMockMvc @ActiveProfiles("test") @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class AsyncVisitRoundtripTest {
  @Autowired MockMvc http; @Autowired JdbcTemplate db;
  @Autowired com.example.shortlink.stats.AsyncVisitRecorder recorder;
@@ -46,6 +46,8 @@ class AsyncVisitRoundtripTest {
    assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE short_code=?",Integer.class,code)).isZero();
   } finally {release.countDown();org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(10)).until(()->recorder.snapshot().pending()==0 && recorder.snapshot().unconfirmed()==0);db.update("DELETE FROM short_link WHERE short_code=?",code);org.mockito.Mockito.doCallRealMethod().when(publishing).send(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.any(org.springframework.amqp.core.Message.class),org.mockito.ArgumentMatchers.any(org.springframework.amqp.rabbit.connection.CorrelationData.class));}
  }}
+
+
 
 
 
