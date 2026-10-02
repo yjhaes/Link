@@ -11,7 +11,7 @@ import java.time.ZoneOffset;
 import java.util.concurrent.Semaphore;
 
 @Component
-public class MySqlVisitRecorder implements VisitRecorder {
+public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
     private static final Logger LOG = LoggerFactory.getLogger(MySqlVisitRecorder.class);
     private enum Phase { CONNECTION, PREPARE, EXECUTE, CLEANUP }
     private final DataSource pool;
@@ -28,15 +28,22 @@ public class MySqlVisitRecorder implements VisitRecorder {
 
     @Override
     public void record(VisitEvent event) {
+        try { persist(event); }
+        catch (VisitPersistenceException ignored) { /* HTTP collection remains best effort. */ }
+    }
+
+    @Override
+    public Outcome persist(VisitEvent event) {
         observations.attempted();
         long start = System.nanoTime();
         if (!writes.tryAcquire()) {
             observations.outcome(VisitWriteObservations.Outcome.DROPPED);
             observations.duration(System.nanoTime() - start);
-            return;
+            throw new VisitPersistenceException(VisitPersistenceException.Failure.BUSY);
         }
         observations.started();
         Phase phase = Phase.CONNECTION;
+        Outcome result = null;
         try (Connection connection = pool.getConnection()) {
             phase = Phase.PREPARE;
             connection.setAutoCommit(true);
@@ -58,6 +65,7 @@ public class MySqlVisitRecorder implements VisitRecorder {
                 statement.setString(9, event.refererHost());
                 phase = Phase.EXECUTE;
                 statement.executeUpdate();
+                result = Outcome.SAVED;
                 phase = Phase.CLEANUP;
                 observations.outcome(VisitWriteObservations.Outcome.SAVED);
             }
@@ -67,6 +75,7 @@ public class MySqlVisitRecorder implements VisitRecorder {
                 LOG.warn("Visit write confirmed, cleanup failed: event={}, category=CLEANUP, phase={}", event.eventId(), phase);
             } else if (phase == Phase.EXECUTE && failure instanceof SQLException sql && eventDuplicate(sql)) {
                 observations.outcome(VisitWriteObservations.Outcome.DUPLICATE);
+                result = Outcome.DUPLICATE;
             } else {
                 var category = phase == Phase.CONNECTION && failure instanceof SQLTransientConnectionException
                         ? VisitWriteObservations.Category.TIMEOUT : failure instanceof SQLException sql
@@ -77,20 +86,33 @@ public class MySqlVisitRecorder implements VisitRecorder {
                         : VisitWriteObservations.Outcome.FAILED);
                 observations.category(category);
                 LOG.warn("Visit write unconfirmed: event={}, category={}, phase={}", event.eventId(), category, phase);
+                var kind = phase == Phase.EXECUTE && !rejected
+                        ? VisitPersistenceException.Failure.UNCERTAIN
+                        : failure instanceof SQLException sql && transientFailure(sql)
+                        ? VisitPersistenceException.Failure.TRANSIENT
+                        : VisitPersistenceException.Failure.PERMANENT;
+                throw new VisitPersistenceException(kind);
             }
         } finally {
             writes.release();
             observations.finished();
             observations.duration(System.nanoTime() - start);
         }
+        return result;
     }
 
     private boolean explicitlyRejected(SQLException failure) {
         String state = failure.getSQLState();
-        return (state != null && (state.startsWith("23") || state.startsWith("42")))
+        return (state != null && (state.startsWith("22") || state.startsWith("23") || state.startsWith("42")))
                 || failure.getErrorCode() == 1205 || failure.getErrorCode() == 1213;
     }
 
+    private boolean transientFailure(SQLException failure) {
+        String state = failure.getSQLState();
+        return failure instanceof SQLTransientException
+                || (state != null && (state.startsWith("08") || state.startsWith("40")))
+                || category(failure) == VisitWriteObservations.Category.TIMEOUT;
+    }
     private VisitWriteObservations.Category category(SQLException failure) {
         String state = failure.getSQLState();
         if (failure instanceof SQLTimeoutException || "S1T00".equals(state) || "HYT00".equals(state)
