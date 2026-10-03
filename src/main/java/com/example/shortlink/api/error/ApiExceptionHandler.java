@@ -1,4 +1,4 @@
-package com.example.shortlink.api;
+package com.example.shortlink.api.error;
 
 
 import com.example.shortlink.service.error.CreateCacheCoordinationException;

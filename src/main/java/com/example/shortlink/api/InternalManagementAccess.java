@@ -1,4 +1,5 @@
 package com.example.shortlink.api;
+import com.example.shortlink.api.error.ApiError;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
