@@ -1,4 +1,4 @@
-package com.example.shortlink;
+package com.example.shortlink.stats;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -18,6 +18,7 @@ class AsyncVisitStartupRecoveryTest {
  static VisitPublisherBrokerTest.TcpBlackout createProxy(){try{var p=new VisitPublisherBrokerTest.TcpBlackout(Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")));p.unavailable=true;return p;}catch(Exception e){throw new ExceptionInInitializerError(e);}}
  @DynamicPropertySource static void mq(DynamicPropertyRegistry properties){properties.add("short-link.stats.rabbit.port",proxy::port);properties.add("short-link.stats.rabbit.host",()->"127.0.0.1");}
  @Autowired MockMvc http;@Autowired JdbcTemplate db;@Autowired AsyncVisitRecorder recorder;
+ @Autowired VisitMqRuntime runtime;
  @Test void coreStartsAndRedirectsWhileBrokerUnavailableThenOnlyFreshEventIsConsumed() throws Exception {
   String code="S"+java.util.UUID.randomUUID().toString().replace("-", "").substring(0,7);
   db.update("INSERT INTO short_link(short_code,original_url,created_at,enabled) VALUES (?,'https://example.com/',UTC_TIMESTAMP(3),true)",code);
@@ -30,6 +31,6 @@ class AsyncVisitStartupRecoveryTest {
    http.perform(get("/s/"+code)).andExpect(status().isFound());
    org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(15)).untilAsserted(()->assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log WHERE short_code=?",Integer.class,code)).isEqualTo(1));
    assertThat(recorder.snapshot().outcomes().get("attempt")).isEqualTo(2);
-  }finally {proxy.unavailable=false;db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);db.update("DELETE FROM short_link WHERE short_code=?",code);recorder.close();proxy.close();}
+  }finally {proxy.unavailable=false;db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);db.update("DELETE FROM short_link WHERE short_code=?",code);runtime.close();proxy.close();}
  }
 }

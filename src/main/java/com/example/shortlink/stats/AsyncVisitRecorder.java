@@ -1,23 +1,16 @@
 package com.example.shortlink.stats;
 
-import jakarta.annotation.PreDestroy;
-
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
-import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Primary;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.EnumMap;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -102,8 +95,6 @@ public class AsyncVisitRecorder implements VisitRecorder {
 
     private final Map<Outcome, LongAdder> outcomes = new EnumMap<>(Outcome.class);
     private final RabbitTemplate template;
-    private final RabbitAdmin admin;
-    private final SimpleMessageListenerContainer listener;
     private final CachingConnectionFactory publisher;
     private final VisitMessageCodec codec;
     private final VisitRabbitProperties properties;
@@ -115,8 +106,6 @@ public class AsyncVisitRecorder implements VisitRecorder {
     private final AtomicBoolean senderBusy = new AtomicBoolean(), cleanupDone = new AtomicBoolean();
     private final ExecutorService sender =
             Executors.newSingleThreadExecutor(r -> daemon(r, "visit-publisher"));
-    private final ExecutorService startup =
-            Executors.newSingleThreadExecutor(r -> daemon(r, "visit-mq-startup"));
     private final ExecutorService cleanup =
             Executors.newSingleThreadExecutor(r -> daemon(r, "visit-publisher-cleanup"));
     private final ScheduledExecutorService observer =
@@ -131,14 +120,10 @@ public class AsyncVisitRecorder implements VisitRecorder {
     public AsyncVisitRecorder(
             VisitRabbitProperties properties,
             @Qualifier("visitRabbitTemplate") RabbitTemplate template,
-            @Qualifier("visitRabbitAdmin") RabbitAdmin admin,
-            @Qualifier("visitListener") SimpleMessageListenerContainer listener,
             VisitMessageCodec codec,
             @Qualifier("visitPublisherConnectionFactory") CachingConnectionFactory publisher) {
         this.properties = properties;
         this.template = template;
-        this.admin = admin;
-        this.listener = listener;
         this.codec = codec;
         this.publisher = publisher;
         pending = new ArrayBlockingQueue<>(properties.bufferCapacity());
@@ -195,31 +180,11 @@ public class AsyncVisitRecorder implements VisitRecorder {
         }
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void ready() {
+    void start() {
         synchronized (admissionLock) {
             if (!started.compareAndSet(false, true) || !accepting.get()) return;
             sender.execute(this::sendLoop);
             observer.scheduleWithFixedDelay(this::observe, 100, 100, TimeUnit.MILLISECONDS);
-            startup.execute(this::startupLoop);
-        }
-    }
-
-    private void startupLoop() {
-        while (accepting.get()) {
-            try {
-                admin.initialize();
-                if (accepting.get() && properties.consumerEnabled()) listener.start();
-                return;
-            } catch (Exception failure) {
-                log("startup");
-            }
-            try {
-                TimeUnit.MILLISECONDS.sleep(500);
-            } catch (InterruptedException stopped) {
-                Thread.currentThread().interrupt();
-                return;
-            }
         }
     }
 
@@ -370,27 +335,25 @@ public class AsyncVisitRecorder implements VisitRecorder {
                 .warn("Visit MQ degraded: category={}", category);
     }
 
-    @EventListener(org.springframework.context.event.ContextClosedEvent.class)
-    public void contextClosing() {
-        close();
-    }
+    private final AtomicBoolean closed = new AtomicBoolean();
 
-    @PreDestroy
-    public void close() {
+    void stopAccepting() {
         synchronized (admissionLock) {
             if (!accepting.getAndSet(false)) return;
             for (int i = pending.size(); i > 0; i--) count(Outcome.SHUTDOWN_LOST);
             pending.clear();
         }
-        var consumerClosed = new java.util.concurrent.CountDownLatch(1);
-        listener.stop(consumerClosed::countDown);
+    }
+
+    void close(long deadline) {
+        if (!closed.compareAndSet(false, true)) return;
+        stopAccepting();
         observer.shutdownNow();
         for (var attempt : attempts) {
             attempt.finish(Outcome.UNKNOWN);
             attempt.retire();
         }
         sender.shutdownNow();
-        startup.shutdownNow();
         // Never destroy the CCF synchronously: reset can block behind a TCP write.
         recovering.set(true);
         try {
@@ -403,16 +366,14 @@ public class AsyncVisitRecorder implements VisitRecorder {
                         }
                     });
         } catch (RejectedExecutionException ignored) {
+            // A repeated close cannot create a replacement cleanup worker.
         }
         cleanup.shutdown();
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         try {
-            for (var worker : List.of(sender, startup, observer, cleanup)) {
+            for (var worker : List.of(sender, observer, cleanup)) {
                 long left = deadline - System.nanoTime();
                 if (left > 0) worker.awaitTermination(left, TimeUnit.NANOSECONDS);
             }
-            long left = deadline - System.nanoTime();
-            if (left > 0) consumerClosed.await(left, TimeUnit.NANOSECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }

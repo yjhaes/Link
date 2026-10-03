@@ -1,4 +1,4 @@
-package com.example.shortlink;
+package com.example.shortlink.stats;
 import com.example.shortlink.stats.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.*;
@@ -6,6 +6,7 @@ import org.springframework.amqp.rabbit.core.*;
 import org.springframework.amqp.rabbit.connection.*;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 class VisitPublisherBrokerTest {
@@ -15,12 +16,12 @@ class VisitPublisherBrokerTest {
   factory.setChannelCacheSize(16);factory.setChannelCheckoutTimeout(200);factory.setCloseTimeout(500);
   var template=new RabbitTemplate(factory);template.setMandatory(true);
   var admin=new RabbitAdmin(factory);String queue="visit-test-03-"+java.util.UUID.randomUUID();
-  var recorder=new AsyncVisitRecorder(new VisitRabbitProperties(null,null,null,null,null,null,null,null,null,null,null,null,false),template,mock(RabbitAdmin.class),mock(SimpleMessageListenerContainer.class),new VisitMessageCodec(),factory);
+  var recorder=new AsyncVisitRecorder(new VisitRabbitProperties(null,null,null,null,null,null,null,null,null,null,null,null,false),template,new VisitMessageCodec(),factory);
   try {
    admin.declareExchange(new DirectExchange(VisitRabbitConfiguration.EXCHANGE,true,false));
    admin.declareQueue(new Queue(queue,false,false,false));
    var binding=new Binding(queue,Binding.DestinationType.QUEUE,VisitRabbitConfiguration.EXCHANGE,VisitRabbitConfiguration.KEY,null);admin.declareBinding(binding);
-   recorder.ready();recorder.record(VisitPublisherFailureTest.event());
+   recorder.start();recorder.record(VisitPublisherFailureTest.event());
    org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(()->assertThat(recorder.snapshot().outcomes().get("accepted")).isEqualTo(1));
    assertThat(template.receive(queue,2000)).isNotNull();
    admin.removeBinding(binding);
@@ -33,7 +34,7 @@ class VisitPublisherBrokerTest {
    factory.resetConnection();admin.declareBinding(binding);recorder.record(VisitPublisherFailureTest.event());
    org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(()->assertThat(recorder.snapshot().outcomes().get("accepted")).isEqualTo(2));
    assertThat(template.receive(queue,2000)).isNotNull();
-  }finally {admin.deleteQueue(queue);recorder.close();}
+  }finally {admin.deleteQueue(queue);recorder.close(System.nanoTime()+TimeUnit.SECONDS.toNanos(2));}
  }
  @Test void realTcpBlackoutExpiresConfirmAndRecoveryAcceptsOnlyNewEvents() throws Exception {
   try(var proxy=new TcpBlackout(Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")))) {
@@ -41,11 +42,11 @@ class VisitPublisherBrokerTest {
    var template=new RabbitTemplate(factory);template.setMandatory(true);var admin=new RabbitAdmin(factory);
    var consumerFactory=new CachingConnectionFactory("127.0.0.1",Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")));var consumerConnection=consumerFactory.createConnection();
    String queue="visit-tcp-03-"+java.util.UUID.randomUUID();
-   var recorder=new AsyncVisitRecorder(new VisitRabbitProperties(null,null,null,null,null,null,null,null,null,null,null,null,false),template,mock(RabbitAdmin.class),mock(SimpleMessageListenerContainer.class),new VisitMessageCodec(),factory);
+   var recorder=new AsyncVisitRecorder(new VisitRabbitProperties(null,null,null,null,null,null,null,null,null,null,null,null,false),template,new VisitMessageCodec(),factory);
    try {
     admin.declareExchange(new DirectExchange(VisitRabbitConfiguration.EXCHANGE,true,false));admin.declareQueue(new Queue(queue,false,false,false));
     admin.declareBinding(new Binding(queue,Binding.DestinationType.QUEUE,VisitRabbitConfiguration.EXCHANGE,VisitRabbitConfiguration.KEY,null));
-    recorder.ready();recorder.record(VisitPublisherFailureTest.event());
+    recorder.start();recorder.record(VisitPublisherFailureTest.event());
     org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(()->assertThat(recorder.snapshot().outcomes().get("accepted")).isEqualTo(1));
     assertThat(template.receive(queue,2000)).isNotNull();
     for(int cycle=1;cycle<=2;cycle++){final int round=cycle;
@@ -59,7 +60,7 @@ class VisitPublisherBrokerTest {
     assertThat(template.receive(queue,2000)).isNotNull();assertThat(template.receive(queue,200)).isNull();
     assertThat(consumerFactory.createConnection()).isSameAs(consumerConnection);assertThat(consumerConnection.isOpen()).isTrue();
     }
-   }finally {proxy.blackout=false;admin.deleteQueue(queue);recorder.close();consumerFactory.destroy();}
+   }finally {proxy.blackout=false;admin.deleteQueue(queue);recorder.close(System.nanoTime()+TimeUnit.SECONDS.toNanos(2));consumerFactory.destroy();}
   }
  }
  /** Drops TCP bytes after a successful handshake; this proves missing confirms, not blocked-write cancellation. */

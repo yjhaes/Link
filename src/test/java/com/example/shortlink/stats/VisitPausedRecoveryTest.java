@@ -1,4 +1,4 @@
-package com.example.shortlink;
+package com.example.shortlink.stats;
 
 import com.example.shortlink.stats.*;
 import org.junit.jupiter.api.Test;
@@ -19,6 +19,7 @@ class VisitPausedRecoveryTest {
  static VisitPublisherBrokerTest.TcpBlackout create(){try{var result=new VisitPublisherBrokerTest.TcpBlackout(Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","5672")));result.unavailable=true;return result;}catch(Exception e){throw new ExceptionInInitializerError(e);}}
  @DynamicPropertySource static void properties(DynamicPropertyRegistry registry){registry.add("short-link.stats.rabbit.host",()->"127.0.0.1");registry.add("short-link.stats.rabbit.port",proxy::port);}
  @Autowired AsyncVisitRecorder recorder;
+ @Autowired VisitMqRuntime runtime;
  @Autowired @Qualifier("visitListener") SimpleMessageListenerContainer listener;
  @Autowired @Qualifier("visitRabbitAdmin") RabbitAdmin admin;
  @Test void configurationPauseSurvivesStartupFailureAndPublisherRecovery() throws Exception {
@@ -33,6 +34,6 @@ class VisitPausedRecoveryTest {
    org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(10)).untilAsserted(()->assertThat(recorder.snapshot().outcomes().get("accepted")).isEqualTo(1));
    assertThat(listener.isRunning()).isFalse();assertThat(listener.getActiveConsumerCount()).isZero();
    assertThat(admin.getQueueInfo(VisitRabbitConfiguration.QUEUE).getMessageCount()).isEqualTo(1);
-  }finally{proxy.unavailable=false;admin.purgeQueue(VisitRabbitConfiguration.QUEUE);recorder.close();proxy.close();}
+  }finally{proxy.unavailable=false;admin.purgeQueue(VisitRabbitConfiguration.QUEUE);runtime.close();proxy.close();}
  }
 }

@@ -1,4 +1,4 @@
-package com.example.shortlink;
+package com.example.shortlink.stats;
 
 import com.example.shortlink.stats.*;
 import org.junit.jupiter.api.Test;
@@ -16,7 +16,7 @@ class VisitMqShutdownTest {
   var context=new AnnotationConfigApplicationContext();
   context.registerBean(java.time.Clock.class,java.time.Clock::systemUTC);
   context.registerBean(VisitPersistence.class,()->event->VisitPersistence.Outcome.SAVED);
-  context.register(VisitRabbitConfiguration.class,AsyncVisitRecorder.class);
+  context.register(VisitRabbitConfiguration.class,AsyncVisitRecorder.class,VisitMqRuntime.class);
   context.getBeanFactory().addBeanPostProcessor(new org.springframework.beans.factory.config.BeanPostProcessor(){ public Object postProcessAfterInitialization(Object bean,String name){if(name.equals("visitPublisherConnectionFactory")){var instrumented=spy((CachingConnectionFactory)bean);doAnswer(i->{entered.countDown();while(!release.await(1,TimeUnit.SECONDS)){} return null;}).when(instrumented).resetConnection();return instrumented;}return bean;}});
   context.refresh();
   var template=context.getBean("visitRabbitTemplate",RabbitTemplate.class);
@@ -24,7 +24,7 @@ class VisitMqShutdownTest {
   // A real CCF has entered its running lifecycle even before a broker connection exists.
   assertThat(factory.isRunning()).isTrue();
   var recorder=context.getBean(AsyncVisitRecorder.class);
-  recorder.ready();
+  context.getBean(VisitMqRuntime.class).ready();
   var close=Executors.newSingleThreadExecutor();
   try {
    // Framework stop must not perform network work on the lifecycle caller.
