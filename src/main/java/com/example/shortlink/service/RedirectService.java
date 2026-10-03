@@ -44,11 +44,7 @@ public class RedirectService {
         this.loadWaitNanos = properties.getLoadWait().toNanos();
     }
 
-    public String findOriginalUrl(String code) {
-        return decide(code).originalUrl();
-    }
-
-    public RedirectDecision decide(String code) {
+public RedirectDecision decide(String code) {
         if (code == null || !code.matches("[A-Za-z0-9]{4,8}")) {
             throw new LinkNotFoundException();
         }

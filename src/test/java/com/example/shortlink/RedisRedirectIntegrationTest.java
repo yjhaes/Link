@@ -1387,8 +1387,8 @@ class RedisRedirectIntegrationTest {
         redisTemplate.opsForValue().set("other:keep", "unrelated");
         try (ConfigurableApplicationContext disabled = independentInstance(CoalescingConfiguration.class, false)) {
             RedirectService service = disabled.getBean(RedirectService.class);
-            assertThat(service.findOriginalUrl(code)).isEqualTo(ORIGINAL_URL);
-            assertThat(service.findOriginalUrl(code)).isEqualTo(ORIGINAL_URL);
+            assertThat(service.decide(code).originalUrl()).isEqualTo(ORIGINAL_URL);
+            assertThat(service.decide(code).originalUrl()).isEqualTo(ORIGINAL_URL);
             verify(disabled.getBean(ShortLinkMapper.class), times(2)).selectById(code);
             assertThatThrownBy(() -> disabled.getBean(ShortLinkCreationService.class).recoverCacheCoordination(code)).isInstanceOf(IllegalStateException.class);
             assertThat(redisTemplate.opsForValue().get(cacheKey(code))).isEqualTo(oldSnapshot);
@@ -1489,7 +1489,7 @@ class RedisRedirectIntegrationTest {
 
     private FutureTask<String> startRedirect(
             RedirectService service, String code, List<Thread> threads) {
-        var task = new FutureTask<String>(() -> service.findOriginalUrl(code));
+        var task = new FutureTask<String>(() -> service.decide(code).originalUrl());
         Thread thread = new Thread(task);
         threads.add(thread);
         thread.start();

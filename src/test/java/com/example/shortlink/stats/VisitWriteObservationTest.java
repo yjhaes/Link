@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class VisitWriteObservationTest {
@@ -29,9 +30,17 @@ class VisitWriteObservationTest {
             when(connection.prepareStatement(anyString())).thenReturn(statement);
             when(statement.executeUpdate()).thenThrow(failure);
             var observations = new VisitWriteObservations(pool);
-            var recorder = new MySqlVisitRecorder(pool,
+            var recorder = new MySqlVisitPersistence(pool,
                     new VisitStatsProperties(false, null, null, null, null, null, null, null, null), observations);
-            recorder.record(event);
+            if (failure.getMessage().contains("uq_visit_event")) {
+                assertThat(recorder.persist(event)).isEqualTo(VisitPersistence.Outcome.DUPLICATE);
+            } else {
+                var kind = failure instanceof java.sql.SQLTimeoutException || "08S01".equals(failure.getSQLState())
+                        ? VisitPersistenceException.Failure.UNCERTAIN : failure.getErrorCode() == 1205
+                        ? VisitPersistenceException.Failure.TRANSIENT : VisitPersistenceException.Failure.PERMANENT;
+                assertThatThrownBy(() -> recorder.persist(event)).isInstanceOf(VisitPersistenceException.class)
+                        .extracting("failure").isEqualTo(kind);
+            }
             var expected = failure.getMessage().contains("uq_visit_event") ? VisitWriteObservations.Outcome.DUPLICATE
                     : failure instanceof java.sql.SQLTimeoutException || "08S01".equals(failure.getSQLState())
                     ? VisitWriteObservations.Outcome.UNCERTAIN : VisitWriteObservations.Outcome.FAILED;
@@ -50,16 +59,16 @@ class VisitWriteObservationTest {
         when(statement.executeUpdate()).thenReturn(1);
         doThrow(new SQLException("private", "08S01")).when(connection).close();
         var observations = new VisitWriteObservations(pool);
-        var recorder = new MySqlVisitRecorder(pool,
+        var recorder = new MySqlVisitPersistence(pool,
                 new VisitStatsProperties(false, null, null, null, null, null, null, null, null), observations);
-        recorder.record(event);
+        assertThat(recorder.persist(event)).isEqualTo(VisitPersistence.Outcome.SAVED);
         assertThat(observations.snapshot().outcomes().get(VisitWriteObservations.Outcome.SAVED)).isEqualTo(1);
         assertThat(observations.snapshot().outcomes().get(VisitWriteObservations.Outcome.UNCERTAIN)).isZero();
         assertThat(observations.snapshot().categories().get(VisitWriteObservations.Category.CLEANUP)).isEqualTo(1);
     }
     @Test
     void connectionFailureIsObservableAndTheNextVisitCanAcquireCapacity() throws Exception {
-        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MySqlVisitRecorder.class);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MySqlVisitPersistence.class);
         var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
         logs.start();
         logger.addAppender(logs);
@@ -67,10 +76,14 @@ class VisitWriteObservationTest {
             DataSource pool = mock(DataSource.class);
             when(pool.getConnection()).thenThrow(new SQLException("secret", "08001"));
             var observations = new VisitWriteObservations(pool);
-            var recorder = new MySqlVisitRecorder(pool,
+            var recorder = new MySqlVisitPersistence(pool,
                     new VisitStatsProperties(false, null, null, null, null, null, null, null, null), observations);
-            for (int i = 0; i < 3; i++) recorder.record(new VisitEvent(UUID.randomUUID(), "Ab12",
-                    Instant.EPOCH, LocalDate.of(1970, 1, 1), new byte[32], 1, null, null, null));
+            for (int i = 0; i < 3; i++) {
+                assertThatThrownBy(() -> recorder.persist(new VisitEvent(UUID.randomUUID(), "Ab12",
+                        Instant.EPOCH, LocalDate.of(1970, 1, 1), new byte[32], 1, null, null, null)))
+                        .isInstanceOf(VisitPersistenceException.class)
+                        .extracting("failure").isEqualTo(VisitPersistenceException.Failure.TRANSIENT);
+            }
             var snapshot = observations.snapshot();
             assertThat(snapshot.attempted()).isEqualTo(3);
             assertThat(snapshot.outcomes().get(VisitWriteObservations.Outcome.FAILED)).isEqualTo(3);

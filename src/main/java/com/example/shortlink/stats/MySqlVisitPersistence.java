@@ -18,8 +18,8 @@ import java.util.concurrent.Semaphore;
 import javax.sql.DataSource;
 
 @Component
-public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
-    private static final Logger LOG = LoggerFactory.getLogger(MySqlVisitRecorder.class);
+public class MySqlVisitPersistence implements VisitPersistence {
+    private static final Logger LOG = LoggerFactory.getLogger(MySqlVisitPersistence.class);
 
     private enum Phase {
         CONNECTION,
@@ -33,22 +33,13 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
     private final Semaphore writes = new Semaphore(2);
     private final VisitWriteObservations observations;
 
-    public MySqlVisitRecorder(
+    public MySqlVisitPersistence(
             @Qualifier("statsDataSource") DataSource pool,
             VisitStatsProperties properties,
             VisitWriteObservations observations) {
         this.pool = pool;
         this.properties = properties;
         this.observations = observations;
-    }
-
-    @Override
-    public void record(VisitEvent event) {
-        try {
-            persist(event);
-        } catch (VisitPersistenceException ignored) {
-            /* HTTP collection remains best effort. */
-        }
     }
 
     @Override

@@ -33,7 +33,7 @@ class VisitStatisticsApiTest {
     @Autowired JdbcTemplate db;
     @Autowired ShortLinkApiTest.ControllableClock clock;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
-    com.example.shortlink.stats.MySqlVisitRecorder recorder;
+    com.example.shortlink.stats.MySqlVisitPersistence recorder;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     com.example.shortlink.stats.AsyncVisitRecorder collector;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
@@ -177,8 +177,8 @@ class VisitStatisticsApiTest {
                 statement.setBytes(1, id);
                 try (var result = statement.executeQuery()) { assertThat(result.next()).isTrue(); }
             }
-            var first = executor.submit(() -> recorder.record(event));
-            var second = executor.submit(() -> recorder.record(event));
+            var first = executor.submit(() -> recorder.persist(event));
+            var second = executor.submit(() -> recorder.persist(event));
             org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(3)).until(() ->
                     statsPool.getHikariPoolMXBean().getActiveConnections() == 2);
             org.assertj.core.api.Assertions.assertThatThrownBy(() ->
@@ -186,19 +186,25 @@ class VisitStatisticsApiTest {
                     .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
                     .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.BUSY);
             long start = System.nanoTime();
-            recorder.record(event); // Direct persistence admission remains independent of the HTTP queue.
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> recorder.persist(event))
+                    .isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                    .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.BUSY);
             org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).untilAsserted(() -> assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED))
                     .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DROPPED) + 2));
             assertThat(first.isCancelled()).isFalse();
             assertThat(second.isCancelled()).isFalse();
             assertThat(java.time.Duration.ofNanos(System.nanoTime()-start)).isLessThan(java.time.Duration.ofMillis(500));
-            first.get(5, java.util.concurrent.TimeUnit.SECONDS);
-            second.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> first.get(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .rootCause().isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                    .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.TRANSIENT);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> second.get(5, java.util.concurrent.TimeUnit.SECONDS))
+                    .rootCause().isInstanceOf(com.example.shortlink.stats.VisitPersistenceException.class)
+                    .extracting("failure").isEqualTo(com.example.shortlink.stats.VisitPersistenceException.Failure.TRANSIENT);
             assertThat(observations.snapshot().categories().get(com.example.shortlink.stats.VisitWriteObservations.Category.TIMEOUT))
                     .isEqualTo(before.categories().get(com.example.shortlink.stats.VisitWriteObservations.Category.TIMEOUT) + 2);
             lock.rollback();
             org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).untilAsserted(() -> assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1));
-            recorder.record(event); // Internal replay after the lock releases is an ordinary duplicate.
+            assertThat(recorder.persist(event)).isEqualTo(com.example.shortlink.stats.VisitPersistence.Outcome.DUPLICATE);
             assertThat(observations.snapshot().outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DUPLICATE))
                     .isEqualTo(before.outcomes().get(com.example.shortlink.stats.VisitWriteObservations.Outcome.DUPLICATE) + 1);
             org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).untilAsserted(() -> assertThat(db.queryForObject("SELECT COUNT(*) FROM short_link_visit_log", Integer.class)).isEqualTo(1));
