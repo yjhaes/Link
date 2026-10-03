@@ -1,5 +1,6 @@
 package com.example.shortlink;
 
+
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,7 @@ class VisitStatisticsApiTest {
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     com.example.shortlink.stats.MySqlVisitPersistence recorder;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
-    com.example.shortlink.stats.AsyncVisitRecorder collector;
+    com.example.shortlink.stats.messaging.AsyncVisitRecorder collector;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean
     com.example.shortlink.persistence.ShortLinkMapper mapper;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean

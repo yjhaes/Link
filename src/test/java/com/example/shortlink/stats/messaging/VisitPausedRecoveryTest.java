@@ -1,6 +1,12 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.messaging;
 
-import com.example.shortlink.stats.*;
+
+import com.example.shortlink.stats.messaging.VisitPausedRecoveryTest;
+import com.example.shortlink.stats.messaging.VisitPublisherBrokerTest;
+import com.example.shortlink.stats.messaging.VisitPublisherFailureTest;
+import com.example.shortlink.stats.messaging.AsyncVisitRecorder;
+import com.example.shortlink.stats.messaging.VisitMqRuntime;
+import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.*;

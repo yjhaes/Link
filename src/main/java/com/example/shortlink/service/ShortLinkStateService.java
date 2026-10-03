@@ -109,7 +109,7 @@ public class ShortLinkStateService {
     private StateCacheCoordinationException unconfirmed(String shortCode, Throwable cause) {
         LOGGER.error(
                 "Database state update committed for short code {}; cache coordination unconfirmed."
-                    + " Recover coordination using this short code.",
+                        + " Recover coordination using this short code.",
                 shortCode,
                 cause);
         return new StateCacheCoordinationException(shortCode, cause);

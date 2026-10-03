@@ -97,7 +97,7 @@ public class ShortLinkCreationService {
         } catch (RuntimeException exception) {
             LOGGER.error(
                     "Database creation committed for short code {}; cache coordination unconfirmed."
-                        + " Recover coordination using this short code.",
+                            + " Recover coordination using this short code.",
                     entity.getShortCode(),
                     exception);
             throw new CreateCacheCoordinationException(entity.getShortCode(), exception);
@@ -121,7 +121,7 @@ public class ShortLinkCreationService {
         } catch (RuntimeException exception) {
             LOGGER.error(
                     "Cache coordination recovery unconfirmed for short code {}; retry using the"
-                        + " same code.",
+                            + " same code.",
                     shortCode,
                     exception);
             throw exception;
@@ -146,7 +146,7 @@ public class ShortLinkCreationService {
                 if (attempt == MAX_SHORT_CODE_INSERT_ATTEMPTS) {
                     LOGGER.error(
                             "Short-code primary-key collision persisted after issuing a replacement"
-                                + " ID.",
+                                    + " ID.",
                             exception);
                     throw new ShortCodeGenerationException();
                 }

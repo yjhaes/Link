@@ -18,9 +18,9 @@ public final class SafeDependencyConsoleEncoder extends PatternLayoutEncoder {
                         : name.startsWith("org.springframework.amqp")
                                         || name.startsWith("com.rabbitmq.client")
                                         || name.equals(
-                                                "com.example.shortlink.stats.VisitConnectionFactory")
+                                                "com.example.shortlink.stats.messaging.VisitConnectionFactory")
                                         || name.equals(
-                                                "com.example.shortlink.stats.VisitListenerContainer")
+                                                "com.example.shortlink.stats.messaging.VisitListenerContainer")
                                 ? "mq"
                                 : null;
         if (category == null) return super.encode(event);

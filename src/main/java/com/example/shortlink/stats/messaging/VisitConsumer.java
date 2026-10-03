@@ -1,4 +1,9 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.messaging;
+
+import com.example.shortlink.stats.StatsDateRange;
+import com.example.shortlink.stats.VisitEvent;
+import com.example.shortlink.stats.VisitPersistence;
+import com.example.shortlink.stats.VisitPersistenceException;
 
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Message;

@@ -1,5 +1,6 @@
 package com.example.shortlink;
 
+
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheProperties;
 import com.example.shortlink.persistence.MySqlShortLinkWriter;

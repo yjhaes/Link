@@ -44,7 +44,7 @@ public class RedirectService {
         this.loadWaitNanos = properties.getLoadWait().toNanos();
     }
 
-public RedirectDecision decide(String code) {
+    public RedirectDecision decide(String code) {
         if (code == null || !code.matches("[A-Za-z0-9]{4,8}")) {
             throw new LinkNotFoundException();
         }
@@ -197,7 +197,7 @@ public RedirectDecision decide(String code) {
             } catch (RuntimeException exception) {
                 LOGGER.warn(
                         "Redirect cache write failed for short code {} and result {}; returning the"
-                            + " MySQL result.",
+                                + " MySQL result.",
                         code,
                         status,
                         exception);

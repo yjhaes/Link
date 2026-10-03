@@ -1,4 +1,4 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.messaging;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

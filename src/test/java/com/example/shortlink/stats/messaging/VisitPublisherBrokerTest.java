@@ -1,5 +1,11 @@
-package com.example.shortlink.stats;
-import com.example.shortlink.stats.*;
+package com.example.shortlink.stats.messaging;
+
+import com.example.shortlink.stats.messaging.VisitPublisherBrokerTest;
+import com.example.shortlink.stats.messaging.VisitPublisherFailureTest;
+import com.example.shortlink.stats.messaging.AsyncVisitRecorder;
+import com.example.shortlink.stats.messaging.VisitMessageCodec;
+import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;
+import com.example.shortlink.stats.messaging.VisitRabbitProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.core.*;

@@ -1,5 +1,6 @@
 package com.example.shortlink;
 
+
 import com.example.shortlink.LinkApplication;
 import com.example.shortlink.service.CreatedShortLink;
 import com.example.shortlink.shortcode.PermutedShortCodeEncoder;

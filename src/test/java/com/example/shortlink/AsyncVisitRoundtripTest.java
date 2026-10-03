@@ -1,4 +1,5 @@
 package com.example.shortlink;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -14,7 +15,7 @@ import java.time.Duration;
 @AutoConfigureMockMvc @ActiveProfiles("test") @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class AsyncVisitRoundtripTest {
  @Autowired MockMvc http; @Autowired JdbcTemplate db;
- @Autowired com.example.shortlink.stats.AsyncVisitRecorder recorder;
+ @Autowired com.example.shortlink.stats.messaging.AsyncVisitRecorder recorder;
  @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name="visitRabbitTemplate") org.springframework.amqp.rabbit.core.RabbitTemplate publishing;
  @Test void repeatedGetsUseNewEventsAndSameCookieIdentityThroughRealBrokerAndDatabase() throws Exception {
   String code="Q"+java.util.UUID.randomUUID().toString().replace("-", "").substring(0,7);

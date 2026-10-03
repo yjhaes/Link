@@ -1,6 +1,13 @@
 package com.example.shortlink;
 
-import com.example.shortlink.stats.*;
+
+import com.example.shortlink.stats.messaging.AsyncVisitRecorder;
+import com.example.shortlink.stats.messaging.VisitConsumer;
+import com.example.shortlink.stats.VisitEvent;
+import com.example.shortlink.stats.VisitLogCleanup;
+import com.example.shortlink.stats.messaging.VisitMessageCodec;
+import com.example.shortlink.stats.VisitPersistence;
+import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
