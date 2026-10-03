@@ -35,3 +35,5 @@ One synchronous listener delivery makes at most three persistence attempts, with
 The console encoder retains every JDBC/Hikari/AMQP/native Rabbit log event, severity, logger, timestamp and thread, but replaces unsafe dependency messages and exceptions with a fixed database/mq category. This scope includes core Hikari/Spring JDBC logs as well as statistics, because these dependencies share logger names. Safe application categories remain readable. Driver text, connection credentials, payloads and visitor hashes are not printed by these dependency events; troubleshooting uses safe application outcomes and broker/DB metrics. This does not change logger levels or disable logging. Any extra appender introduced later must use the same encoding boundary before emitting dependency data.
 
 代码资源所有权见 [实际架构](../docs/architecture.md)：应用 MQ 生命周期由 `stats.messaging.VisitMqRuntime` 集中，发布恢复只重建发布连接，终止由后台 adapter 执行并共用有限等待预算。统计持久化仅确认保存；本轮目录重构没有改动本目录拓扑、policy 或部署参数。
+
+本地独立秘密初始化与默认采集/消费行为见 [本地秘密说明](../docs/local-secrets.md)。初始化只生成配置，不创建数据库或 broker 账号。

@@ -5,8 +5,8 @@ spring:
     name: short-link
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/short_link?serverTimezone=UTC}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:123456}
+    username: ${DB_USERNAME:short_link}
+    password: ${DB_PASSWORD:}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -23,17 +23,17 @@ mybatis-plus:
 
 short-link:
   stats:
-    enabled: ${SHORT_LINK_STATS_ENABLED:true}
+    enabled: ${SHORT_LINK_STATS_ENABLED:false}
     rabbit:
       consumer-enabled: ${SHORT_LINK_STATS_CONSUMER_ENABLED:true}
       host: ${RABBITMQ_HOST:localhost}
       port: ${RABBITMQ_PORT:5672}
-      username: ${RABBITMQ_USERNAME:guest}
-      password: ${RABBITMQ_PASSWORD:guest}
-      virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
-    visitor-key: ${SHORT_LINK_VISITOR_HMAC_KEY:kPUaP271mwyCNIxFd210L1ZTWvFu9ZIemflWX73qiAE=}
+      username: ${RABBITMQ_USERNAME:short_link}
+      password: ${RABBITMQ_PASSWORD:}
+      virtual-host: ${RABBITMQ_VIRTUAL_HOST:short_link}
+    visitor-key: ${SHORT_LINK_VISITOR_HMAC_KEY:}
     visitor-key-version: ${SHORT_LINK_VISITOR_KEY_VERSION:1}
-  internal-token: ${SHORT_LINK_INTERNAL_TOKEN:kPUaP271mwyCNIxFd210L1ZTWvFu9ZIemflWX73qiAE=}
+  internal-token: ${SHORT_LINK_INTERNAL_TOKEN:}
   base-url: ${SHORT_LINK_BASE_URL:http://localhost:8080}
   redirect-cache:
     enabled: ${SHORT_LINK_REDIRECT_CACHE_ENABLED:true}
