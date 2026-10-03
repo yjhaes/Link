@@ -26,7 +26,7 @@ CREATE DATABASE short_link_test CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 应用启动时会执行版本控制中的 `schema.sql`。表使用短码作主键，映射记录中的到期时间允许为空。
 
-通过环境变量提供连接信息；默认开发地址为 `localhost:3306/short_link`，用户名默认为 `root`，密码默认为 `123456`。需要其他密码时设置 `DB_PASSWORD`，不要把真实凭据提交到仓库。
+通过环境变量提供连接信息；默认开发地址为 `localhost:3306/short_link`，项目用户名为 `short_link`，密码无默认值。先执行本地秘密初始化并为数据库与 MQ 供给对应账号，操作与重启/轮换边界见 [本地秘密说明](docs/local-secrets.md)。基础管理入口默认关闭，访问采集默认关闭，消费者默认开启。
 
 跳转缓存默认连接 `localhost:6379`，可通过 `REDIS_HOST` 和 `REDIS_PORT` 配置 Redis 地址。正值缓存 TTL 上限默认 5 分钟，可通过 `SHORT_LINK_REDIRECT_CACHE_TTL` 调整；每次写入会随机缩短 0%～10%，命中不会续期。
 
@@ -42,7 +42,7 @@ PowerShell：
 
 ```powershell
 $env:DB_URL = 'jdbc:mysql://localhost:3306/short_link?serverTimezone=UTC'
-$env:DB_USERNAME = 'root'
+$env:DB_USERNAME = 'short_link'
 $env:DB_PASSWORD = '<本地数据库密码>'
 .\mvnw.cmd spring-boot:run
 ```
