@@ -9,7 +9,7 @@ import com.example.shortlink.stats.messaging.VisitMessageCodec;
 import com.example.shortlink.stats.persistence.VisitPersistence;
 import com.example.shortlink.stats.persistence.VisitPersistenceException;
 import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;
-import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 import com.example.shortlink.stats.persistence.VisitWriteObservations;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.*;

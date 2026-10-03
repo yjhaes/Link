@@ -193,8 +193,8 @@ class InternalManagementApiTest {
         @Bean com.example.shortlink.stats.persistence.VisitWriteObservations visitWriteObservations() {
             return new com.example.shortlink.stats.persistence.VisitWriteObservations(mock(javax.sql.DataSource.class));
         }
-        @Bean com.example.shortlink.stats.VisitStatsProperties visitStatsProperties() {
-            return new com.example.shortlink.stats.VisitStatsProperties(
+        @Bean com.example.shortlink.stats.config.VisitStatsProperties visitStatsProperties() {
+            return new com.example.shortlink.stats.config.VisitStatsProperties(
                     false, null, null, null, null, null, null, null, null);
         }
         @Bean com.example.shortlink.stats.VisitRecorder visitRecorder() {

@@ -1,5 +1,5 @@
 package com.example.shortlink.stats.retention;
-import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 
 
 

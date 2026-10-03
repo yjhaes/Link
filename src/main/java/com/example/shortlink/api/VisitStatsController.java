@@ -5,7 +5,7 @@ import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.service.error.LinkNotFoundException;
 import com.example.shortlink.stats.query.MySqlVisitStatsQuery;
 import com.example.shortlink.stats.StatsDateRange;
-import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;

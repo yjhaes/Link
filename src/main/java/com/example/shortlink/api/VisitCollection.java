@@ -6,7 +6,7 @@ import com.example.shortlink.stats.VisitEvent;
 import com.example.shortlink.stats.collection.VisitIdentity;
 import com.example.shortlink.stats.collection.VisitMetadata;
 import com.example.shortlink.stats.VisitRecorder;
-import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 import com.example.shortlink.stats.persistence.VisitWriteObservations;
 
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,6 +1,6 @@
 package com.example.shortlink.stats.query;
 import com.example.shortlink.stats.StatsDateRange;
-import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 
 
 import com.example.shortlink.service.error.LinkNotFoundException;

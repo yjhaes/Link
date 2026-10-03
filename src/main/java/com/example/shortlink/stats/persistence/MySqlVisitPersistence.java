@@ -1,6 +1,6 @@
 package com.example.shortlink.stats.persistence;
 import com.example.shortlink.stats.VisitEvent;
-import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
