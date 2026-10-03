@@ -20,9 +20,9 @@ public record VisitRabbitProperties(
     public VisitRabbitProperties {
         host = host == null ? "localhost" : host;
         port = port == null ? 5672 : port;
-        username = username == null ? "guest" : username;
-        password = password == null ? "guest" : password;
-        virtualHost = virtualHost == null ? "/" : virtualHost;
+        username = username == null ? "short_link" : username;
+        password = password == null ? "" : password;
+        virtualHost = virtualHost == null ? "short_link" : virtualHost;
         bufferCapacity = bufferCapacity == null ? 256 : bufferCapacity;
         unconfirmedLimit = unconfirmedLimit == null ? 32 : unconfirmedLimit;
         channelLimit = channelLimit == null ? 16 : channelLimit;
