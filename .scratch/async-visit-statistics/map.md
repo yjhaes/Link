@@ -1,6 +1,6 @@
 # 阶段 6：RabbitMQ 异步访问统计设计讨论
 
-本文件记录 `/grill-with-docs` 访谈的事实、设计树与已确认选择。2026-10-02完成五轮讨论，用户通过每轮“全部按推荐”确认Q1～Q15，设计共识已完成。本阶段只讨论与编写设计文档，不修改生产代码、SQL、配置或测试，不创建实施任务。
+本文件记录 `/grill-with-docs` 访谈的事实、设计树与已确认选择。2026-10-02完成五轮讨论，用户确认Q1～Q15；随后调用to-spec发布规格，并调用to-tickets、确认8张任务拆分。设计和任务发布阶段未修改生产代码、SQL、配置或测试；后续显式授权实施及验收记录见下文。
 
 ## 已有约定
 
@@ -136,6 +136,8 @@
 - [ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)及[完整设计](../../docs/async-visit-statistics.md)已接受；根CONTEXT.md补充“已记录访问事件”定义，区分事件发生和成为统计依据。
 - ADR-0006的统计业务口径继续有效，后续实施以ADR-0007替换请求内同步采集边界。当前代码仍同步，本次仅完成设计，无实施任务或代码改动。
 - 用户随后显式调用`to-spec`，已将已确认设计合成为[完整实施规格](spec.md)，按本地任务跟踪约定标记`Status: ready-for-agent`。只发布规格，不拆子任务、不认领或执行实施；测试接缝沿用Q14已确认的HTTP/真实MQ/MySQL及现有统计提交边界。
+
+- 用户随后调用`to-tickets`并回复“确认”，已按[任务索引](ticket-plan.md)发布8张独立任务，初始状态均为ready-for-agent。依赖为01无、02←01、03←02、04←02、05←04、06←03/04、07←06、08←05/07；当前可执行前沿只有01。父规格内容和状态保持不变，没有认领或开始实施。
 
 - 2026-10-02：用户显式调用 implement-spec，开始已确认八张任务的实施；历史的仅发布/不实施范围不再限制本轮授权。集成分支为 codex/async-visit-statistics，固定实现基线为 8a3d7eb。
 - 已完成并合入 [01 持久化结果](issues/01-visit-persistence-outcomes.md)、[02 异步闭环](issues/02-rabbitmq-visit-roundtrip.md)、[03 发布故障](issues/03-publish-failure-and-backpressure.md)。验收证据和可复现同步基线见 [实施验证](verification.md)。
