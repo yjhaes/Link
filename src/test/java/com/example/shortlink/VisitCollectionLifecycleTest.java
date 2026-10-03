@@ -1,6 +1,14 @@
 package com.example.shortlink;
 
-import com.example.shortlink.stats.*;
+
+
+import com.example.shortlink.stats.messaging.AsyncVisitRecorder;
+import com.example.shortlink.stats.messaging.VisitConsumer;
+import com.example.shortlink.stats.VisitEvent;
+import com.example.shortlink.stats.retention.VisitLogCleanup;
+import com.example.shortlink.stats.messaging.VisitMessageCodec;
+import com.example.shortlink.stats.persistence.VisitPersistence;
+import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -28,6 +36,7 @@ class VisitCollectionLifecycleTest {
  @Autowired VisitLogCleanup cleanup;
  @Autowired VisitPersistence persistence;
  @Autowired AsyncVisitRecorder recorder;
+ @Autowired com.example.shortlink.stats.messaging.VisitMqRuntime runtime;
  @Autowired @Qualifier("visitRabbitTemplate") RabbitTemplate rabbit;
  @Autowired @Qualifier("visitRabbitAdmin") RabbitAdmin admin;
  @Autowired @Qualifier("visitListener") SimpleMessageListenerContainer listener;
@@ -85,7 +94,8 @@ class VisitCollectionLifecycleTest {
   CachingConnectionFactory resumedFactory=null;SimpleMessageListenerContainer resumed=null;
   try {
    listener.start();publish(event);assertThat(saved.await(5,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-   listener.stop(closed::countDown);
+   runtime.close();
+   listener.stop(closed::countDown); // Observe the already-claimed adapter completion.
    assertThat(closed.await(4,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
    assertThat(release.getCount()).isEqualTo(1);
    assertThat(deliveryChannel.get().isOpen()).isFalse();

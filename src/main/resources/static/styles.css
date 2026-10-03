@@ -1,3 +1,4 @@
+/* 设计变量与基础元素 */
 :root {
   color-scheme: light;
   font-family: "Inter", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
@@ -54,6 +55,7 @@ code {
   font-family: var(--mono);
 }
 
+/* 页面外壳与导航 */
 .app-shell {
   width: min(100% - 72px, 1240px);
   min-height: 100vh;
@@ -138,6 +140,7 @@ code {
   letter-spacing: 0.04em;
 }
 
+/* 介绍与工作区布局 */
 .workspace {
   max-width: 1080px;
   margin: 0 auto;
@@ -218,6 +221,7 @@ h1 span {
   transform: rotate(45deg);
 }
 
+/* 创建与结果面板共享结构 */
 .workbench {
   display: grid;
   grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
@@ -287,6 +291,7 @@ h1 span {
   white-space: nowrap;
 }
 
+/* 输入、有效期选择与校验反馈 */
 .field-group {
   min-width: 0;
   margin: 0 0 23px;
@@ -453,6 +458,7 @@ input[aria-invalid="true"] {
   line-height: 1.55;
 }
 
+/* 提交控件与提交状态 */
 .form-actions {
   display: flex;
   align-items: center;
@@ -508,6 +514,7 @@ input[aria-invalid="true"] {
   font-size: 10px;
 }
 
+/* 创建结果、复制与打开交互 */
 .result-panel {
   display: flex;
   flex-direction: column;
@@ -749,6 +756,7 @@ input[aria-invalid="true"] {
   display: none !important;
 }
 
+/* 响应式布局 */
 @media (max-width: 860px) {
   .app-shell {
     width: min(100% - 40px, 680px);

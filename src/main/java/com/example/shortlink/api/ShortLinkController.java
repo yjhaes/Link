@@ -1,13 +1,17 @@
 package com.example.shortlink.api;
 
-import com.example.shortlink.service.ShortLinkCreationService;
-import com.example.shortlink.service.RedirectService;
+import com.example.shortlink.api.management.InternalManagement;
+import com.example.shortlink.api.stats.VisitCollection;
 import com.example.shortlink.service.CreatedShortLink;
+import com.example.shortlink.service.RedirectService;
+import com.example.shortlink.service.ShortLinkCreationService;
 import com.example.shortlink.service.ShortLinkStateService;
+
 import jakarta.validation.Valid;
+
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,32 +45,35 @@ public class ShortLinkController {
     }
 
     @PostMapping("/api/links")
-    public ResponseEntity<CreateLinkResponse> create(@Valid @RequestBody CreateLinkRequest request) {
-        CreatedShortLink createdLink = creationService.create(request.originalUrl(), request.validMinutes());
+    public ResponseEntity<CreateLinkResponse> create(
+            @Valid @RequestBody CreateLinkRequest request) {
+        CreatedShortLink createdLink =
+                creationService.create(request.originalUrl(), request.validMinutes());
         String shortUrl = baseUrl + "/s/" + createdLink.shortCode();
-        CreateLinkResponse response = new CreateLinkResponse(
-                createdLink.shortCode(),
-                shortUrl,
-                createdLink.expiresAt());
+        CreateLinkResponse response =
+                new CreateLinkResponse(createdLink.shortCode(), shortUrl, createdLink.expiresAt());
 
         return ResponseEntity.created(URI.create(shortUrl)).body(response);
     }
 
     @PutMapping("/api/links/{code}/enabled")
     @InternalManagement
-    public ResponseEntity<EnabledStateResponse> setEnabled(@PathVariable String code,
-            @Valid @RequestBody SetEnabledRequest request) {
+    public ResponseEntity<EnabledStateResponse> setEnabled(
+            @PathVariable String code, @Valid @RequestBody SetEnabledRequest request) {
         stateService.setEnabled(code, request.enabled());
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
                 .body(new EnabledStateResponse(code, request.enabled()));
     }
 
     @GetMapping("/s/{code}")
-    public ResponseEntity<Void> redirect(@PathVariable String code, jakarta.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<Void> redirect(
+            @PathVariable String code, jakarta.servlet.http.HttpServletRequest request) {
         var decision = redirectService.decide(code);
-        var response = ResponseEntity.status(302)
-                .header(HttpHeaders.LOCATION, decision.originalUrl())
-                .header(HttpHeaders.CACHE_CONTROL, "no-store");
+        var response =
+                ResponseEntity.status(302)
+                        .header(HttpHeaders.LOCATION, decision.originalUrl())
+                        .header(HttpHeaders.CACHE_CONTROL, "no-store");
         String cookie = visits.collect(code, decision, request);
         if (cookie != null) response.header(HttpHeaders.SET_COOKIE, cookie);
         return response.build();

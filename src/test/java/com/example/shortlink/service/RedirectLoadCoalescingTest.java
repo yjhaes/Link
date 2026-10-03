@@ -1,5 +1,7 @@
 package com.example.shortlink.service;
 
+
+
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheEntry;
 import com.example.shortlink.cache.RedirectCacheRead;
@@ -230,7 +232,7 @@ class RedirectLoadCoalescingTest {
 
     private static int status(RedirectService service, String code) {
         try {
-            assertThat(service.findOriginalUrl(code)).isEqualTo("https://example.com/");
+            assertThat(service.decide(code).originalUrl()).isEqualTo("https://example.com/");
             return 302;
         } catch (LinkNotFoundException exception) {
             return 404;

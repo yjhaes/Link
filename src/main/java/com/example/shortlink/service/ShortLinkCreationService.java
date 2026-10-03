@@ -5,12 +5,13 @@ import com.example.shortlink.persistence.MySqlShortLinkWriter;
 import com.example.shortlink.persistence.ShortCodeCollisionException;
 import com.example.shortlink.persistence.ShortLinkEntity;
 import com.example.shortlink.persistence.ShortLinkMapper;
-import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
-import com.example.shortlink.shortcode.ShortCodeIdIssuer;
-import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.service.error.CreateCacheCoordinationException;
+import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.service.error.LinkNotFoundException;
 import com.example.shortlink.service.error.ShortCodeGenerationException;
+import com.example.shortlink.shortcode.PermutedShortCodeEncoder;
+import com.example.shortlink.shortcode.ShortCodeIdIssuer;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -37,9 +38,13 @@ public class ShortLinkCreationService {
     private final Clock clock;
     private final RedirectCache redirectCache;
 
-    public ShortLinkCreationService(ShortLinkMapper shortLinkMapper, MySqlShortLinkWriter mappingWriter,
-            ShortCodeIdIssuer shortCodeIdIssuer, PermutedShortCodeEncoder shortCodeEncoder,
-            Clock clock, RedirectCache redirectCache) {
+    public ShortLinkCreationService(
+            ShortLinkMapper shortLinkMapper,
+            MySqlShortLinkWriter mappingWriter,
+            ShortCodeIdIssuer shortCodeIdIssuer,
+            PermutedShortCodeEncoder shortCodeEncoder,
+            Clock clock,
+            RedirectCache redirectCache) {
         this.shortLinkMapper = shortLinkMapper;
         this.mappingWriter = mappingWriter;
         this.shortCodeIdIssuer = shortCodeIdIssuer;
@@ -48,7 +53,8 @@ public class ShortLinkCreationService {
         this.redirectCache = redirectCache;
     }
 
-    // MyBatis commits each non-transactional insert before returning. Suspend any caller transaction
+    // MyBatis commits each non-transactional insert before returning. Suspend any caller
+    // transaction
     // so cache coordination never reports completion for an uncommitted mapping.
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CreatedShortLink create(String originalUrl, Integer validMinutes) {
@@ -59,7 +65,8 @@ public class ShortLinkCreationService {
             throw new InvalidRequestException("originalUrl exceeds 4096 characters.");
         }
         if (!originalUrl.equals(originalUrl.strip())) {
-            throw new InvalidRequestException("originalUrl must not have leading or trailing whitespace.");
+            throw new InvalidRequestException(
+                    "originalUrl must not have leading or trailing whitespace.");
         }
         if (originalUrl.chars().anyMatch(character -> character > 0x7f)) {
             throw new InvalidRequestException("originalUrl must use ASCII URI characters.");
@@ -72,40 +79,51 @@ public class ShortLinkCreationService {
 
         Instant createdAtInstant = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         LocalDateTime createdAt = LocalDateTime.ofInstant(createdAtInstant, ZoneOffset.UTC);
-        Instant expiresAtInstant = validMinutes == null
-                ? null
-                : createdAtInstant.plus(validMinutes, ChronoUnit.MINUTES);
+        Instant expiresAtInstant =
+                validMinutes == null
+                        ? null
+                        : createdAtInstant.plus(validMinutes, ChronoUnit.MINUTES);
         ShortLinkEntity entity = new ShortLinkEntity();
         entity.setOriginalUrl(originalUrl);
         entity.setCreatedAt(createdAt);
-        entity.setExpiresAt(expiresAtInstant == null
-                ? null
-                : LocalDateTime.ofInstant(expiresAtInstant, ZoneOffset.UTC));
+        entity.setExpiresAt(
+                expiresAtInstant == null
+                        ? null
+                        : LocalDateTime.ofInstant(expiresAtInstant, ZoneOffset.UTC));
         entity.setEnabled(true);
         insertWithCollisionRetries(entity);
         try {
             redirectCache.replaceVersion(entity.getShortCode());
         } catch (RuntimeException exception) {
-            LOGGER.error("Database creation committed for short code {}; cache coordination unconfirmed. "
-                    + "Recover coordination using this short code.", entity.getShortCode(), exception);
+            LOGGER.error(
+                    "Database creation committed for short code {}; cache coordination unconfirmed."
+                            + " Recover coordination using this short code.",
+                    entity.getShortCode(),
+                    exception);
             throw new CreateCacheCoordinationException(entity.getShortCode(), exception);
         }
 
         return new CreatedShortLink(entity.getShortCode(), expiresAtInstant);
     }
 
-    /** Internal maintenance entry point: call only after the mapping's database commit is confirmed. */
+    /**
+     * Internal maintenance entry point: call only after the mapping's database commit is confirmed.
+     */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void recoverCacheCoordination(String shortCode) {
-        if (shortCode == null || !shortCode.matches("[A-Za-z0-9]{4,8}")
+        if (shortCode == null
+                || !shortCode.matches("[A-Za-z0-9]{4,8}")
                 || shortLinkMapper.selectById(shortCode) == null) {
             throw new LinkNotFoundException();
         }
         try {
             redirectCache.replaceVersion(shortCode);
         } catch (RuntimeException exception) {
-            LOGGER.error("Cache coordination recovery unconfirmed for short code {}; retry using the same code.",
-                    shortCode, exception);
+            LOGGER.error(
+                    "Cache coordination recovery unconfirmed for short code {}; retry using the"
+                            + " same code.",
+                    shortCode,
+                    exception);
             throw exception;
         }
         LOGGER.info("Cache coordination recovery confirmed for short code {}.", shortCode);
@@ -126,11 +144,16 @@ public class ShortLinkCreationService {
                 return;
             } catch (ShortCodeCollisionException exception) {
                 if (attempt == MAX_SHORT_CODE_INSERT_ATTEMPTS) {
-                    LOGGER.error("Short-code primary-key collision persisted after issuing a replacement ID.",
+                    LOGGER.error(
+                            "Short-code primary-key collision persisted after issuing a replacement"
+                                    + " ID.",
                             exception);
                     throw new ShortCodeGenerationException();
                 }
-                LOGGER.warn("Short-code primary-key collision for issued ID {}; retrying once.", issuedId, exception);
+                LOGGER.warn(
+                        "Short-code primary-key collision for issued ID {}; retrying once.",
+                        issuedId,
+                        exception);
             }
         }
     }
@@ -145,7 +168,8 @@ public class ShortLinkCreationService {
                     || uri.getUserInfo() != null
                     || uri.getPort() == 0
                     || uri.getPort() > 65535) {
-                throw new InvalidRequestException("originalUrl must be an absolute HTTP or HTTPS URI with a host.");
+                throw new InvalidRequestException(
+                        "originalUrl must be an absolute HTTP or HTTPS URI with a host.");
             }
         } catch (URISyntaxException exception) {
             throw new InvalidRequestException("originalUrl is not a valid URI.");

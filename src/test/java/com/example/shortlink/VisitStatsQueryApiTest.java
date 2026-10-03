@@ -1,5 +1,7 @@
 package com.example.shortlink;
 
+
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +26,7 @@ class VisitStatsQueryApiTest {
     @Autowired JdbcTemplate db;
     @Autowired ShortLinkApiTest.ControllableClock clock;
     @org.springframework.boot.test.web.server.LocalServerPort int port;
-    @Autowired com.example.shortlink.stats.VisitQueryObservations queryObservations;
+    @Autowired com.example.shortlink.stats.query.VisitQueryObservations queryObservations;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name = "statsDataSource")
     com.zaxxer.hikari.HikariDataSource pool;
     @org.springframework.test.context.bean.override.mockito.MockitoSpyBean

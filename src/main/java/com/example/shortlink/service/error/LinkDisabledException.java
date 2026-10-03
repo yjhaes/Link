@@ -1,4 +1,3 @@
 package com.example.shortlink.service.error;
 
-public class LinkDisabledException extends RuntimeException {
-}
+public class LinkDisabledException extends RuntimeException {}

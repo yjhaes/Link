@@ -11,7 +11,8 @@ import java.io.IOException;
 public class ValidMinutesDeserializer extends JsonDeserializer<Integer> {
 
     @Override
-    public Integer deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+    public Integer deserialize(JsonParser parser, DeserializationContext context)
+            throws IOException {
         JsonToken token = parser.currentToken();
         if (token != JsonToken.VALUE_NUMBER_INT) {
             throw JsonMappingException.from(parser, "validMinutes must be an integer.");
@@ -20,7 +21,8 @@ public class ValidMinutesDeserializer extends JsonDeserializer<Integer> {
         try {
             return parser.getBigIntegerValue().intValueExact();
         } catch (ArithmeticException exception) {
-            throw JsonMappingException.from(parser, "validMinutes is outside the integer range.", exception);
+            throw JsonMappingException.from(
+                    parser, "validMinutes is outside the integer range.", exception);
         }
     }
 }

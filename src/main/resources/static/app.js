@@ -1,3 +1,4 @@
+// 表单输入与提交控件
 const form = document.querySelector('#link-form');
 const originalUrlInput = document.querySelector('#original-url');
 const durationField = document.querySelector('#duration-field');
@@ -5,7 +6,9 @@ const validMinutesInput = document.querySelector('#valid-minutes');
 const expiryModeInputs = [...document.querySelectorAll('input[name="expiry-mode"]')];
 const submitButton = document.querySelector('#submit-button');
 const buttonLabel = document.querySelector('.button-label');
+// 错误反馈
 const formError = document.querySelector('#form-error');
+// 创建结果
 const emptyResult = document.querySelector('#empty-result');
 const createdResult = document.querySelector('#created-result');
 const resultSubtitle = document.querySelector('#result-subtitle');
@@ -15,12 +18,14 @@ const openLink = document.querySelector('#open-link');
 const shortCodeOutput = document.querySelector('#short-code');
 const expiresAtOutput = document.querySelector('#expires-at');
 const originalUrlOutput = document.querySelector('#original-url-result');
+// 复制反馈
 const copyButton = document.querySelector('#copy-button');
 const copyLabel = document.querySelector('#copy-label');
 const copyStatus = document.querySelector('#copy-status');
 
 let copyResetTimer;
 
+// 有效期选择与输入校验
 function selectedExpiryMode() {
   return expiryModeInputs.find((input) => input.checked)?.value ?? 'permanent';
 }
@@ -33,41 +38,6 @@ function updateExpiryMode() {
   if (!isLimited) {
     validMinutesInput.removeAttribute('aria-invalid');
   }
-}
-
-function clearError() {
-  formError.textContent = '';
-  formError.hidden = true;
-  originalUrlInput.removeAttribute('aria-invalid');
-  validMinutesInput.removeAttribute('aria-invalid');
-}
-
-function showError(message, field) {
-  formError.textContent = message;
-  formError.hidden = false;
-  originalUrlInput.removeAttribute('aria-invalid');
-  validMinutesInput.removeAttribute('aria-invalid');
-  if (field) {
-    field.setAttribute('aria-invalid', 'true');
-    field.focus();
-  }
-}
-
-function showEmptyResult() {
-  emptyResult.hidden = false;
-  createdResult.hidden = true;
-  resultSubtitle.textContent = '短链接会显示在这里';
-  resultState.classList.remove('is-ready');
-  resultState.innerHTML = '<span class="state-dot" aria-hidden="true"></span>等待生成';
-  shortUrlLink.removeAttribute('href');
-  openLink.removeAttribute('href');
-  shortUrlLink.textContent = '';
-  shortCodeOutput.textContent = '—';
-  expiresAtOutput.textContent = '—';
-  originalUrlOutput.textContent = '';
-  copyStatus.textContent = '';
-  copyLabel.textContent = '复制短链接';
-  window.clearTimeout(copyResetTimer);
 }
 
 function validateOriginalUrl(value) {
@@ -110,6 +80,57 @@ function validateValidMinutes() {
   }
 
   return null;
+}
+
+// 错误反馈与部分完成提示
+function clearError() {
+  formError.textContent = '';
+  formError.hidden = true;
+  originalUrlInput.removeAttribute('aria-invalid');
+  validMinutesInput.removeAttribute('aria-invalid');
+}
+
+function showError(message, field) {
+  formError.textContent = message;
+  formError.hidden = false;
+  originalUrlInput.removeAttribute('aria-invalid');
+  validMinutesInput.removeAttribute('aria-invalid');
+  if (field) {
+    field.setAttribute('aria-invalid', 'true');
+    field.focus();
+  }
+}
+
+function errorMessageFor(response, data) {
+  if (data?.code === 'CREATE_CACHE_COORDINATION_UNCONFIRMED') {
+    return `短码 ${data.shortCode} 已保存，但访问状态尚未确认。请保留短码并联系维护者恢复；再次提交会创建新的短链接。`;
+  }
+  if (response.status === 400 || data?.code === 'INVALID_REQUEST') {
+    return '网址或有效分钟数未通过服务端校验，请检查输入后重试。';
+  }
+  if (response.status >= 500 || data?.code === 'INTERNAL_ERROR'
+      || data?.code === 'SHORT_CODE_GENERATION_FAILED') {
+    return '服务器暂时无法创建短链接，请稍后重试。';
+  }
+  return '创建失败，请检查输入后重试。';
+}
+
+// 创建结果展示
+function showEmptyResult() {
+  emptyResult.hidden = false;
+  createdResult.hidden = true;
+  resultSubtitle.textContent = '短链接会显示在这里';
+  resultState.classList.remove('is-ready');
+  resultState.innerHTML = '<span class="state-dot" aria-hidden="true"></span>等待生成';
+  shortUrlLink.removeAttribute('href');
+  openLink.removeAttribute('href');
+  shortUrlLink.textContent = '';
+  shortCodeOutput.textContent = '—';
+  expiresAtOutput.textContent = '—';
+  originalUrlOutput.textContent = '';
+  copyStatus.textContent = '';
+  copyLabel.textContent = '复制短链接';
+  window.clearTimeout(copyResetTimer);
 }
 
 function formatExpiry(expiresAt) {
@@ -162,20 +183,7 @@ function renderCreatedLink(data, originalUrl) {
   resultState.innerHTML = '<span class="state-dot" aria-hidden="true"></span>已生成';
 }
 
-function errorMessageFor(response, data) {
-  if (data?.code === 'CREATE_CACHE_COORDINATION_UNCONFIRMED') {
-    return `短码 ${data.shortCode} 已保存，但访问状态尚未确认。请保留短码并联系维护者恢复；再次提交会创建新的短链接。`;
-  }
-  if (response.status === 400 || data?.code === 'INVALID_REQUEST') {
-    return '网址或有效分钟数未通过服务端校验，请检查输入后重试。';
-  }
-  if (response.status >= 500 || data?.code === 'INTERNAL_ERROR'
-      || data?.code === 'SHORT_CODE_GENERATION_FAILED') {
-    return '服务器暂时无法创建短链接，请稍后重试。';
-  }
-  return '创建失败，请检查输入后重试。';
-}
-
+// 剪贴板能力与选择复制回退
 async function copyToClipboard(value) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -200,6 +208,7 @@ async function copyToClipboard(value) {
   }
 }
 
+// 输入事件
 expiryModeInputs.forEach((input) => input.addEventListener('change', () => {
   updateExpiryMode();
   clearError();
@@ -207,6 +216,7 @@ expiryModeInputs.forEach((input) => input.addEventListener('change', () => {
 originalUrlInput.addEventListener('input', clearError);
 validMinutesInput.addEventListener('input', clearError);
 
+// 创建请求与提交状态
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (submitButton.disabled) {
@@ -259,6 +269,7 @@ form.addEventListener('submit', async (event) => {
   }
 });
 
+// 复制交互与反馈恢复
 copyButton.addEventListener('click', async () => {
   const shortUrl = shortUrlLink.getAttribute('href');
   if (!shortUrl) {
@@ -282,4 +293,5 @@ copyButton.addEventListener('click', async () => {
   }
 });
 
+// 初始有效期状态
 updateExpiryMode();

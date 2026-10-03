@@ -115,7 +115,7 @@ publisher confirm与consumer ACK覆盖不同边界。未路由消息也可能得
 
 使用同步listener与Spring AMQP AUTO、batchSize=1。AUTO由容器在listener正常返回后ACK；NONE对应RabbitMQ无须等待处理完成的autoAck，本阶段不用NONE。MANUAL不是业务成功后确认的唯一实现方式。[AMQP3.2.12容器配置](https://raw.githubusercontent.com/spring-projects/spring-amqp/v3.2.12/src/reference/antora/modules/ROOT/pages/amqp/containerAttributes.adoc)
 
-当前`MySqlVisitRecorder.record`捕获错误且返回void，适合原HTTP尽力降级，却不能直接作为消费成功证明。后续实现必须提供可判断的持久化边界：明确已保存/仅eventId重复，或传播繁忙、失败及提交不确定。HTTP提交适配器继续兜底，消费持久化失败不能静默正常返回。
+`stats.persistence.MySqlVisitPersistence.persist` 只承担保存确认：明确返回已保存/仅 eventId 重复，或传播繁忙、失败及提交不确定。旧同步 record 入口已移除；HTTP 使用 VisitRecorder 本地异步交接，消费持久化失败不能静默正常返回。
 
 | 消费结果 | 处理 |
 | --- | --- |
@@ -246,3 +246,7 @@ MQ声明/监听器启动在核心已启动后后台执行，MQ不可用时核心
 方案决策见[ADR-0007](adr/0007-rabbitmq-visit-statistics.md)，逐轮确认见[讨论地图](../.scratch/async-visit-statistics/map.md)。沿用[ADR-0006](adr/0006-synchronous-visit-statistics.md)的业务口径，以当前异步实现替代其中的同步采集边界；当前实现事实见[访问采集说明](visit-collection.md)与[查询说明](visit-statistics-query.md)。不把历史ADR的设计日期当当前代码状态。
 
 已核验并修正查询说明末句原先“任务06调度清理仍未实现”的陈旧表述；实际已有清理调度和生命周期测试，异步化继承该能力。本文没有把文档编写当作实现，也未运行任何实现测试。用户最后一轮确认了测试及分级，全部设计分支已收束；本次工作止于已接受的设计，不创建实施任务或开始编码。
+
+## 当前资源所有权与代码导航
+
+`stats.messaging.VisitMqRuntime` 统一应用 ready/close/destroy 与后台拓扑、消费启动终止；`AsyncVisitRecorder` 只封装发布状态和发布连接恢复。框架关闭 adapter 与销毁保护仍在 messaging 内，所有 MQ 等待共用有限预算。核心池归 `configuration.CoreDataSourceConfiguration`，统计池归 `stats.config`。其他统计能力、HTTP 分组和同包测试导航见 [实际架构](architecture.md)；本设计的历史资源值和 best-effort 边界保持。

@@ -185,3 +185,5 @@ Redis 版本无法确认时独立读取 MySQL，不共享旧任务，也不无�
 正常 GET 冻结最小化访问事件后立即尝试有界本地交接，后台发布并消费写 MySQL；HTTP 不等待统计网络或 SQL。采集默认关闭，消费者默认开启；MQ 启动/运行故障仍允许核心跳转，best-effort 允许漏记且无同步回退。查询只计已记录事件，可能晚于刚发生的访问。Cookie、上海统计日、30 日窗口、管理鉴权和原缓存协议保持。
 
 部署、policy、开关、人工暂停及死信处理见 [运维说明](ops/README.md)，消息和成功边界见 [异步设计](docs/async-visit-statistics.md)，完整测试及同条件测量见 [验证记录](.scratch/async-visit-statistics/verification.md)。测试使用 `MYSQL_TEST_URL`、`RABBIT_TEST_PORT`、`RABBIT_MANAGEMENT_URL`、`REDIS_PORT`，另需 Docker 供 RedisRedirectIntegrationTest 启动真实 MySQL/Redis；隔离 vhost 可设置 `SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST`。test profile 默认禁消费，仅真实异步测试显式启用并关闭上下文，避免不同 Clock 的消费者互相抢消息。
+
+代码按已落地能力组织，MQ 应用生命周期归 `stats.messaging.VisitMqRuntime`，发布 recorder 只管理发布状态；MySQL 保存确认归 `stats.persistence.MySqlVisitPersistence`。核心池和统计池分别装配，HTTP 管理、统计及错误表示单向依赖。目录与测试导航见 [架构说明](docs/architecture.md)，本轮验收见 [架构优化验证](.scratch/architecture-optimization/verification.md)。

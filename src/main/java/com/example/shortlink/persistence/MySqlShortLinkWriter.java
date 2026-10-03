@@ -2,6 +2,7 @@ package com.example.shortlink.persistence;
 
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
+
 import java.sql.SQLException;
 import java.util.Locale;
 
@@ -17,7 +18,8 @@ public class MySqlShortLinkWriter {
     public void insertConfirmed(ShortLinkEntity entity) {
         try {
             if (mapper.insert(entity) != 1) {
-                throw new IllegalStateException("MySQL did not confirm inserting the short-link mapping.");
+                throw new IllegalStateException(
+                        "MySQL did not confirm inserting the short-link mapping.");
             }
         } catch (DuplicateKeyException exception) {
             if (isShortCodePrimaryKeyCollision(exception)) {
@@ -37,7 +39,9 @@ public class MySqlShortLinkWriter {
     }
 
     private boolean isPrimaryKeyDuplicate(SQLException exception) {
-        for (SQLException current = exception; current != null; current = current.getNextException()) {
+        for (SQLException current = exception;
+                current != null;
+                current = current.getNextException()) {
             if (current.getErrorCode() == 1062 && namesPrimaryKey(current.getMessage())) {
                 return true;
             }
@@ -56,12 +60,13 @@ public class MySqlShortLinkWriter {
             return false;
         }
 
-        String keyName = lowerCaseMessage.substring(keyNameStart + "for key ".length())
-                .replace("'", "")
-                .replace("`", "")
-                .replace("\"", "")
-                .trim();
+        String keyName =
+                lowerCaseMessage
+                        .substring(keyNameStart + "for key ".length())
+                        .replace("'", "")
+                        .replace("`", "")
+                        .replace("\"", "")
+                        .trim();
         return keyName.equals("primary") || keyName.endsWith(".primary");
     }
-
 }

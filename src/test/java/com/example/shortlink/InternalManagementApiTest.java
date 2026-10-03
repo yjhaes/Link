@@ -1,5 +1,7 @@
 package com.example.shortlink;
 
+
+
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheProperties;
 import com.example.shortlink.persistence.MySqlShortLinkWriter;
@@ -27,7 +29,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-import com.example.shortlink.api.InternalManagement;
+import com.example.shortlink.api.management.InternalManagement;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import jakarta.servlet.http.Cookie;
@@ -185,14 +187,14 @@ class InternalManagementApiTest {
     @Import({ShortLinkCreationService.class, ShortLinkStateService.class, RedirectService.class,
             MySqlShortLinkWriter.class, PermutedShortCodeEncoder.class, FutureManagementController.class})
     static class WebConfiguration {
-        @Bean com.example.shortlink.stats.MySqlVisitStatsQuery visitStatsQuery() {
-            return mock(com.example.shortlink.stats.MySqlVisitStatsQuery.class);
+        @Bean com.example.shortlink.stats.query.MySqlVisitStatsQuery visitStatsQuery() {
+            return mock(com.example.shortlink.stats.query.MySqlVisitStatsQuery.class);
         }
-        @Bean com.example.shortlink.stats.VisitWriteObservations visitWriteObservations() {
-            return new com.example.shortlink.stats.VisitWriteObservations(mock(javax.sql.DataSource.class));
+        @Bean com.example.shortlink.stats.persistence.VisitWriteObservations visitWriteObservations() {
+            return new com.example.shortlink.stats.persistence.VisitWriteObservations(mock(javax.sql.DataSource.class));
         }
-        @Bean com.example.shortlink.stats.VisitStatsProperties visitStatsProperties() {
-            return new com.example.shortlink.stats.VisitStatsProperties(
+        @Bean com.example.shortlink.stats.config.VisitStatsProperties visitStatsProperties() {
+            return new com.example.shortlink.stats.config.VisitStatsProperties(
                     false, null, null, null, null, null, null, null, null);
         }
         @Bean com.example.shortlink.stats.VisitRecorder visitRecorder() {
