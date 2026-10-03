@@ -5,7 +5,7 @@ package com.example.shortlink;
 import com.example.shortlink.stats.messaging.AsyncVisitRecorder;
 import com.example.shortlink.stats.messaging.VisitConsumer;
 import com.example.shortlink.stats.VisitEvent;
-import com.example.shortlink.stats.VisitLogCleanup;
+import com.example.shortlink.stats.retention.VisitLogCleanup;
 import com.example.shortlink.stats.messaging.VisitMessageCodec;
 import com.example.shortlink.stats.persistence.VisitPersistence;
 import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;

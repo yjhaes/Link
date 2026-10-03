@@ -1,4 +1,4 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.retention;
 
 
 import org.springframework.context.annotation.Bean;

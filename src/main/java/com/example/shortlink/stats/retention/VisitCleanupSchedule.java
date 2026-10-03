@@ -1,4 +1,5 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.retention;
+import com.example.shortlink.stats.StatsDateRange;
 
 
 import jakarta.annotation.PreDestroy;
