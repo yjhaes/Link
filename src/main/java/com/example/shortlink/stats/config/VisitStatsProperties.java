@@ -48,4 +48,8 @@ public record VisitStatsProperties(
                     "Enabled statistics requires a visitor key and version.");
         }
     }
+    @Override
+    public String toString() {
+        return "VisitStatsProperties[redacted]";
+    }
 }

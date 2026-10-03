@@ -1,0 +1,9 @@
+.git
+.scratch
+.codegraph
+.idea
+.tools
+target
+.env*
+!.env.example
+**/*.log
