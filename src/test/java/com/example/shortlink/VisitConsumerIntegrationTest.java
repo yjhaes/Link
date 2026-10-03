@@ -113,6 +113,7 @@ class VisitConsumerIntegrationTest {
   });
   var attempts=new java.util.concurrent.CopyOnWriteArrayList<VisitEvent>();
   var real=new VisitConsumer(codec,value->{attempts.add(value);return persistence.persist(value);},Clock.fixed(event.occurredAt(),ZoneOffset.UTC));
+  long acknowledgedBefore=json.readTree(request("GET","queues/"+path(vhost)+"/"+path(VisitRabbitConfiguration.QUEUE),null)).path("message_stats").path("ack").asLong();
   listener.setMessageListener(real);listener.start();publish(codec.encode(event));
   await(()->assertThat(real.snapshot().outcomes().get(VisitConsumer.Category.DUPLICATE)).isEqualTo(1));
   assertThat(injected).isTrue();assertThat(attempts).hasSize(2);
@@ -125,9 +126,10 @@ class VisitConsumerIntegrationTest {
   assertThat(real.snapshot().outcomes().get(VisitConsumer.Category.ATTEMPT_FAILED)).isEqualTo(1);
   assertThat(writes.snapshot().outcomes().get(VisitWriteObservations.Outcome.UNCERTAIN)).isEqualTo(before.outcomes().get(VisitWriteObservations.Outcome.UNCERTAIN)+1);
   assertThat(writes.snapshot().outcomes().get(VisitWriteObservations.Outcome.DUPLICATE)).isEqualTo(before.outcomes().get(VisitWriteObservations.Outcome.DUPLICATE)+1);
-  await(()->{
+  org.awaitility.Awaitility.await().during(Duration.ofSeconds(6)).atMost(Duration.ofSeconds(25)).untilAsserted(()->{
    try {
     var queue=json.readTree(request("GET","queues/"+path(vhost)+"/"+path(VisitRabbitConfiguration.QUEUE),null));
+    assertThat(queue.path("message_stats").path("ack").asLong()).isGreaterThan(acknowledgedBefore);
     assertThat(queue.get("messages_ready").asInt()).isZero();assertThat(queue.get("messages_unacknowledged").asInt()).isZero();
     var dead=json.readTree(request("GET","queues/"+path(vhost)+"/"+path(VisitRabbitConfiguration.DLQ),null));
     assertThat(dead.get("messages").asInt()).isZero();

@@ -5,7 +5,7 @@ accepted_date: 2026-10-03
 
 # 阶段 7：RabbitMQ 消息重复消费与消费者幂等
 
-2026-10-03 通过 grill-with-docs 完成 Q1～Q10 逐轮确认。基于已经完成的 RabbitMQ 异步访问统计，保留现有实现，明确消息重复处理与统计入账的边界，并确认两类新增测试计划。本阶段设计已接受；新增测试尚未编写或执行，不将设计确认当作实施验收。
+2026-10-03 通过 grill-with-docs 完成 Q1～Q10 逐轮确认。基于已经完成的 RabbitMQ 异步访问统计，保留现有实现，明确消息重复处理与统计入账的边界，并确认两类新增测试计划。本阶段设计已接受；两类新增测试已于 2026-10-04 实施，实际运行结果与故障注入边界见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)。
 
 本设计延续 [ADR-0007](adr/0007-rabbitmq-visit-statistics.md) 和[阶段 6 设计](async-visit-statistics.md)，不替代既有业务契约，也不新增重复的 ADR。领域术语继续采用根目录 [CONTEXT.md](../CONTEXT.md) 的 single-context 布局。
 
@@ -108,7 +108,7 @@ PV 使用范围内日志 COUNT(*)，UV 使用整个范围的 `(visitor_key_versi
 
 ## 现有测试证据
 
-本轮阅读源码与历史验收记录，没有重新运行测试。下表说明已有覆盖，不代表本轮新增或通过的测试。
+设计确认时仅阅读源码与历史验收记录，没有重新运行测试。下表说明既有覆盖；本次实施的复验结果见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)，不将历史记录视为本轮通过证据。
 
 | 已有场景 | 源码与测试方法 |
 | --- | --- |
@@ -122,7 +122,7 @@ PV 使用范围内日志 COUNT(*)，UV 使用整个范围的 `(visitor_key_versi
 
 历史全量和后续维护性重构验证见[阶段 6 验收证据](../.scratch/async-visit-statistics/verification.md)，不能描述为本次重新验证。
 
-## 已接受的新增测试计划：待实现
+## 已实施的新增测试
 
 用户在 Q9 选择 B，确认以下两类新增测试，不仅停留在最小并发验证。生产代码原则上保留；只有后续验证发现问题时才修复。
 
@@ -131,7 +131,7 @@ PV 使用范围内日志 COUNT(*)，UV 使用整个范围的 `(visitor_key_versi
 
 第二类当前已有持久层未知结果和消费者分类重试的分层覆盖，新增目标是合并完整链路证据。采用隔离的真实 MySQL/RabbitMQ、受控故障注入与有界最终等待，不以 mock 冒充真实提交或 ACK。
 
-后续验收需记录实际测试范围、结果及故障注入边界，新增用例与相关消费、查询回归通过后才能标记测试计划完成。当前不编写或执行这些测试，不创建实施任务。
+用户随后调用 implement 并指定[任务 01](../.scratch/consumer-idempotency/issues/01-verify-consumer-idempotency.md)，授权实施。两个用例位于 VisitConsumerIntegrationTest；实际证据见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)，与上方历史测试证据分开记录。
 
 ## 面试表达与完成边界
 
@@ -139,4 +139,4 @@ PV 使用范围内日志 COUNT(*)，UV 使用整个范围的 `(visitor_key_versi
 
 可以概括为：消息可能重复投递，我们让同一事件保持稳定 ID，用 MySQL 唯一索引防止有效统计窗口内重复生成日志；数据库结果未知时同 ID 重试，明确保存或判重后再由容器确认。PV、UV 都从日志计算，当前不需要 Redis 双写或额外计数事务。统计允许漏记，不宣称端到端 Exactly Once。
 
-设计确认与文档收尾已经完成；阶段 6 已有能力继续保留。两类新增测试尚待另行授权实施，不把计划写成已经具备的验收证据，也不自动开始阶段 8。
+两类新增测试已获授权并实施；阶段 6 既有能力和生产实现保持。阶段 7 的完成依据是实际验收记录，不自动开始阶段 8。
