@@ -34,7 +34,7 @@ CREATE DATABASE short_link_test CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 
 ## 网页
 
-启动应用后访问 `http://localhost:8080/`，可在页面中输入原始网址，选择永久有效或按分钟设置期限，生成后查看短码和到期时间，并复制或打开短链接。页面由 Spring Boot 直接提供，无需额外的前端构建步骤。若应用对外使用其他地址，请设置 `SHORT_LINK_BASE_URL`，使生成的短链接指向可访问的服务地址。
+启动应用后访问 `http://localhost:8080/`，可在页面中输入原始网址，选择永久有效或按分钟设置期限，生成后查看短码和到期时间，并复制或打开短链接。管理工作台位于 `http://localhost:8080/admin.html`，可创建短链接、调整映射状态并查询最近 30 个统计日的 PV、UV 和访问日志。管理接口需配置 `SHORT_LINK_INTERNAL_TOKEN`；在工作台输入的令牌只保留在当前页面内存中。部署时通过 HTTPS 访问管理页。页面由 Spring Boot 直接提供，无需额外的前端构建步骤。若应用对外使用其他地址，请设置 `SHORT_LINK_BASE_URL`，使生成的短链接指向可访问的服务地址。
 
 ## 运行
 
