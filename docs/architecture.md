@@ -7,13 +7,23 @@
 ```text
 src/main/java/com/example/shortlink/
   LinkApplication.java
-  api/                 HTTP 控制器、请求与响应、参数反序列化、错误响应
+  api/                 核心 HTTP 控制器、请求响应及参数反序列化
+    error/             统一错误映射与错误表示
+    management/        管理标记、解析前鉴权与 MVC 装配
+    stats/             逐请求采集、统计查询与明细 HTTP 表示
+  configuration/       主核心 DataSource 装配
   service/             创建、状态维护、跳转与缓存协调恢复流程，以及用例结果
     error/             业务失败类型，由 api 映射为 HTTP 响应
   shortcode/           发号契约与确定性短码编码规则
   persistence/         MyBatis-Plus 映射、MySQL 发号与映射保存错误分类
   cache/               跳转缓存契约、读取状态、快照、配置与 Redis 实现
-  stats/               独立访问事件、身份与元数据规范化、统计池、同步日志记录
+  stats/               VisitEvent、VisitRecorder、StatsDateRange 共享契约
+    collection/        匿名身份、HMAC 与元数据规范化
+    messaging/         发布、消费、协议、MQ 运行生命周期及框架 adapter
+    persistence/       MySQL 保存确认、失败分类与写入观察
+    query/             已记录事件的快照查询、游标与查询观察
+    retention/         过期日志批量清理及追赶调度
+    config/            统计专用池与统计配置绑定
 src/main/resources/
   application.yml      数据库、Redis 和服务地址配置
   schema.sql           MySQL 表结构
@@ -30,17 +40,42 @@ src/test/resources/
 
 ## 模块与依赖
 
-`RedirectDecision` 携带原始 URL 和最终逐请求检查时冻结的时刻。HTTP 边界的
-`VisitCollection` 仅在正常 GET 决定后识别 Cookie、摘要和脱敏，再将独立 `VisitEvent`
-交给 `VisitRecorder`。`MySqlVisitRecorder` 使用显式统计池、容量 2 的立即准入和独立
-自动提交，不加入核心事务、不重新读取映射。统计配置显式声明主核心池，保留原有
-MyBatis/JDBC/事务及初始化归属。详见 [采集部署说明](visit-collection.md)。
+`RedirectDecision` 携带原始 URL 和最终逐请求检查时冻结的时刻。`api.stats.VisitCollection`
+只在正常 GET 决定后识别 Cookie、摘要和最小化元数据，将独立 `VisitEvent` 交给
+`VisitRecorder`。`stats.collection` 的规范化规则也由消息 codec 校验复用；采集对
+`VisitWriteObservations.collectionFailed` 保留窄引用，不读取池快照或执行写入。
 
-管理访问边界位于 `api`：`@InternalManagement` 标记控制器方法或整个控制器，`InternalManagementAccess` 在 MVC 参数与请求体解析前通过独立配置的 `X-Internal-Token` 精确安全比较鉴权。未配置关闭、拒绝无业务调用，并统一设置 `no-store`。现有状态 PUT 使用该标记；后续内部统计控制器可复用它，包含 GET 隐式支持的 HEAD。令牌不进入业务服务，公开创建和跳转无需管理令牌。访问控制规则见 [ADR-0006](adr/0006-synchronous-visit-statistics.md)。
+`stats.messaging.AsyncVisitRecorder` 封装容量 256 的本地交接、容量 32 的未确认尝试、
+confirm/return、独立观察和发布恢复。终态与许可分别一次结算；阻塞 sender 不阻止观察，
+迟到 ACK 不覆盖已结算结果。reset 完成且原 sender 返回后才重开发布，仅恢复发布连接。
+它不依赖 admin、listener 或应用事件。`VisitMqRuntime` 统一接收 ready、context-close 和
+destroy，核心 ready 后后台声明拓扑并按消费意图启动 listener，不等待 broker 启动 HTTP。
 
-统计聚合入口 `VisitStatsController` 复用管理访问边界；`api` 内的 `StatsDateParameters` 解析日期参数，`VisitStatsResponse` 承担响应表示。
-`stats` 内的 `StatsDateRange` 固定请求的上海日期窗口及 UTC 边界，`MySqlVisitStatsQuery` 通过专用统计池、容量 1 的立即准入和只读 REPEATABLE READ 一致性读取返回 `VisitStatsResult`。
-汇总、趋势与身份版本来自同一快照；`VisitQueryObservations` 在进程内计数明确查询超时，不使用请求或身份作为标签。详见 [查询说明](visit-statistics-query.md)。
+关闭先一次性取得终止权并停止新交接，终止启动任务，再由原后台 adapter 发起发布与消费
+网络清理；所有 MQ 等待共用约 2 秒预算。`VisitListenerContainer` 拒绝终止后的迟到 start，
+只创建一次清理任务；`VisitConnectionFactory.stop` 不在框架调用线程执行网络 reset。
+配置保留外部管理的销毁保护。重复通知不启动替代 worker；预算不等于整个进程的截止。
+未发进程内事件允许丢失，未确认不等于未送达，未 ACK 消费可能重投。
+
+`stats.persistence.MySqlVisitPersistence` 只实现 `VisitPersistence`，保留容量 2 的立即准入、
+独立自动提交、仅 eventId 重复成功、保存不确定与确认后清理失败的区分。HTTP 使用异步交接，
+不再暴露同步 record 入口。`VisitConsumer` 使用 AUTO ACK，同步确认保存、事件重复或合法超窗
+后返回；暂时、繁忙与不确定错误最多三次尝试，200/500ms 等待，每次重查窗口，最终拒绝不 requeue。
+
+`configuration.CoreDataSourceConfiguration` 声明原 `dataSource`、@Primary 和 Hikari 绑定，
+核心 Mapper、发号、JdbcTemplate、事务与 schema 初始化使用主池。
+`stats.config.StatsDataSourceConfiguration` 只声明原 `statsDataSource`：容量 4、minimumIdle=0、
+懒初始化与原超时不变；写入/查询/清理准入分别 2/1/1。两池共享 MySQL，资源配额隔离不等于硬件隔离。
+
+管理标记和解析前鉴权位于 `api.management`，只依赖 `api.error.ApiError` 表示拒绝结果。
+错误 handler 与三种错误表示共同位于 `api.error`；根包核心控制器和 `api.stats` 单向引用管理标记。
+未配置关闭、精确令牌比较、GET/隐式 HEAD 和解析前拒绝保持；令牌不进入用例。
+
+统计查询 HTTP 位于 `api.stats`，共享 `StatsDateRange` 固定上海窗口，`stats.query.MySqlVisitStatsQuery`
+通过专用池和容量 1 的准入，在同一只读 REPEATABLE READ 快照中读取映射、汇总、趋势与身份版本。
+明细按发生时刻和行 ID 倒序，游标绑定短码和日期范围；查询失败不会伪造零访问。
+`stats.retention` 保留每批独立提交、轮次预算、启动/每日/积压追赶，停采不停止历史消费、查询或清理。
+详见 [采集说明](visit-collection.md)、[异步设计](async-visit-statistics.md)、[查询说明](visit-statistics-query.md)。
 
 `ShortLinkStateService` 承担状态维护用例。入口挂起调用者事务，在独立事务中通过 Mapper 的行锁读取当前映射，获取锁后检查有效期和重复目标，再仅更新 enabled；独立事务确认提交后才轮换缓存版本。缓存同步失败在当前请求内最多尝试三次，等待 50/100ms，耗尽或等待中断报告专用部分完成错误；时间等待通过包级构造器的可控依赖进行测试。该用例复用现有 Mapper、Clock 和 RedirectCache，不新增通用仓储或后台任务。详见 [ADR-0005](adr/0005-enabled-state-api.md)。
 
@@ -62,7 +97,7 @@ persistence -> shortcode
 
 `cache` 不依赖 `service` 或 `persistence`，`shortcode` 不依赖业务流程或数据库实现，因此没有跨包循环。业务编排依赖缓存契约，不直接操作 Redis 实现；数据库实现也不反向调用业务编排或 HTTP 入口。`service` 仍使用数据库实体、Mapper 和缓存结果状态，这是当前项目接受的实现耦合，不将它描述为纯领域层。
 
-`service/error` 中的异常表达创建或跳转失败的原因。`api/ApiExceptionHandler` 把普通错误映射成 `ApiError`；已提交创建的缓存协调未确认则使用带短码的 `CreateCacheCoordinationError`，业务流程无需知道 HTTP 状态码。短码编码规则由 `PermutedShortCodeEncoder` 封装，创建流程只调用 `encode`。
+`service/error` 中的异常表达创建或跳转失败的原因。`api/error/ApiExceptionHandler` 把普通错误映射成 `ApiError`；已提交创建的缓存协调未确认则使用带短码的 `CreateCacheCoordinationError`，业务流程无需知道 HTTP 状态码。短码编码规则由 `PermutedShortCodeEncoder` 封装，创建流程只调用 `encode`。
 
 创建时先由 MySQL 分配 ID，再编码并插入映射；发号与映射分别提交。Spring 管理的创建入口挂起调用者事务，让 MyBatis 的非事务插入在返回时已提交。随后轮换 Redis 版本并清除旧结果，确认成功才返回创建完成；协调异常保留已提交短码并报告部分完成。受信任维护代码可调用 `recoverCacheCoordination` 按原短码仅重试缓存协调，不重新写库。
 
@@ -76,11 +111,21 @@ Redis 使用 `shortlink:redirect:v2:` 命名空间，结果与版本占位都有
 
 测试目录与生产包对应。HTTP 和 MySQL/Redis 集成测试位于测试根包，覆盖接口可见行为；`service` 测试覆盖创建、恢复协调和并发加载，`shortcode` 测试覆盖固定编码向量及长度边界，`cache` 测试覆盖 TTL 和缓存开关。`RedirectCachePropertiesTest` 验证配置绑定及启动失败；`RedisRedirectCacheTest` 与实现保持同包，以使用包级可见的可控随机源构造器。运行方式见 [README](../README.md)。
 
-## 后续功能的归属
+## 统计依赖与验收导航
 
-访问统计、RabbitMQ 消息发布与消费、消费者幂等处理应归未来的 `stats` 功能；限流策略与存储归 `ratelimit`，HTTP 拦截入口可留在 `api`。少量类先在功能包内集中，出现实际代码后再细分，不预建空包，也不继续把新功能装入短链接的 `service`。
+消息、查询和清理共享事件/日期规则，但不互相调用；消息依赖持久化，持久化/查询/清理
+依赖统计配置，codec 复用 collection 规范化。HTTP 调用 collection、query、共享契约和统计配置；
+数据、缓存与编码实现不依赖 HTTP。包依赖已包含实际配置引用，不把 service 描述为纯领域层。
+没有新增透传 façade、通用 repository、空功能包或因搬包机械公开的辅助 implementation。
 
-统计需要按每次访问请求记录，不能放在缓存未命中或共享数据库加载内部，否则会漏记命中请求或把多个访问者合并计数。HTTP 元数据在 Web 入口提取，成功解析后逐请求复查业务到期时间，再触发统计。统计事件不复用缓存状态、HTTP 请求 DTO 或映射实体；消费者去重与统计变更应在同一数据库事务中完成。消息投递、失败处理和限流策略属于后续功能设计，本次包整理不实现这些能力。
+同包测试跟随 messaging、persistence、retention、config、api.management 和 api.stats 实现。
+根包保留 HTTP 与设施集成验收。消息故障测试操作内部发布启动/关闭；应用生命周期验收驱动
+VisitMqRuntime 或真实 Spring context，手工装配也注册 runtime。核心配置测试额外验证只有主池时的
+JdbcTemplate、事务和 Hikari 绑定；真实设施测试继续验证 Mapper/发号、SQL 初始化、消费者重投与去重。
+
+实施结果与各类验证见 [架构优化验收](../.scratch/architecture-optimization/verification.md)。
+单模块内职责调整不改变 schema、缓存格式、消息版本、HTTP 或配置键，不承诺性能和可靠性提升。
+需要回退时按提交依赖逆序回退，保留框架销毁保护，不通过调大等待或跳过设施测试规避失败。
 
 ## 已有缓存配置与维护操作
 

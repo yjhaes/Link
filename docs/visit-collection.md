@@ -94,3 +94,7 @@ socket 和锁超时。按 `(stat_date,id)` 索引排序，每批最多 1000 行�
 部署监控应采集以上内部快照，关注失败、观测陈旧、最旧日期和持续积压，检查统计池及数据库容量。
 在线删除不自动删除备份/binlog；维护者须单独制定备份保留、受限访问与恢复后清理规则。
 删除访问日志同时删除其中的事件去重记录，不能承诺无限期事件去重；不自动回放或恢复旧 PV/UV。
+
+## 实现导航
+
+HTTP 逐请求采集在 `api.stats.VisitCollection`，身份/元数据规范化在 `stats.collection`，有界异步交接在 `stats.messaging.AsyncVisitRecorder`；`VisitMqRuntime` 管理应用启动关闭。消费通过 `stats.persistence.VisitPersistence`，其 MySQL 实现仅暴露保存确认，不提供吞异常的同步 record。写入观察在同一 persistence 包，采集只窄引用 collectionFailed。核心池归 configuration，统计池归 stats.config；容量和超时沿用本文。

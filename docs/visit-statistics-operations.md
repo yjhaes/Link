@@ -84,3 +84,7 @@ $credential = Get-Credential
 积压演练与处置顺序：先核验 listener/consumer 数、ready/unacked、消费轮次速率和已处理延迟，再核验 DB 失败/耗时/池等待和 broker 资源告警。持续 DB 失败会有限重试耗尽并继续把新消息送往 DLQ，单轮三次不会自动止损。按前述配置暂停消费，必要时关闭新采集，修复 DB 后恢复消费并核验少量历史写入/积压回落；DLQ 不自动回流，停采期间不补采。提高并发前必须核验所有实例的统计池和总 DB 容量；不以无限增加 buffer/prefetch 掩盖持续输入大于处理能力。
 
 隔离验收使用缩小的条数/body/TTL，真实确认满队列 nack 而未入 DLQ、主 TTL 过期死信、DLQ 自己的 TTL/drop-head，以及阻塞持久化时 consumers=1/unacked=10/ready=3。持续真实 DB 锁故障显示两次消费轮次各三次尝试、两次耗尽，人工停止后待处理消息留队，解除故障/恢复后写入；故障和暂停时短链仍 302，失败样本仍留 DLQ。生产运维采用配置修改后正常重启；测试直接控制内部 listener 只是隔离接缝，不是新增运维 API。
+
+## 资源所有权
+
+应用 MQ ready/close/destroy 统一归 `stats.messaging.VisitMqRuntime`；受信任上下文应通过它执行终止，不再调用 recorder.close 终止消费。AsyncVisitRecorder 只负责发布和发布恢复；消费关闭、CCF 非网络 stop 与销毁保护保留在 messaging adapter。核心 dataSource 归 configuration，statsDataSource 归 stats.config；采集、消费、查询和清理开关与本说明一致。
