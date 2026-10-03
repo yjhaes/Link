@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.persistence;
 
-
 /** Controlled failure without driver text, request data or secrets. */
 public final class VisitPersistenceException extends RuntimeException {
     public enum Failure {

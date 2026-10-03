@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.messaging;
 
-
 import com.rabbitmq.client.ConnectionFactory;
 
 import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;

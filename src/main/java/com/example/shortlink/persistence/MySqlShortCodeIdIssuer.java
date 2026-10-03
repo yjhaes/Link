@@ -1,6 +1,5 @@
 package com.example.shortlink.persistence;
 
-
 import com.example.shortlink.shortcode.ShortCodeIdIssuer;
 
 import org.springframework.jdbc.core.JdbcTemplate;

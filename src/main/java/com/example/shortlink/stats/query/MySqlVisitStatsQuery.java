@@ -1,9 +1,8 @@
 package com.example.shortlink.stats.query;
-import com.example.shortlink.stats.StatsDateRange;
-import com.example.shortlink.stats.config.VisitStatsProperties;
-
 
 import com.example.shortlink.service.error.LinkNotFoundException;
+import com.example.shortlink.stats.StatsDateRange;
+import com.example.shortlink.stats.config.VisitStatsProperties;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;

@@ -1,5 +1,4 @@
-package com.example.shortlink.api;
-
+package com.example.shortlink.api.stats;
 
 import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.stats.StatsDateRange;

@@ -1,11 +1,10 @@
-package com.example.shortlink.api;
-
+package com.example.shortlink.api.stats;
 
 import com.example.shortlink.service.RedirectDecision;
 import com.example.shortlink.stats.VisitEvent;
+import com.example.shortlink.stats.VisitRecorder;
 import com.example.shortlink.stats.collection.VisitIdentity;
 import com.example.shortlink.stats.collection.VisitMetadata;
-import com.example.shortlink.stats.VisitRecorder;
 import com.example.shortlink.stats.config.VisitStatsProperties;
 import com.example.shortlink.stats.persistence.VisitWriteObservations;
 

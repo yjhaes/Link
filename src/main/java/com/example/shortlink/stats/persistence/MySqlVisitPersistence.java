@@ -1,4 +1,5 @@
 package com.example.shortlink.stats.persistence;
+
 import com.example.shortlink.stats.VisitEvent;
 import com.example.shortlink.stats.config.VisitStatsProperties;
 

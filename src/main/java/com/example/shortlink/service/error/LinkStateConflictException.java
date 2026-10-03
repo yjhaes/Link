@@ -1,6 +1,5 @@
 package com.example.shortlink.service.error;
 
-
 public class LinkStateConflictException extends RuntimeException {
     private final boolean enabled;
 

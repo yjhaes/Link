@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.query;
 
-
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.atomic.LongAdder;

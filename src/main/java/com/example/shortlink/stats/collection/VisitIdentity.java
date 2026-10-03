@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.collection;
 
-
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;

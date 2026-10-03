@@ -1,6 +1,5 @@
 package com.example.shortlink.persistence;
 
-
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 

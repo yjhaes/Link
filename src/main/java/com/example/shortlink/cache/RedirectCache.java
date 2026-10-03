@@ -1,6 +1,5 @@
 package com.example.shortlink.cache;
 
-
 public interface RedirectCache {
 
     RedirectCacheRead find(String shortCode);

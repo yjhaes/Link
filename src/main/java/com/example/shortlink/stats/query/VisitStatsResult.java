@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.query;
 
-
 import java.time.LocalDate;
 import java.util.List;
 

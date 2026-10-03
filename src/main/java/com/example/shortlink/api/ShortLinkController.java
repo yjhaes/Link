@@ -1,7 +1,7 @@
 package com.example.shortlink.api;
+
 import com.example.shortlink.api.management.InternalManagement;
-
-
+import com.example.shortlink.api.stats.VisitCollection;
 import com.example.shortlink.service.CreatedShortLink;
 import com.example.shortlink.service.RedirectService;
 import com.example.shortlink.service.ShortLinkCreationService;

@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.messaging;
 
-
 import com.example.shortlink.stats.VisitEvent;
 import com.example.shortlink.stats.collection.VisitMetadata;
 import com.fasterxml.jackson.core.JsonParser;

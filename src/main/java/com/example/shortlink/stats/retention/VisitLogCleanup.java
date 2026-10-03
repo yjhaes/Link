@@ -1,7 +1,7 @@
 package com.example.shortlink.stats.retention;
+
 import com.example.shortlink.stats.StatsDateRange;
 import com.example.shortlink.stats.config.VisitStatsProperties;
-
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

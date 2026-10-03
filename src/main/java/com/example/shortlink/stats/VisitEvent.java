@@ -1,6 +1,5 @@
 package com.example.shortlink.stats;
 
-
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;

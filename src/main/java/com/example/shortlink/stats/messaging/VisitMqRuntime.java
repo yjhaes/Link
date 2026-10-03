@@ -1,6 +1,5 @@
 package com.example.shortlink.stats.messaging;
 
-
 import jakarta.annotation.PreDestroy;
 
 import org.slf4j.LoggerFactory;

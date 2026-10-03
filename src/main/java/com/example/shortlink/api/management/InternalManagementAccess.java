@@ -1,7 +1,6 @@
 package com.example.shortlink.api.management;
+
 import com.example.shortlink.api.error.ApiError;
-
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.servlet.http.HttpServletRequest;
