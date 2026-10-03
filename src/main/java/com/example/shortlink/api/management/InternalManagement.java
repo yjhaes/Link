@@ -1,4 +1,4 @@
-package com.example.shortlink.api;
+package com.example.shortlink.api.management;
 
 
 import java.lang.annotation.ElementType;

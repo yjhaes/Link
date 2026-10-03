@@ -29,7 +29,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-import com.example.shortlink.api.InternalManagement;
+import com.example.shortlink.api.management.InternalManagement;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import jakarta.servlet.http.Cookie;

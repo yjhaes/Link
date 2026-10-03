@@ -1,4 +1,4 @@
-package com.example.shortlink.api;
+package com.example.shortlink.api.management;
 import com.example.shortlink.api.error.ApiError;
 
 

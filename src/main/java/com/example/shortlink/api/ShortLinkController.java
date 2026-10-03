@@ -1,4 +1,5 @@
 package com.example.shortlink.api;
+import com.example.shortlink.api.management.InternalManagement;
 
 
 import com.example.shortlink.service.CreatedShortLink;
