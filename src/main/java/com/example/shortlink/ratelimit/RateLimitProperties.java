@@ -1,12 +1,18 @@
 package com.example.shortlink.ratelimit;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.boot.convert.DurationStyle;
 
-/** Positive, bounded settings are bound before any requests are accepted. */
+/** Positive, bounded settings are parsed once before any requests are accepted. */
 @ConfigurationProperties("short-link.rate-limit")
-public record RateLimitProperties(int createCapacity, String createRefillInterval) {
+public final class RateLimitProperties {
+    private final int createCapacity;
+    private final String createRefillInterval;
+    private final long refillMillis;
+
+    @ConstructorBinding
     public RateLimitProperties(
             @DefaultValue("3") int createCapacity,
             @DefaultValue("6s") String createRefillInterval) {
@@ -26,9 +32,18 @@ public record RateLimitProperties(int createCapacity, String createRefillInterva
         }
         this.createCapacity = createCapacity;
         this.createRefillInterval = createRefillInterval;
+        this.refillMillis = millis;
+    }
+
+    public int createCapacity() {
+        return createCapacity;
+    }
+
+    public String createRefillInterval() {
+        return createRefillInterval;
     }
 
     public long refillMillis() {
-        return DurationStyle.detectAndParse(createRefillInterval).toMillis();
+        return refillMillis;
     }
 }

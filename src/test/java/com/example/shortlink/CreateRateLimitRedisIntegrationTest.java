@@ -51,6 +51,26 @@ class CreateRateLimitRedisIntegrationTest {
             } finally { pool.shutdownNow(); }
         } finally { secondConnection.destroy(); }
     }
+    @Test void redisUrlDatabaseWinsOverConflictingStandaloneDatabaseSetting() throws Exception {
+        for (int standaloneDatabase : new int[]{0, 2}) {
+            REDIS.execInContainer("redis-cli", "-n", "1", "FLUSHDB");
+            var p = new org.springframework.boot.autoconfigure.data.redis.RedisProperties();
+            p.setUrl("redis://" + REDIS.getHost() + ":" + REDIS.getMappedPort(6379) + "/1");
+            p.setDatabase(standaloneDatabase);
+            var limiter = new RedisRateLimiter(p, new RateLimitProperties(1, "6s"));
+            limiters.add(limiter);
+            assertEquals(RateLimiter.Decision.Status.ALLOWED, limiter.admitCreate("127.0.0.1").status());
+            // A second client explicitly selecting database one must observe the spent token.
+            var sameDatabase = new org.springframework.boot.autoconfigure.data.redis.RedisProperties();
+            sameDatabase.setHost(REDIS.getHost()); sameDatabase.setPort(REDIS.getMappedPort(6379));
+            sameDatabase.setDatabase(1);
+            var observer = new RedisRateLimiter(sameDatabase, new RateLimitProperties(1, "6s"));
+            limiters.add(observer);
+            assertEquals(RateLimiter.Decision.Status.REJECTED, observer.admitCreate("127.0.0.1").status());
+            assertFalse(redis.hasKey("shortlink:rate-limit:v1:create:127.0.0.1"));
+        }
+        REDIS.execInContainer("redis-cli", "-n", "1", "FLUSHDB");
+    }
     @Test void configuredCredentialsAndDatabaseAreUsedWithoutSharingDefaultDatabaseState() throws Exception {
         REDIS.execInContainer("redis-cli", "ACL", "SETUSER", "limiter-test", "on", ">test-only-limiter-credential", "~*", "+@all");
         var p = new org.springframework.boot.autoconfigure.data.redis.RedisProperties();

@@ -1,4 +1,7 @@
 spring:
+  servlet:
+    multipart:
+      enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 2s
   application:
