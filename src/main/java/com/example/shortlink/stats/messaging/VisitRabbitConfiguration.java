@@ -21,6 +21,19 @@ import org.springframework.context.annotation.Primary;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(VisitRabbitProperties.class)
 public class VisitRabbitConfiguration {
+    public static final String EXCHANGE = "shortlink.visit.x",
+            QUEUE = "shortlink.visit.stats.q",
+            KEY = "visit.occurred.v1";
+    public static final String DLX = "shortlink.visit.dlx",
+            DLQ = "shortlink.visit.stats.dlq",
+            DEAD_KEY = "visit.failed.v1";
+
+    /**
+     * Runtime claims shutdown once; recorder and listener adapters perform asynchronous network
+     * cleanup. These fixed Bean names must skip Spring's DisposableBean destroy callback as well as
+     * inferred destroy methods: destroyMethod="" alone does not suppress DisposableBean. Otherwise
+     * framework destruction can repeat teardown and block the context-close caller.
+     */
     @Bean
     static org.springframework.beans.factory.support.MergedBeanDefinitionPostProcessor
             publisherDestructionOwnership() {
@@ -38,81 +51,9 @@ public class VisitRabbitConfiguration {
         };
     }
 
-    public static final String EXCHANGE = "shortlink.visit.x",
-            QUEUE = "shortlink.visit.stats.q",
-            KEY = "visit.occurred.v1";
-    public static final String DLX = "shortlink.visit.dlx",
-            DLQ = "shortlink.visit.stats.dlq",
-            DEAD_KEY = "visit.failed.v1";
-
     @Bean
     VisitMessageCodec visitMessageCodec() {
         return new VisitMessageCodec();
-    }
-
-    private CachingConnectionFactory factory(
-            VisitRabbitProperties p,
-            boolean publisher,
-            java.util.concurrent.ExecutorService executor) {
-        var nativeFactory = new com.rabbitmq.client.ConnectionFactory();
-        nativeFactory.setHost(p.host());
-        nativeFactory.setPort(p.port());
-        nativeFactory.setUsername(p.username());
-        nativeFactory.setPassword(p.password());
-        nativeFactory.setVirtualHost(p.virtualHost());
-        nativeFactory.setExceptionHandler(
-                new com.rabbitmq.client.impl.DefaultExceptionHandler() {
-                    @Override
-                    protected void log(String ignored, Throwable failure) {
-                        org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class)
-                                .error("Visit MQ degraded: category=driver");
-                    }
-                });
-        nativeFactory.setConnectionTimeout(p.connectionTimeoutMs());
-        nativeFactory.setHandshakeTimeout(p.handshakeTimeoutMs());
-        nativeFactory.setRequestedHeartbeat(p.heartbeatSeconds());
-        nativeFactory.setAutomaticRecoveryEnabled(false);
-        nativeFactory.setChannelRpcTimeout(1000);
-        nativeFactory.setShutdownTimeout(500);
-        nativeFactory.setThreadFactory(
-                r -> {
-                    var thread =
-                            new Thread(
-                                    r,
-                                    publisher ? "visit-publisher-native" : "visit-consumer-native");
-                    thread.setDaemon(true);
-                    return thread;
-                });
-        var factory = new VisitConnectionFactory(nativeFactory);
-        factory.setCloseTimeout(500);
-        factory.setExecutor(executor);
-        factory.setConnectionNameStrategy(
-                ignored -> publisher ? "visit-publisher" : "visit-consumer");
-        if (publisher) {
-            factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
-            factory.setPublisherReturns(true);
-            factory.setChannelCacheSize(p.channelLimit());
-            factory.setChannelCheckoutTimeout(p.channelCheckoutMs());
-            factory.setCloseTimeout(500);
-            factory.setExecutor(executor);
-        }
-        return factory;
-    }
-
-    private static java.util.concurrent.ExecutorService boundedExecutor(
-            int threads, int capacity, String name) {
-        return new java.util.concurrent.ThreadPoolExecutor(
-                threads,
-                threads,
-                0L,
-                java.util.concurrent.TimeUnit.MILLISECONDS,
-                new java.util.concurrent.ArrayBlockingQueue<>(capacity),
-                r -> {
-                    var thread = new Thread(r, name);
-                    thread.setDaemon(true);
-                    return thread;
-                },
-                new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
     }
 
     @Bean(name = "visitPublisherFrameworkExecutor", destroyMethod = "shutdownNow")
@@ -229,5 +170,70 @@ public class VisitRabbitConfiguration {
                         org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class)
                                 .warn("Visit listener failed: category=consumption"));
         return c;
+    }
+
+    private CachingConnectionFactory factory(
+            VisitRabbitProperties p,
+            boolean publisher,
+            java.util.concurrent.ExecutorService executor) {
+        var nativeFactory = new com.rabbitmq.client.ConnectionFactory();
+        nativeFactory.setHost(p.host());
+        nativeFactory.setPort(p.port());
+        nativeFactory.setUsername(p.username());
+        nativeFactory.setPassword(p.password());
+        nativeFactory.setVirtualHost(p.virtualHost());
+        nativeFactory.setExceptionHandler(
+                new com.rabbitmq.client.impl.DefaultExceptionHandler() {
+                    @Override
+                    protected void log(String ignored, Throwable failure) {
+                        org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class)
+                                .error("Visit MQ degraded: category=driver");
+                    }
+                });
+        nativeFactory.setConnectionTimeout(p.connectionTimeoutMs());
+        nativeFactory.setHandshakeTimeout(p.handshakeTimeoutMs());
+        nativeFactory.setRequestedHeartbeat(p.heartbeatSeconds());
+        nativeFactory.setAutomaticRecoveryEnabled(false);
+        nativeFactory.setChannelRpcTimeout(1000);
+        nativeFactory.setShutdownTimeout(500);
+        nativeFactory.setThreadFactory(
+                r -> {
+                    var thread =
+                            new Thread(
+                                    r,
+                                    publisher ? "visit-publisher-native" : "visit-consumer-native");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+        var factory = new VisitConnectionFactory(nativeFactory);
+        factory.setCloseTimeout(500);
+        factory.setExecutor(executor);
+        factory.setConnectionNameStrategy(
+                ignored -> publisher ? "visit-publisher" : "visit-consumer");
+        if (publisher) {
+            factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);
+            factory.setPublisherReturns(true);
+            factory.setChannelCacheSize(p.channelLimit());
+            factory.setChannelCheckoutTimeout(p.channelCheckoutMs());
+            factory.setCloseTimeout(500);
+            factory.setExecutor(executor);
+        }
+        return factory;
+    }
+
+    private static java.util.concurrent.ExecutorService boundedExecutor(
+            int threads, int capacity, String name) {
+        return new java.util.concurrent.ThreadPoolExecutor(
+                threads,
+                threads,
+                0L,
+                java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.ArrayBlockingQueue<>(capacity),
+                r -> {
+                    var thread = new Thread(r, name);
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
     }
 }

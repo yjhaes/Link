@@ -104,6 +104,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
     private final AtomicBoolean accepting = new AtomicBoolean(true),
             started = new AtomicBoolean(),
             recovering = new AtomicBoolean();
+    private final AtomicBoolean closed = new AtomicBoolean();
     private final Object recoveryLock = new Object();
     private final Object admissionLock = new Object();
     private final AtomicBoolean senderBusy = new AtomicBoolean(), cleanupDone = new AtomicBoolean();
@@ -113,12 +114,6 @@ public class AsyncVisitRecorder implements VisitRecorder {
             Executors.newSingleThreadExecutor(r -> daemon(r, "visit-publisher-cleanup"));
     private final ScheduledExecutorService observer =
             Executors.newSingleThreadScheduledExecutor(r -> daemon(r, "visit-publisher-observer"));
-
-    private static Thread daemon(Runnable r, String name) {
-        var t = new Thread(r, name);
-        t.setDaemon(true);
-        return t;
-    }
 
     public AsyncVisitRecorder(
             VisitRabbitProperties properties,
@@ -168,10 +163,6 @@ public class AsyncVisitRecorder implements VisitRecorder {
                 publishDurationNanos.sum());
     }
 
-    private void count(Outcome category) {
-        outcomes.get(category).increment();
-    }
-
     @Override
     public void record(VisitEvent event) {
         synchronized (admissionLock) {
@@ -188,6 +179,48 @@ public class AsyncVisitRecorder implements VisitRecorder {
             if (!started.compareAndSet(false, true) || !accepting.get()) return;
             sender.execute(this::sendLoop);
             observer.scheduleWithFixedDelay(this::observe, 100, 100, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    void stopAccepting() {
+        synchronized (admissionLock) {
+            if (!accepting.getAndSet(false)) return;
+            for (int i = pending.size(); i > 0; i--) count(Outcome.SHUTDOWN_LOST);
+            pending.clear();
+        }
+    }
+
+    void close(long deadline) {
+        if (!closed.compareAndSet(false, true)) return;
+        stopAccepting();
+        observer.shutdownNow();
+        for (var attempt : attempts) {
+            attempt.finish(Outcome.UNKNOWN);
+            attempt.retire();
+        }
+        sender.shutdownNow();
+        // Never destroy the CCF synchronously: reset can block behind a TCP write.
+        recovering.set(true);
+        try {
+            cleanup.execute(
+                    () -> {
+                        try {
+                            publisher.destroy();
+                        } catch (Exception failure) {
+                            log("close");
+                        }
+                    });
+        } catch (RejectedExecutionException ignored) {
+            // A repeated close cannot create a replacement cleanup worker.
+        }
+        cleanup.shutdown();
+        try {
+            for (var worker : List.of(sender, observer, cleanup)) {
+                long left = deadline - System.nanoTime();
+                if (left > 0) worker.awaitTermination(left, TimeUnit.NANOSECONDS);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -338,47 +371,13 @@ public class AsyncVisitRecorder implements VisitRecorder {
                 .warn("Visit MQ degraded: category={}", category);
     }
 
-    private final AtomicBoolean closed = new AtomicBoolean();
-
-    void stopAccepting() {
-        synchronized (admissionLock) {
-            if (!accepting.getAndSet(false)) return;
-            for (int i = pending.size(); i > 0; i--) count(Outcome.SHUTDOWN_LOST);
-            pending.clear();
-        }
+    private void count(Outcome category) {
+        outcomes.get(category).increment();
     }
 
-    void close(long deadline) {
-        if (!closed.compareAndSet(false, true)) return;
-        stopAccepting();
-        observer.shutdownNow();
-        for (var attempt : attempts) {
-            attempt.finish(Outcome.UNKNOWN);
-            attempt.retire();
-        }
-        sender.shutdownNow();
-        // Never destroy the CCF synchronously: reset can block behind a TCP write.
-        recovering.set(true);
-        try {
-            cleanup.execute(
-                    () -> {
-                        try {
-                            publisher.destroy();
-                        } catch (Exception failure) {
-                            log("close");
-                        }
-                    });
-        } catch (RejectedExecutionException ignored) {
-            // A repeated close cannot create a replacement cleanup worker.
-        }
-        cleanup.shutdown();
-        try {
-            for (var worker : List.of(sender, observer, cleanup)) {
-                long left = deadline - System.nanoTime();
-                if (left > 0) worker.awaitTermination(left, TimeUnit.NANOSECONDS);
-            }
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
+    private static Thread daemon(Runnable r, String name) {
+        var t = new Thread(r, name);
+        t.setDaemon(true);
+        return t;
     }
 }

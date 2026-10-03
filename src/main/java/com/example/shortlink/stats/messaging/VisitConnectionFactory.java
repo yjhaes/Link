@@ -6,7 +6,10 @@ import org.springframework.amqp.rabbit.connection.CachingConnectionFactory;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** The recorder owns network teardown; Spring lifecycle stop must never reset on its caller. */
+/**
+ * Runtime selects teardown and background adapters execute it; framework stop never resets on its
+ * caller.
+ */
 final class VisitConnectionFactory extends CachingConnectionFactory {
     private final AtomicBoolean lifecycleRunning = new AtomicBoolean();
 

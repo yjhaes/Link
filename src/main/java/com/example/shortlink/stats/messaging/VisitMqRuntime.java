@@ -55,26 +55,6 @@ public final class VisitMqRuntime {
         }
     }
 
-    private void startupLoop() {
-        while (!closing) {
-            try {
-                admin.initialize();
-                // The listener adapter also rejects start once terminal stop has claimed ownership.
-                if (!closing && properties.consumerEnabled()) listener.start();
-                return;
-            } catch (Exception failure) {
-                LoggerFactory.getLogger(VisitMqRuntime.class)
-                        .warn("Visit MQ degraded: category=startup");
-            }
-            try {
-                TimeUnit.MILLISECONDS.sleep(500);
-            } catch (InterruptedException stopped) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-    }
-
     @EventListener(ContextClosedEvent.class)
     public void contextClosing() {
         close();
@@ -100,6 +80,26 @@ public final class VisitMqRuntime {
             if (left > 0) consumerClosed.await(left, TimeUnit.NANOSECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private void startupLoop() {
+        while (!closing) {
+            try {
+                admin.initialize();
+                // The listener adapter also rejects start once terminal stop has claimed ownership.
+                if (!closing && properties.consumerEnabled()) listener.start();
+                return;
+            } catch (Exception failure) {
+                LoggerFactory.getLogger(VisitMqRuntime.class)
+                        .warn("Visit MQ degraded: category=startup");
+            }
+            try {
+                TimeUnit.MILLISECONDS.sleep(500);
+            } catch (InterruptedException stopped) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 }

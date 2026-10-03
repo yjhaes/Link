@@ -30,6 +30,13 @@ public final class VisitConsumer implements MessageListener {
         INTERRUPTED
     }
 
+    private final java.time.Clock clock;
+    private final VisitMessageCodec codec;
+    private final VisitPersistence persistence;
+
+    private final java.util.concurrent.atomic.LongAdder expired =
+            new java.util.concurrent.atomic.LongAdder();
+
     private final long observedSince = System.nanoTime();
     private final java.util.concurrent.atomic.LongAdder deliveries =
             new java.util.concurrent.atomic.LongAdder();
@@ -58,6 +65,15 @@ public final class VisitConsumer implements MessageListener {
             long processedEventDelayMillis,
             long processedEventDelayCount) {}
 
+    public VisitConsumer(
+            VisitMessageCodec codec, VisitPersistence persistence, java.time.Clock clock) {
+        for (var category : Category.values())
+            categories.put(category, new java.util.concurrent.atomic.LongAdder());
+        this.clock = clock;
+        this.codec = codec;
+        this.persistence = persistence;
+    }
+
     public Snapshot snapshot() {
         var values = new java.util.EnumMap<Category, Long>(Category.class);
         categories.forEach((key, value) -> values.put(key, value.sum()));
@@ -72,28 +88,8 @@ public final class VisitConsumer implements MessageListener {
                 processedEventDelayCount.sum());
     }
 
-    private void count(Category category) {
-        categories.get(category).increment();
-    }
-
-    private final java.time.Clock clock;
-    private final java.util.concurrent.atomic.LongAdder expired =
-            new java.util.concurrent.atomic.LongAdder();
-
     public long expiredCount() {
         return expired.sum();
-    }
-
-    private final VisitMessageCodec codec;
-    private final VisitPersistence persistence;
-
-    public VisitConsumer(
-            VisitMessageCodec codec, VisitPersistence persistence, java.time.Clock clock) {
-        for (var category : Category.values())
-            categories.put(category, new java.util.concurrent.atomic.LongAdder());
-        this.clock = clock;
-        this.codec = codec;
-        this.persistence = persistence;
     }
 
     @Override
@@ -195,5 +191,9 @@ public final class VisitConsumer implements MessageListener {
     private AmqpRejectAndDontRequeueException rejected() {
         // No cause: the framework must never receive payloads, driver messages or credentials.
         return new AmqpRejectAndDontRequeueException("Visit delivery rejected.");
+    }
+
+    private void count(Category category) {
+        categories.get(category).increment();
     }
 }

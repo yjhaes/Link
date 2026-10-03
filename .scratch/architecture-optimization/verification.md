@@ -35,3 +35,15 @@ git diff --check
 ## 验收边界
 
 静态检查不能证明设施健康、性能或消息完整性。纯 JVM、真实 Spring 和真实设施结果分别记录；只有全部条件满足才将任务 resolved。实现模型沿用当前模型，最终双轴审查使用独立 GPT-6.1 Sol / high 子代理。
+
+## 最终验收
+
+2026-10-03 15:50，完整 clean Maven suite：**261 项通过，失败 0、错误 0、跳过 0，34 个测试类，耗时 4 分 28 秒**。真实 MySQL/Redis/RabbitMQ 及 Docker/Testcontainers 全部执行，没有将 mock 或静态检查当作设施证据。新增 2 项分别覆盖真实 context-close 的迟到拓扑/重复通知，以及只有核心配置时的主池绑定与 JDBC/事务归属。
+
+最终 suite 包含经 runtime 触发终止的 VisitCollectionLifecycleTest：未 ACK 的已保存事件关闭后重投，eventId 去重保持一行。原启动故障、人工暂停、独立发布恢复、consumer 有限重试及窗口、缓存共享加载与逐请求到期、管理 GET/HEAD 解析前保护、统计快照/游标和清理追赶均保留并执行。
+
+前端另外比较实施起点：11 个函数体与全部事件 handler 原样保留，CSS 声明未变；浏览器 fixture 交互结果见上文。node --check 与最终 git diff --check 通过。schema.sql、application.yml、pom.xml 及 ops policy/scripts 无行为修改。
+
+[双轴审查](code-review.md)：两名 GPT-6.1 Sol / high 子代理独立审查。Spec 无发现；Standards 原两项 P3（注释与声明顺序）已修正并复核关闭。15:59 修正后定向 7 类 **21 项通过，失败/错误/跳过均 0**。完整 261 项来自修正前构建；随后只有注释和声明重排，不声称再次全量，也不声称吞吐、延迟或可靠性提升。
+
+所有验收项满足，无未执行或未解释跳过项。按依赖独立提交，可逆序回退；原始运行日志在忽略目录 .tools，临时 UI fixture 与本轮恢复启动的三个验收容器在结束时关闭，容器数据保留。
