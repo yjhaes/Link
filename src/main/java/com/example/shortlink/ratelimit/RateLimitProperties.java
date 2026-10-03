@@ -1,0 +1,34 @@
+package com.example.shortlink.ratelimit;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.boot.convert.DurationStyle;
+
+/** Positive, bounded settings are bound before any requests are accepted. */
+@ConfigurationProperties("short-link.rate-limit")
+public record RateLimitProperties(int createCapacity, String createRefillInterval) {
+    public RateLimitProperties(
+            @DefaultValue("3") int createCapacity,
+            @DefaultValue("6s") String createRefillInterval) {
+        long millis;
+        try {
+            millis = DurationStyle.detectAndParse(createRefillInterval).toMillis();
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Invalid create refill interval.");
+        }
+        if (createCapacity < 1
+                || createCapacity > 1_000_000
+                || millis < 1
+                || millis > 86_400_000L
+                || millis * createCapacity > 604_800_000L) {
+            throw new IllegalArgumentException(
+                    "Create bucket capacity/refill must be positive and full refill at most seven days.");
+        }
+        this.createCapacity = createCapacity;
+        this.createRefillInterval = createRefillInterval;
+    }
+
+    public long refillMillis() {
+        return DurationStyle.detectAndParse(createRefillInterval).toMillis();
+    }
+}

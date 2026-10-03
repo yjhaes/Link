@@ -22,6 +22,9 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 short-link:
+  rate-limit:
+    create-capacity: ${SHORT_LINK_CREATE_RATE_CAPACITY:3}
+    create-refill-interval: ${SHORT_LINK_CREATE_RATE_REFILL_INTERVAL:6s}
   stats:
     enabled: ${SHORT_LINK_STATS_ENABLED:false}
     rabbit:

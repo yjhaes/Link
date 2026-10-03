@@ -102,6 +102,15 @@ function showError(message, field) {
 }
 
 function errorMessageFor(response, data) {
+  if (data?.code === 'RATE_LIMIT_EXCEEDED') {
+    const seconds = Number(response.headers.get('Retry-After'));
+    return Number.isSafeInteger(seconds) && seconds > 0
+      ? `创建过于频繁，请等待至少 ${seconds} 秒后重试；届时是否可创建取决于剩余额度。`
+      : '创建过于频繁，请等待片刻后重试。';
+  }
+  if (data?.code === 'RATE_LIMIT_UNAVAILABLE') {
+    return '暂时无法确认创建额度，本次创建尚未开始，请稍后重试。';
+  }
   if (data?.code === 'CREATE_CACHE_COORDINATION_UNCONFIRMED') {
     return `短码 ${data.shortCode} 已保存，但访问状态尚未确认。请保留短码并联系维护者恢复；再次提交会创建新的短链接。`;
   }
