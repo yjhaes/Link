@@ -54,8 +54,8 @@ public class RedisRateLimiter implements RateLimiter, DisposableBean {
                 else builder.withAuthentication(redis.getUsername(), redis.getPassword().toCharArray());
             }
             uri = builder.build();
+            uri.setDatabase(redis.getDatabase());
         }
-        uri.setDatabase(redis.getDatabase());
         uri.setTimeout(redis.getTimeout() == null ? Duration.ofMillis(200) : redis.getTimeout());
         client = RedisClient.create(uri);
         client.setOptions(ClientOptions.builder()
