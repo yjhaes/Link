@@ -153,3 +153,9 @@
 - [Redis 限流算法比较](https://redis.io/tutorials/howtos/ratelimiting/)
 - [Compose 启动与健康检查](https://docs.docker.com/compose/how-tos/startup-order/)
 - [Spring Boot Actuator](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)
+
+## 01～03 实施与验收
+
+- 2026-10-04：用户调用 implement-spec，仅授权 01、02、03，后续任务等待用户再次授权。实现使用当前模型，Standards Review 与 Spec Review 均明确使用 GPT-6.1 Sol / high。
+- 三项已在 `codex/final-hardening-01-03` 实现并 resolved。完整集成回归 282 项 Java 与 1 项页面测试通过；审查发现全部修复后，独立 30 项 Java 及页面测试通过，两轴剩余发现为 0。完整回归与修复后针对性验收的版本边界见 [集成验证记录](01-03-verification.md)。
+- 配置、隔离测试入口与匿名创建限流已落地；本文前面的“尚未实现/本轮未运行”描述属于设计发布时历史。04～12 未开始，跳转/管理限流、回源保护及全栈工程化仍待后续。

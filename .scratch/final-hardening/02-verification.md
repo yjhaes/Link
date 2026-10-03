@@ -23,3 +23,5 @@
 e906bf1f3203的finally清理日志记录三容器及本project网络已删除，实际按project label查询无剩余容器。清理没有删除个人容器或数据。强制终止/daemon不可用的手工限定清理见 `docs/testing.md`。
 
 Linux交付 `sh ops/tests/run.sh <suite>`，使用标准库Python共享实现，不需要PowerShell；本轮宿主没有Linux真实运行环境，未声称Linux全设施验收。Node页面测试入口在任务03文件合并后执行，尚待集成分支复验。全栈演示/CI/后续限流和回源验收由后续任务负责。
+
+后续集成更新：任务03合并后，集成工作树运行同一 `all` 入口，Node页面测试1项和Java282项均通过。原始报告已保留到集成工作树，审查修复后的30项针对性验收另列，见 [01～03 集成验证](01-03-verification.md)；此处268项记录仍指本任务原始运行。

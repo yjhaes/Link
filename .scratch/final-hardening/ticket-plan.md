@@ -253,9 +253,9 @@ flowchart TD
 
 | 任务 | 直接前置 | 状态 |
 | --- | --- | --- |
-| [01：安全默认配置与独立秘密初始化](issues/01-safe-defaults-and-secrets.md) | 无 | ready-for-agent |
-| [02：自动准备隔离设施并复现现有回归](issues/02-reproducible-integration-tests.md) | 无 | ready-for-agent |
-| [03：匿名创建的Redis Lua令牌桶与拒绝语义](issues/03-create-rate-limiting.md) | 无 | ready-for-agent |
+| [01：安全默认配置与独立秘密初始化](issues/01-safe-defaults-and-secrets.md) | 无 | resolved |
+| [02：自动准备隔离设施并复现现有回归](issues/02-reproducible-integration-tests.md) | 无 | resolved |
+| [03：匿名创建的Redis Lua令牌桶与拒绝语义](issues/03-create-rate-limiting.md) | 无 | resolved |
 | [04：跳转限流与实际回源并发保护](issues/04-redirect-rate-limiting-and-load-admission.md) | 03 | ready-for-agent |
 | [05：鉴权后的管理写入与查询限流](issues/05-management-rate-limiting.md) | 01、03 | ready-for-agent |
 | [06：全栈Compose运行、持久卷和资源边界](issues/06-compose-runtime.md) | 01 | ready-for-agent |
@@ -267,3 +267,5 @@ flowchart TD
 | [12：GitHub首页、架构图与简历收尾](issues/12-readme-and-portfolio-finish.md) | 10、11 | ready-for-agent |
 
 执行需另获用户授权；依赖全部 resolved 后才可认领，默认选择最小未阻塞编号。
+
+2026-10-04 执行更新：用户仅授权 01～03，三项已实现、验收并完成双轴审查修复；证据见 [01～03 集成记录](01-03-verification.md)。04～12 尚未认领，父规格未整体 resolved。上文发布状态描述保留此前发布时的事实。
