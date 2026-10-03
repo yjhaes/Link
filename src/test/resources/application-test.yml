@@ -5,4 +5,8 @@ spring:
     password: ${MYSQL_TEST_PASSWORD:123456}
 
 short-link:
+  stats:
+    rabbit:
+      consumer-enabled: false
+      port: ${RABBIT_TEST_PORT:5672}
   base-url: http://short.local

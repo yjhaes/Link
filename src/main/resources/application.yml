@@ -1,4 +1,6 @@
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 2s
   application:
     name: short-link
   datasource:
@@ -22,6 +24,13 @@ mybatis-plus:
 short-link:
   stats:
     enabled: ${SHORT_LINK_STATS_ENABLED:false}
+    rabbit:
+      consumer-enabled: ${SHORT_LINK_STATS_CONSUMER_ENABLED:true}
+      host: ${RABBITMQ_HOST:localhost}
+      port: ${RABBITMQ_PORT:5672}
+      username: ${RABBITMQ_USERNAME:guest}
+      password: ${RABBITMQ_PASSWORD:guest}
+      virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
     visitor-key: ${SHORT_LINK_VISITOR_HMAC_KEY:}
     visitor-key-version: ${SHORT_LINK_VISITOR_KEY_VERSION:}
   internal-token: ${SHORT_LINK_INTERNAL_TOKEN:}

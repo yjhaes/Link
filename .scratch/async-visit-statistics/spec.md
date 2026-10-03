@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # 阶段 6：RabbitMQ 异步访问统计
 
@@ -270,3 +270,13 @@ MySQL访问日志继续作为PV/UV查询依据，保留匿名Cookie身份、上�
 - 30日业务窗口不等于24小时队列TTL，DLQ再入队会重新计自己的驻留；经典死信是排查手段，不是可靠补偿。3次是本轮处理次数；5秒是观察/待发预算，不是整个publish的硬截止。
 - 可靠访问记账若成为新业务要求，须重新讨论可靠事件产生、持久补偿及核心写入代价，不能仅加confirm/DLQ后沿用当前说法。
 - 面试应围绕实际同步成本、三个成功边界、AUTO/NONE、数据库提交与ACK间隙、eventId、新GET、背压/积压、冻结时间/隐私，以及为何当前不做outbox；任何性能收益都需测试证据。
+
+## Answer
+
+2026-10-02：用户明确授权 implement-spec，01～08全部完成并在本地任务单 resolved，集成分支 codex/async-visit-statistics。历史的仅发布/不实施表述保留为规格作者阶段记录，不限制本轮授权。
+
+两轮完整回归各259项通过，失败/错误/跳过均0，包含真实MySQL、RabbitMQ、Redis/Testcontainers及HTTP口径、故障、窗口、重投、资源和生命周期验证。最终独立Standards Review、Spec Review均使用GPT-6.1 Sol/high：规范硬性违规0、两项P3维护性建议已由一个实施子代理修正；规格发现0。修正提交2fbf5fb，合并9b33501，修正后51项针对性回归全部通过。
+
+无并行测试的新会话正常依赖样本：30预热+300顺序cache hit，同步/异步HTTP均值7.016/3.126ms，最终均330PV/1UV；异步查询追加可见等待741ms。独立补充样本冻结至保存平均431.718ms，明确不与查询等待或jar组事件延迟混同。只有开发环境小样本观察，不承诺生产吞吐、稳定p99、SLA或可靠记账。
+
+完整方法和边界见 [验证记录](verification.md)、[独立审查与修正](code-review.md)、[运维说明](../../docs/visit-statistics-operations.md)。MySQL仍是统计权威，故障漏记、异步可见、单节点/classic和有界关闭边界保持；未引入outbox、集群、自动重放、同步回退或复杂补偿。

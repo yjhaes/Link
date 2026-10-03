@@ -1,6 +1,6 @@
 # 阶段 6：RabbitMQ 异步访问统计设计讨论
 
-本文件记录 `/grill-with-docs` 访谈的事实、设计树与已确认选择。2026-10-02完成五轮讨论，用户确认Q1～Q15；随后调用to-spec发布规格，并调用to-tickets、确认8张任务拆分。本次已发布独立任务，尚未认领或开始实施，没有修改生产代码、SQL、配置或测试。原设计阶段的“不创建任务”是当时范围，后续显式请求已经授权发布规格和任务。
+本文件记录 `/grill-with-docs` 访谈的事实、设计树与已确认选择。2026-10-02完成五轮讨论，用户确认Q1～Q15；随后调用to-spec发布规格，并调用to-tickets、确认8张任务拆分。设计和任务发布阶段未修改生产代码、SQL、配置或测试；后续显式授权实施及验收记录见下文。
 
 ## 已有约定
 
@@ -136,4 +136,27 @@
 - [ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)及[完整设计](../../docs/async-visit-statistics.md)已接受；根CONTEXT.md补充“已记录访问事件”定义，区分事件发生和成为统计依据。
 - ADR-0006的统计业务口径继续有效，后续实施以ADR-0007替换请求内同步采集边界。当前代码仍同步，本次仅完成设计，无实施任务或代码改动。
 - 用户随后显式调用`to-spec`，已将已确认设计合成为[完整实施规格](spec.md)，按本地任务跟踪约定标记`Status: ready-for-agent`。只发布规格，不拆子任务、不认领或执行实施；测试接缝沿用Q14已确认的HTTP/真实MQ/MySQL及现有统计提交边界。
+
 - 用户随后调用`to-tickets`并回复“确认”，已按[任务索引](ticket-plan.md)发布8张独立任务，初始状态均为ready-for-agent。依赖为01无、02←01、03←02、04←02、05←04、06←03/04、07←06、08←05/07；当前可执行前沿只有01。父规格内容和状态保持不变，没有认领或开始实施。
+
+- 2026-10-02：用户显式调用 implement-spec，开始已确认八张任务的实施；历史的仅发布/不实施范围不再限制本轮授权。集成分支为 codex/async-visit-statistics，固定实现基线为 8a3d7eb。
+- 已完成并合入 [01 持久化结果](issues/01-visit-persistence-outcomes.md)、[02 异步闭环](issues/02-rabbitmq-visit-roundtrip.md)、[03 发布故障](issues/03-publish-failure-and-backpressure.md)。验收证据和可复现同步基线见 [实施验证](verification.md)。
+- 实施阶段沿用当前模型；最终 Standards Review 和 Spec Review 明确使用 GPT-6.1 Sol / high。
+
+## 已作决定：任务 04 实施结果
+
+- [04](issues/04-consumer-retry-and-dead-letter.md) 已完成：同步消费仅明确保存/事件重复 ACK；受控暂时 cause 本轮三次与 200/500 ms；永久/格式失败或耗尽直接拒绝且不 requeue；单 durable classic DLQ、精确死信路由及 policy 运维文件。
+- 真实 MySQL/RabbitMQ 验证提交后消费连接在 ACK 前强制中断，重新投递由原 event 唯一键维持单行；其他唯一键及 CHECK 错误不误吞。独立资源为 short_link_consumer_test / link-consumer-test。
+- 共享日志用 console 安全编码保留每条依赖事件与 WARN/ERROR、logger、线程和时间，替换原始 JDBC/AMQP 文本与异常为固定类别；明确包含核心池，未关闭日志。新故障/金丝雀/池隔离矩阵 14 项全部通过，合并发布恢复集成 tip e813f06 后重跑仍全部通过。
+- 后续 06 将容量/TTL扩展到同一主队列 policy，防止较高优先级普通 policy 覆盖 DLX；05 为每次 persist 加窗口检查；07 复核运维和 logging 范围。
+
+- 2026-10-02：已合入 [04 消费重试与死信](issues/04-consumer-retry-and-dead-letter.md)、[05 迟到事件与窗口](issues/05-late-visits-and-retention-window.md)、[06 独立采集/消费生命周期](issues/06-collection-and-consumer-lifecycle.md)。06 合并提交 4a3f4c5，针对性10项测试通过。
+- 用户最新要求为06完成后暂停；已停止执行，07、08及最终双轴审查留待续接。[续接记录](resume.md)保存测试环境、已有证据和GPT-6.1 Sol/high审查要求。
+
+- 2026-10-02：用户回复继续，恢复07及后续实施/整体验收/最终审查；已启动此前保留的隔离测试容器。
+
+- 2026-10-02：[07 积压观测与资源预算](issues/07-backlog-observability-and-budgets.md)已完成；分层事件/发布/DB尝试和消费延迟速率、固定投影broker观察、同一主policy完整配额/TTL及真实缩小broker/持续DB故障暂停恢复验证。21项针对性测试通过，正值延迟断言再验证8项通过。预算/运维解释保留best-effort、独立TTL和非水位边界；08全量回归/同环境测量与双轴审查尚未执行。
+
+- 08整体验收完成：两轮完整Maven各259项全部通过（无跳过），原同步/异步jar公平样本与补充处理延迟见[验证记录](verification.md)。部署/运维/能力文档同步；最终双轴审查仍待执行。
+
+- 2026-10-02：07、08及最终审查修正全部合入。完整回归两轮各259项通过；GPT-6.1 Sol/high独立Standards与Spec审查分别为2项P3维护性建议、0项发现，建议已全部修正并以51项针对性回归验证。代码合并9b33501，父规格和八张任务全部resolved。详见[验证](verification.md)与[审查](code-review.md)。
