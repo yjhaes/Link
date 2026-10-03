@@ -29,7 +29,7 @@ class InternalManagementDisabledApiTest {
     @Autowired RedirectCache cache;
     @Autowired PlatformTransactionManager transactions;
     @Autowired ShortCodeIdIssuer issuer;
-    @Autowired com.example.shortlink.stats.MySqlVisitStatsQuery query;
+    @Autowired com.example.shortlink.stats.query.MySqlVisitStatsQuery query;
 
     @Test
     void absentTokenClosesStatisticsGetAndHeadBeforeValidationOrQuery() throws Exception {

@@ -3,7 +3,7 @@ package com.example.shortlink.api;
 
 import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.stats.StatsDateRange;
-import com.example.shortlink.stats.VisitCursor;
+import com.example.shortlink.stats.query.VisitCursor;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;

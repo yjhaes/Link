@@ -1,4 +1,4 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.query;
 
 
 import org.springframework.stereotype.Component;

@@ -22,9 +22,9 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
-    @ExceptionHandler(com.example.shortlink.stats.StatsQueryException.class)
+    @ExceptionHandler(com.example.shortlink.stats.query.StatsQueryException.class)
     public ResponseEntity<ApiError> handleStatsQuery(
-            com.example.shortlink.stats.StatsQueryException exception) {
+            com.example.shortlink.stats.query.StatsQueryException exception) {
         return switch (exception.reason()) {
             case BUSY ->
                     error(

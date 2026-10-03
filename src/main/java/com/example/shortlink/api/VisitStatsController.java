@@ -3,7 +3,7 @@ package com.example.shortlink.api;
 
 import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.service.error.LinkNotFoundException;
-import com.example.shortlink.stats.MySqlVisitStatsQuery;
+import com.example.shortlink.stats.query.MySqlVisitStatsQuery;
 import com.example.shortlink.stats.StatsDateRange;
 import com.example.shortlink.stats.VisitStatsProperties;
 

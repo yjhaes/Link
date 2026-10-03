@@ -1,4 +1,4 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.query;
 
 
 public class StatsQueryException extends RuntimeException {

@@ -187,8 +187,8 @@ class InternalManagementApiTest {
     @Import({ShortLinkCreationService.class, ShortLinkStateService.class, RedirectService.class,
             MySqlShortLinkWriter.class, PermutedShortCodeEncoder.class, FutureManagementController.class})
     static class WebConfiguration {
-        @Bean com.example.shortlink.stats.MySqlVisitStatsQuery visitStatsQuery() {
-            return mock(com.example.shortlink.stats.MySqlVisitStatsQuery.class);
+        @Bean com.example.shortlink.stats.query.MySqlVisitStatsQuery visitStatsQuery() {
+            return mock(com.example.shortlink.stats.query.MySqlVisitStatsQuery.class);
         }
         @Bean com.example.shortlink.stats.persistence.VisitWriteObservations visitWriteObservations() {
             return new com.example.shortlink.stats.persistence.VisitWriteObservations(mock(javax.sql.DataSource.class));
