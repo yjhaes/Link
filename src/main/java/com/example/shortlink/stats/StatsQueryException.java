@@ -1,7 +1,12 @@
 package com.example.shortlink.stats;
 
 public class StatsQueryException extends RuntimeException {
-    public enum Reason { BUSY, TIMEOUT, DATABASE }
+    public enum Reason {
+        BUSY,
+        TIMEOUT,
+        DATABASE
+    }
+
     private final Reason reason;
 
     public StatsQueryException(Reason reason) {
@@ -9,5 +14,7 @@ public class StatsQueryException extends RuntimeException {
         this.reason = reason;
     }
 
-    public Reason reason() { return reason; }
+    public Reason reason() {
+        return reason;
+    }
 }

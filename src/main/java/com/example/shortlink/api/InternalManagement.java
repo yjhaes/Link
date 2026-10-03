@@ -8,5 +8,4 @@ import java.lang.annotation.Target;
 /** Marks HTTP handlers that require the shared internal management token. */
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface InternalManagement {
-}
+public @interface InternalManagement {}

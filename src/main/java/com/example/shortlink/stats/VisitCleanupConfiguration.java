@@ -3,6 +3,7 @@ package com.example.shortlink.stats;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+
 import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)

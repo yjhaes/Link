@@ -18,13 +18,12 @@ public class PermutedShortCodeEncoder {
 
     public String encode(long id) {
         if (id < 1 || id > MAX_SUPPORTED_ID) {
-            throw new IllegalArgumentException("ID must be between 1 and " + MAX_SUPPORTED_ID + ".");
+            throw new IllegalArgumentException(
+                    "ID must be between 1 and " + MAX_SUPPORTED_ID + ".");
         }
 
-        BigInteger permutedValue = MULTIPLIER
-                .multiply(BigInteger.valueOf(id - 1))
-                .add(OFFSET)
-                .mod(MODULUS);
+        BigInteger permutedValue =
+                MULTIPLIER.multiply(BigInteger.valueOf(id - 1)).add(OFFSET).mod(MODULUS);
         return toShortCode(permutedValue);
     }
 

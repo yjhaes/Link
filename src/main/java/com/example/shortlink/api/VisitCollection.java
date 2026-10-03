@@ -1,13 +1,21 @@
 package com.example.shortlink.api;
 
 import com.example.shortlink.service.RedirectDecision;
-import com.example.shortlink.stats.*;
+import com.example.shortlink.stats.VisitEvent;
+import com.example.shortlink.stats.VisitIdentity;
+import com.example.shortlink.stats.VisitMetadata;
+import com.example.shortlink.stats.VisitRecorder;
+import com.example.shortlink.stats.VisitStatsProperties;
+import com.example.shortlink.stats.VisitWriteObservations;
+
 import jakarta.servlet.http.HttpServletRequest;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
-import org.springframework.beans.factory.annotation.Value;
+
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -24,12 +32,18 @@ public class VisitCollection {
     private final boolean secure;
     private final VisitWriteObservations observations;
 
-    public VisitCollection(VisitStatsProperties properties, VisitRecorder recorder,
-            @Value("${short-link.base-url}") String baseUrl, VisitWriteObservations observations) {
+    public VisitCollection(
+            VisitStatsProperties properties,
+            VisitRecorder recorder,
+            @Value("${short-link.base-url}") String baseUrl,
+            VisitWriteObservations observations) {
         this.properties = properties;
         this.recorder = recorder;
         this.observations = observations;
-        this.identity = properties.enabled() ? new VisitIdentity(properties.visitorKey(), properties.visitorKeyVersion()) : null;
+        this.identity =
+                properties.enabled()
+                        ? new VisitIdentity(properties.visitorKey(), properties.visitorKeyVersion())
+                        : null;
         this.secure = "https".equalsIgnoreCase(java.net.URI.create(baseUrl).getScheme());
     }
 
@@ -43,19 +57,34 @@ public class VisitCollection {
                     String trimmed = pair.trim();
                     int equals = trimmed.indexOf('=');
                     String name = equals < 0 ? trimmed : trimmed.substring(0, equals).trim();
-                    if ("sl_visitor".equals(name)) values.add(equals < 0 ? "" : trimmed.substring(equals+1));
+                    if ("sl_visitor".equals(name))
+                        values.add(equals < 0 ? "" : trimmed.substring(equals + 1));
                 }
             }
             var visitor = identity.identify(code, values);
             if (visitor.newCookie() != null) {
-                cookie = ResponseCookie.from("sl_visitor", visitor.newCookie()).path("/s")
-                        .maxAge(Duration.ofDays(30)).httpOnly(true).sameSite("Lax").secure(secure || request.isSecure()).build().toString();
+                cookie =
+                        ResponseCookie.from("sl_visitor", visitor.newCookie())
+                                .path("/s")
+                                .maxAge(Duration.ofDays(30))
+                                .httpOnly(true)
+                                .sameSite("Lax")
+                                .secure(secure || request.isSecure())
+                                .build()
+                                .toString();
             }
             var occurredAt = decision.decidedAt().truncatedTo(ChronoUnit.MILLIS);
-            recorder.record(new VisitEvent(UUID.randomUUID(), code, occurredAt,
-                    occurredAt.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(), visitor.hash(), properties.visitorKeyVersion(),
-                    VisitMetadata.peerNetwork(request.getRemoteAddr()), VisitMetadata.userAgent(request.getHeader("User-Agent")),
-                    VisitMetadata.refererHost(request.getHeader("Referer"))));
+            recorder.record(
+                    new VisitEvent(
+                            UUID.randomUUID(),
+                            code,
+                            occurredAt,
+                            occurredAt.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(),
+                            visitor.hash(),
+                            properties.visitorKeyVersion(),
+                            VisitMetadata.peerNetwork(request.getRemoteAddr()),
+                            VisitMetadata.userAgent(request.getHeader("User-Agent")),
+                            VisitMetadata.refererHost(request.getHeader("Referer"))));
         } catch (Exception failure) {
             observations.collectionFailed();
             LOG.warn("Visit collection failed: category=collection");

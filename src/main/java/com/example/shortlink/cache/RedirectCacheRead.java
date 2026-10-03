@@ -20,14 +20,18 @@ public record RedirectCacheRead(Status status, String generation, RedirectCacheE
             throw new IllegalArgumentException("Redirect cache generation must not be blank.");
         }
         if (status == Status.REDIRECT
-                && (entry == null || entry.originalUrl() == null || entry.originalUrl().isBlank())) {
+                && (entry == null
+                        || entry.originalUrl() == null
+                        || entry.originalUrl().isBlank())) {
             throw new IllegalArgumentException("Redirect cache reads require an original URL.");
         }
         if (status == Status.DISABLED && entry != null && entry.originalUrl() != null) {
-            throw new IllegalArgumentException("Disabled cache reads cannot contain an original URL.");
+            throw new IllegalArgumentException(
+                    "Disabled cache reads cannot contain an original URL.");
         }
         if (status != Status.REDIRECT && status != Status.DISABLED && entry != null) {
-            throw new IllegalArgumentException("This redirect cache status cannot contain a snapshot.");
+            throw new IllegalArgumentException(
+                    "This redirect cache status cannot contain a snapshot.");
         }
     }
 
@@ -47,7 +51,8 @@ public record RedirectCacheRead(Status status, String generation, RedirectCacheE
         return result(status, generation, null);
     }
 
-    public static RedirectCacheRead result(Status status, String generation, RedirectCacheEntry entry) {
+    public static RedirectCacheRead result(
+            Status status, String generation, RedirectCacheEntry entry) {
         if (status == Status.MISS || status == Status.PLACEHOLDER) {
             throw new IllegalArgumentException("A miss or placeholder is not a business result.");
         }

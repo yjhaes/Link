@@ -1,25 +1,41 @@
 package com.example.shortlink.stats;
 
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
+
 import java.nio.ByteBuffer;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
+import java.sql.SQLTransientConnectionException;
+import java.sql.SQLTransientException;
 import java.time.ZoneOffset;
 import java.util.concurrent.Semaphore;
+
+import javax.sql.DataSource;
 
 @Component
 public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
     private static final Logger LOG = LoggerFactory.getLogger(MySqlVisitRecorder.class);
-    private enum Phase { CONNECTION, PREPARE, EXECUTE, CLEANUP }
+
+    private enum Phase {
+        CONNECTION,
+        PREPARE,
+        EXECUTE,
+        CLEANUP
+    }
+
     private final DataSource pool;
     private final VisitStatsProperties properties;
     private final Semaphore writes = new Semaphore(2);
     private final VisitWriteObservations observations;
 
-    public MySqlVisitRecorder(@Qualifier("statsDataSource") DataSource pool, VisitStatsProperties properties,
+    public MySqlVisitRecorder(
+            @Qualifier("statsDataSource") DataSource pool,
+            VisitStatsProperties properties,
             VisitWriteObservations observations) {
         this.pool = pool;
         this.properties = properties;
@@ -28,8 +44,11 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
 
     @Override
     public void record(VisitEvent event) {
-        try { persist(event); }
-        catch (VisitPersistenceException ignored) { /* HTTP collection remains best effort. */ }
+        try {
+            persist(event);
+        } catch (VisitPersistenceException ignored) {
+            /* HTTP collection remains best effort. */
+        }
     }
 
     @Override
@@ -47,16 +66,23 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
         try (Connection connection = pool.getConnection()) {
             phase = Phase.PREPARE;
             connection.setAutoCommit(true);
-            try (PreparedStatement statement = connection.prepareStatement("""
-                    INSERT INTO short_link_visit_log
-                    (event_id,short_code,occurred_at,stat_date,visitor_hash,visitor_key_version,peer_ip_network,user_agent,referer_host)
-                    VALUES (?,?,?,?,?,?,?,?,?)
-                    """)) {
+            try (PreparedStatement statement =
+                    connection.prepareStatement(
+                            """
+INSERT INTO short_link_visit_log
+(event_id,short_code,occurred_at,stat_date,visitor_hash,visitor_key_version,peer_ip_network,user_agent,referer_host)
+VALUES (?,?,?,?,?,?,?,?,?)
+""")) {
                 statement.setQueryTimeout(properties.statementTimeoutSeconds());
-                statement.setBytes(1, ByteBuffer.allocate(16).putLong(event.eventId().getMostSignificantBits())
-                        .putLong(event.eventId().getLeastSignificantBits()).array());
+                statement.setBytes(
+                        1,
+                        ByteBuffer.allocate(16)
+                                .putLong(event.eventId().getMostSignificantBits())
+                                .putLong(event.eventId().getLeastSignificantBits())
+                                .array());
                 statement.setString(2, event.shortCode());
-                statement.setObject(3, java.time.LocalDateTime.ofInstant(event.occurredAt(), ZoneOffset.UTC));
+                statement.setObject(
+                        3, java.time.LocalDateTime.ofInstant(event.occurredAt(), ZoneOffset.UTC));
                 statement.setObject(4, event.statDate());
                 statement.setBytes(5, event.visitorHash());
                 statement.setInt(6, event.visitorKeyVersion());
@@ -73,25 +99,40 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
             SQLException sqlFailure = sqlCause(failure);
             if (phase == Phase.CLEANUP) {
                 observations.category(VisitWriteObservations.Category.CLEANUP);
-                LOG.warn("Visit write confirmed, cleanup failed: event={}, category=CLEANUP, phase={}", event.eventId(), phase);
+                LOG.warn(
+                        "Visit write confirmed, cleanup failed: event={}, category=CLEANUP,"
+                                + " phase={}",
+                        event.eventId(),
+                        phase);
             } else if (phase == Phase.EXECUTE && sqlFailure != null && eventDuplicate(sqlFailure)) {
                 observations.outcome(VisitWriteObservations.Outcome.DUPLICATE);
                 result = Outcome.DUPLICATE;
             } else {
-                var category = phase == Phase.CONNECTION && sqlFailure instanceof SQLTransientConnectionException
-                        ? VisitWriteObservations.Category.TIMEOUT : sqlFailure != null
-                        ? category(sqlFailure) : VisitWriteObservations.Category.UNEXPECTED;
+                var category =
+                        phase == Phase.CONNECTION
+                                        && sqlFailure instanceof SQLTransientConnectionException
+                                ? VisitWriteObservations.Category.TIMEOUT
+                                : sqlFailure != null
+                                        ? category(sqlFailure)
+                                        : VisitWriteObservations.Category.UNEXPECTED;
                 // A lost reply, cancellation or unknown driver error cannot prove non-execution.
                 boolean rejected = sqlFailure != null && explicitlyRejected(sqlFailure);
-                observations.outcome(phase == Phase.EXECUTE && !rejected ? VisitWriteObservations.Outcome.UNCERTAIN
-                        : VisitWriteObservations.Outcome.FAILED);
+                observations.outcome(
+                        phase == Phase.EXECUTE && !rejected
+                                ? VisitWriteObservations.Outcome.UNCERTAIN
+                                : VisitWriteObservations.Outcome.FAILED);
                 observations.category(category);
-                LOG.warn("Visit write unconfirmed: event={}, category={}, phase={}", event.eventId(), category, phase);
-                var kind = phase == Phase.EXECUTE && !rejected
-                        ? VisitPersistenceException.Failure.UNCERTAIN
-                        : sqlFailure != null && transientFailure(sqlFailure)
-                        ? VisitPersistenceException.Failure.TRANSIENT
-                        : VisitPersistenceException.Failure.PERMANENT;
+                LOG.warn(
+                        "Visit write unconfirmed: event={}, category={}, phase={}",
+                        event.eventId(),
+                        category,
+                        phase);
+                var kind =
+                        phase == Phase.EXECUTE && !rejected
+                                ? VisitPersistenceException.Failure.UNCERTAIN
+                                : sqlFailure != null && transientFailure(sqlFailure)
+                                        ? VisitPersistenceException.Failure.TRANSIENT
+                                        : VisitPersistenceException.Failure.PERMANENT;
                 throw new VisitPersistenceException(kind);
             }
         } finally {
@@ -103,9 +144,13 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
     }
 
     private SQLException sqlCause(Throwable failure) {
-        var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        var seen =
+                java.util.Collections.newSetFromMap(
+                        new java.util.IdentityHashMap<Throwable, Boolean>());
         SQLException fallback = null;
-        for (Throwable cause = failure; cause != null && seen.add(cause); cause = cause.getCause()) {
+        for (Throwable cause = failure;
+                cause != null && seen.add(cause);
+                cause = cause.getCause()) {
             if (cause instanceof SQLException sql) {
                 if (sql.getSQLState() != null || fallback == null) fallback = sql;
             }
@@ -115,30 +160,44 @@ public class MySqlVisitRecorder implements VisitRecorder, VisitPersistence {
 
     private boolean explicitlyRejected(SQLException failure) {
         String state = failure.getSQLState();
-        return (state != null && (state.startsWith("22") || state.startsWith("23") || state.startsWith("42")))
-                || failure.getErrorCode() == 1205 || failure.getErrorCode() == 1213
-                || failure.getErrorCode() == 3819 || failure.getErrorCode() == 4025
+        return (state != null
+                        && (state.startsWith("22")
+                                || state.startsWith("23")
+                                || state.startsWith("42")))
+                || failure.getErrorCode() == 1205
+                || failure.getErrorCode() == 1213
+                || failure.getErrorCode() == 3819
+                || failure.getErrorCode() == 4025
                 || (failure.getErrorCode() > 0 && !transientFailure(failure));
     }
 
     private boolean transientFailure(SQLException failure) {
         String state = failure.getSQLState();
-        return failure.getErrorCode() == 1205 || failure.getErrorCode() == 1213 || failure instanceof SQLTransientException
+        return failure.getErrorCode() == 1205
+                || failure.getErrorCode() == 1213
+                || failure instanceof SQLTransientException
                 || (state != null && (state.startsWith("08") || state.startsWith("40")))
                 || category(failure) == VisitWriteObservations.Category.TIMEOUT;
     }
+
     private VisitWriteObservations.Category category(SQLException failure) {
         String state = failure.getSQLState();
-        if (failure instanceof SQLTimeoutException || "S1T00".equals(state) || "HYT00".equals(state)
-                || "HYT01".equals(state) || failure.getErrorCode() == 1205 || failure.getErrorCode() == 3024)
-            return VisitWriteObservations.Category.TIMEOUT;
-        if (state != null && state.startsWith("08")) return VisitWriteObservations.Category.CONNECTION;
-        if (state != null && state.startsWith("23")) return VisitWriteObservations.Category.CONSTRAINT;
+        if (failure instanceof SQLTimeoutException
+                || "S1T00".equals(state)
+                || "HYT00".equals(state)
+                || "HYT01".equals(state)
+                || failure.getErrorCode() == 1205
+                || failure.getErrorCode() == 3024) return VisitWriteObservations.Category.TIMEOUT;
+        if (state != null && state.startsWith("08"))
+            return VisitWriteObservations.Category.CONNECTION;
+        if (state != null && state.startsWith("23"))
+            return VisitWriteObservations.Category.CONSTRAINT;
         return VisitWriteObservations.Category.DATABASE;
     }
 
     private boolean eventDuplicate(SQLException failure) {
-        return failure.getErrorCode() == 1062 && "23000".equals(failure.getSQLState())
+        return failure.getErrorCode() == 1062
+                && "23000".equals(failure.getSQLState())
                 && failure.getMessage() != null
                 && failure.getMessage().matches("(?s).*for key '(?:[^']*\\.)?uq_visit_event'.*");
     }

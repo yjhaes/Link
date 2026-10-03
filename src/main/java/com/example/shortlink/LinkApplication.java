@@ -1,10 +1,11 @@
 package com.example.shortlink;
 
+import com.example.shortlink.cache.RedirectCacheProperties;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import com.example.shortlink.cache.RedirectCacheProperties;
+import org.springframework.context.annotation.Bean;
 
 import java.time.Clock;
 

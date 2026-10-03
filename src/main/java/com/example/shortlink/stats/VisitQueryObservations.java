@@ -1,6 +1,7 @@
 package com.example.shortlink.stats;
 
 import org.springframework.stereotype.Component;
+
 import java.util.concurrent.atomic.LongAdder;
 
 /** Process-local query timeout count, without request or identity labels. */
@@ -8,6 +9,11 @@ import java.util.concurrent.atomic.LongAdder;
 public final class VisitQueryObservations {
     private final LongAdder timeouts = new LongAdder();
 
-    void timedOut() { timeouts.increment(); }
-    public long timeouts() { return timeouts.sum(); }
+    void timedOut() {
+        timeouts.increment();
+    }
+
+    public long timeouts() {
+        return timeouts.sum();
+    }
 }

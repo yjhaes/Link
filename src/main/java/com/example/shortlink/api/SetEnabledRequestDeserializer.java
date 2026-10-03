@@ -11,7 +11,8 @@ import java.io.IOException;
 /** Validates the complete state request without changing other endpoints' JSON settings. */
 public class SetEnabledRequestDeserializer extends JsonDeserializer<SetEnabledRequest> {
     @Override
-    public SetEnabledRequest deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+    public SetEnabledRequest deserialize(JsonParser parser, DeserializationContext context)
+            throws IOException {
         JsonNode body = parser.getCodec().readTree(parser);
         if (!body.isObject()) {
             throw JsonMappingException.from(parser, "Request body must be an object.");
@@ -21,8 +22,10 @@ public class SetEnabledRequestDeserializer extends JsonDeserializer<SetEnabledRe
             throw JsonMappingException.from(parser, "enabled must be a boolean.");
         }
         if (parser.nextToken() != null) {
-            throw JsonMappingException.from(parser, "Request body must contain exactly one JSON object.");
+            throw JsonMappingException.from(
+                    parser, "Request body must contain exactly one JSON object.");
         }
-        return new SetEnabledRequest(enabled == null || enabled.isNull() ? null : enabled.booleanValue());
+        return new SetEnabledRequest(
+                enabled == null || enabled.isNull() ? null : enabled.booleanValue());
     }
 }

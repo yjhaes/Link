@@ -7,7 +7,7 @@ import java.util.Arrays;
 import java.util.Locale;
 
 public final class VisitMetadata {
-    private VisitMetadata() { }
+    private VisitMetadata() {}
 
     public static String peerNetwork(String input) {
         if (input == null) return null;
@@ -19,21 +19,32 @@ public final class VisitMetadata {
                 for (String part : parts) {
                     if (!part.matches("[0-9]{1,3}") || Integer.parseInt(part) > 255) return null;
                 }
-                return Integer.parseInt(parts[0])+"."+Integer.parseInt(parts[1])+"."+Integer.parseInt(parts[2])+".0/24";
+                return Integer.parseInt(parts[0])
+                        + "."
+                        + Integer.parseInt(parts[1])
+                        + "."
+                        + Integer.parseInt(parts[2])
+                        + ".0/24";
             }
             if (!address.matches("[0-9A-Fa-f:.]+")) return null;
-            byte[] bytes = InetAddress.getByName(address).getAddress(); // Numeric literal only; no DNS.
-            if (bytes.length == 4) return peerNetwork(InetAddress.getByAddress(bytes).getHostAddress());
+            byte[] bytes =
+                    InetAddress.getByName(address).getAddress(); // Numeric literal only; no DNS.
+            if (bytes.length == 4)
+                return peerNetwork(InetAddress.getByAddress(bytes).getHostAddress());
             Arrays.fill(bytes, 6, bytes.length, (byte) 0);
             return InetAddress.getByAddress(bytes).getHostAddress() + "/48";
-        } catch (Exception failure) { return null; }
+        } catch (Exception failure) {
+            return null;
+        }
     }
 
     public static String userAgent(String input) {
         if (input == null) return null;
         StringBuilder result = new StringBuilder();
-        input.codePoints().filter(cp -> !Character.isISOControl(cp) && !(cp >= 0xD800 && cp <= 0xDFFF))
-                .limit(512).forEach(result::appendCodePoint);
+        input.codePoints()
+                .filter(cp -> !Character.isISOControl(cp) && !(cp >= 0xD800 && cp <= 0xDFFF))
+                .limit(512)
+                .forEach(result::appendCodePoint);
         return result.toString();
     }
 
@@ -41,7 +52,8 @@ public final class VisitMetadata {
         if (input == null) return null;
         try {
             URI uri = new URI(input);
-            if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))) return null;
+            if (!("http".equalsIgnoreCase(uri.getScheme())
+                    || "https".equalsIgnoreCase(uri.getScheme()))) return null;
             String authority = uri.getRawAuthority();
             if (authority == null) return null;
             String host = authority.substring(authority.lastIndexOf('@') + 1);
@@ -60,7 +72,7 @@ public final class VisitMetadata {
                 if (!validPort(host.substring(colon))) return null;
                 host = host.substring(0, colon);
             }
-            if (host.endsWith(".")) host = host.substring(0, host.length()-1);
+            if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
             host = IDN.toASCII(host, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
             if (host.isEmpty() || host.length() > 253) return null;
             for (String label : host.split("\\.", -1)) if (label.isEmpty()) return null;
@@ -68,10 +80,14 @@ public final class VisitMetadata {
             String port = colon >= 0 ? authority.substring(authority.lastIndexOf(':')) : "";
             new URI(uri.getScheme() + "://" + userInfo + host + port).parseServerAuthority();
             return host;
-        } catch (Exception failure) { return null; }
+        } catch (Exception failure) {
+            return null;
+        }
     }
 
     private static boolean validPort(String suffix) {
-        return suffix.isEmpty() || (suffix.matches(":[0-9]{1,5}") && Integer.parseInt(suffix.substring(1)) <= 65535);
+        return suffix.isEmpty()
+                || (suffix.matches(":[0-9]{1,5}")
+                        && Integer.parseInt(suffix.substring(1)) <= 65535);
     }
 }

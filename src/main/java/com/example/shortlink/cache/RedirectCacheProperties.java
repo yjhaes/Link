@@ -17,19 +17,32 @@ public class RedirectCacheProperties {
     private final Duration disabledTtl;
     private final Duration loadWait;
 
-    // Bind duration text explicitly: an empty configured value must fail, rather than use a default.
+    // Bind duration text explicitly: an empty configured value must fail, rather than use a
+    // default.
     @ConstructorBinding
-    public RedirectCacheProperties(@DefaultValue("true") boolean enabled,
-            @DefaultValue("5m") String ttl, @DefaultValue("30s") String notFoundTtl,
-            @DefaultValue("5m") String expiredTtl, @DefaultValue("15s") String disabledTtl,
+    public RedirectCacheProperties(
+            @DefaultValue("true") boolean enabled,
+            @DefaultValue("5m") String ttl,
+            @DefaultValue("30s") String notFoundTtl,
+            @DefaultValue("5m") String expiredTtl,
+            @DefaultValue("15s") String disabledTtl,
             @DefaultValue("200ms") String loadWait) {
-        this(enabled, DurationStyle.detectAndParse(ttl), DurationStyle.detectAndParse(notFoundTtl),
-                DurationStyle.detectAndParse(expiredTtl), DurationStyle.detectAndParse(disabledTtl),
+        this(
+                enabled,
+                DurationStyle.detectAndParse(ttl),
+                DurationStyle.detectAndParse(notFoundTtl),
+                DurationStyle.detectAndParse(expiredTtl),
+                DurationStyle.detectAndParse(disabledTtl),
                 DurationStyle.detectAndParse(loadWait));
     }
 
-    public RedirectCacheProperties(boolean enabled, Duration ttl, Duration notFoundTtl,
-            Duration expiredTtl, Duration disabledTtl, Duration loadWait) {
+    public RedirectCacheProperties(
+            boolean enabled,
+            Duration ttl,
+            Duration notFoundTtl,
+            Duration expiredTtl,
+            Duration disabledTtl,
+            Duration loadWait) {
         requirePositive(ttl, "ttl", false);
         requirePositive(notFoundTtl, "not-found-ttl", false);
         requirePositive(expiredTtl, "expired-ttl", false);
@@ -45,20 +58,42 @@ public class RedirectCacheProperties {
 
     private static void requirePositive(Duration duration, String key, boolean nanos) {
         try {
-            if (duration == null || duration.isNegative()
+            if (duration == null
+                    || duration.isNegative()
                     || (nanos ? duration.toNanos() : duration.toMillis()) < 1) {
-                throw new IllegalArgumentException("short-link.redirect-cache." + key
-                        + " must be positive and representable in " + (nanos ? "nanoseconds." : "milliseconds."));
+                throw new IllegalArgumentException(
+                        "short-link.redirect-cache."
+                                + key
+                                + " must be positive and representable in "
+                                + (nanos ? "nanoseconds." : "milliseconds."));
             }
         } catch (ArithmeticException exception) {
-            throw new IllegalArgumentException("short-link.redirect-cache." + key + " overflows its time unit.", exception);
+            throw new IllegalArgumentException(
+                    "short-link.redirect-cache." + key + " overflows its time unit.", exception);
         }
     }
 
-    public boolean isEnabled() { return enabled; }
-    public Duration getTtl() { return ttl; }
-    public Duration getNotFoundTtl() { return notFoundTtl; }
-    public Duration getExpiredTtl() { return expiredTtl; }
-    public Duration getDisabledTtl() { return disabledTtl; }
-    public Duration getLoadWait() { return loadWait; }
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public Duration getTtl() {
+        return ttl;
+    }
+
+    public Duration getNotFoundTtl() {
+        return notFoundTtl;
+    }
+
+    public Duration getExpiredTtl() {
+        return expiredTtl;
+    }
+
+    public Duration getDisabledTtl() {
+        return disabledTtl;
+    }
+
+    public Duration getLoadWait() {
+        return loadWait;
+    }
 }

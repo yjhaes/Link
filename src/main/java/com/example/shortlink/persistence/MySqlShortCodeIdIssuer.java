@@ -1,6 +1,7 @@
 package com.example.shortlink.persistence;
 
 import com.example.shortlink.shortcode.ShortCodeIdIssuer;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -20,11 +21,13 @@ public class MySqlShortCodeIdIssuer implements ShortCodeIdIssuer {
     @Override
     public long issue() {
         KeyHolder keyHolder = new GeneratedKeyHolder();
-        int insertedRows = jdbcTemplate.update(
-                connection -> connection.prepareStatement(
-                        "INSERT INTO short_code_issuance () VALUES ()",
-                        Statement.RETURN_GENERATED_KEYS),
-                keyHolder);
+        int insertedRows =
+                jdbcTemplate.update(
+                        connection ->
+                                connection.prepareStatement(
+                                        "INSERT INTO short_code_issuance () VALUES ()",
+                                        Statement.RETURN_GENERATED_KEYS),
+                        keyHolder);
         Number generatedId = keyHolder.getKey();
         if (insertedRows != 1 || generatedId == null) {
             throw new IllegalStateException("MySQL did not return an issued short-code ID.");

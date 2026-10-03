@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: claimed
 Type: task
 
 # 01：实施架构优化并完成行为兼容验收
