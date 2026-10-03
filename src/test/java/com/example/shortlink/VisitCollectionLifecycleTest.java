@@ -100,6 +100,7 @@ class VisitCollectionLifecycleTest {
    assertThat(release.getCount()).isEqualTo(1);
    assertThat(deliveryChannel.get().isOpen()).isFalse();
    resumedFactory=new CachingConnectionFactory("127.0.0.1",Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","5672")));
+   resumedFactory.setUsername(System.getenv().getOrDefault("RABBITMQ_USERNAME","linktest")); resumedFactory.setPassword(System.getenv().getOrDefault("RABBITMQ_PASSWORD","test-only-not-a-production-secret"));
    resumedFactory.setVirtualHost(System.getenv().getOrDefault("SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST","link-lifecycle-test"));
    resumedFactory.setCloseTimeout(500);
    var resumedAdmin=new RabbitAdmin(resumedFactory);
