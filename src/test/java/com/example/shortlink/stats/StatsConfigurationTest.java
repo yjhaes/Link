@@ -16,8 +16,28 @@ class StatsConfigurationTest {
     private final ApplicationContextRunner context = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(DataSourceAutoConfiguration.class,
                     JdbcTemplateAutoConfiguration.class, DataSourceTransactionManagerAutoConfiguration.class))
-            .withUserConfiguration(StatsDataSourceConfiguration.class)
+            .withUserConfiguration(com.example.shortlink.configuration.CoreDataSourceConfiguration.class,
+                    StatsDataSourceConfiguration.class)
             .withPropertyValues("spring.datasource.url=jdbc:mysql://127.0.0.1:1/unreachable");
+
+    @Test
+    void coreInfrastructureIsAvailableWithoutStatisticsConfiguration() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(DataSourceAutoConfiguration.class,
+                        JdbcTemplateAutoConfiguration.class, DataSourceTransactionManagerAutoConfiguration.class))
+                .withUserConfiguration(com.example.shortlink.configuration.CoreDataSourceConfiguration.class)
+                .withPropertyValues("spring.datasource.url=jdbc:mysql://127.0.0.1:1/unreachable",
+                        "spring.datasource.hikari.maximum-pool-size=7")
+                .run(app -> {
+                    assertThat(app).hasNotFailed();
+                    assertThat(app).doesNotHaveBean("statsDataSource");
+                    var core = app.getBean("dataSource", HikariDataSource.class);
+                    assertThat(core.getMaximumPoolSize()).isEqualTo(7);
+                    assertThat(core.getHikariPoolMXBean()).isNull();
+                    assertThat(app.getBean(JdbcTemplate.class).getDataSource()).isSameAs(core);
+                    assertThat(app.getBean(JdbcTransactionManager.class).getDataSource()).isSameAs(core);
+                });
+    }
 
     @Test
     void lazyStatisticsPoolDoesNotConnectAtStartupOrTakeOverCoreInfrastructure() {

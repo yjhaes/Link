@@ -7,18 +7,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(VisitStatsProperties.class)
 public class StatsDataSourceConfiguration {
-    @Bean
-    @Primary
-    @ConfigurationProperties("spring.datasource.hikari")
-    HikariDataSource dataSource(DataSourceProperties properties) {
-        return properties.initializeDataSourceBuilder().type(HikariDataSource.class).build();
-    }
-
     @Bean(name = "statsDataSource", destroyMethod = "close")
     HikariDataSource statsDataSource(
             DataSourceProperties database, VisitStatsProperties properties) {
