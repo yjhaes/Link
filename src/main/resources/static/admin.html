@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f8f8">
+  <meta name="description" content="创建短链接、管理映射状态并查看访问统计。">
+  <title>管理工作台 · Link</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body class="admin-body">
+  <div class="admin-shell">
+    <header class="admin-topbar">
+      <a class="brand" href="/" aria-label="返回 Link 短链接首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M13.2 18.8 18.8 13.2M11.1 21a4.1 4.1 0 0 1-5.8-5.8l4.1-4.1a4.1 4.1 0 0 1 5.8 0m5.7-.1a4.1 4.1 0 0 1 5.8 5.8l-4.1 4.1a4.1 4.1 0 0 1-5.8 0" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="brand-name">Link<span>.</span></span>
+      </a>
+      <span class="admin-context"><span aria-hidden="true"></span>管理工作台</span>
+      <a class="public-page-link" href="/">创建公开短链接</a>
+    </header>
+
+    <div class="admin-layout">
+      <aside class="admin-sidebar" aria-label="工作台导航">
+        <p class="sidebar-heading">工作区</p>
+        <nav class="section-nav">
+          <a href="#create-section"><span class="nav-symbol" aria-hidden="true">＋</span>创建短链接</a>
+          <a href="#state-section"><span class="nav-symbol state-symbol" aria-hidden="true">↔</span>状态管理</a>
+          <a href="#stats-section"><span class="nav-symbol stats-symbol" aria-hidden="true">▤</span>访问统计</a>
+        </nav>
+        <div class="sidebar-note">
+          <span class="note-mark" aria-hidden="true"></span>
+          <p>访问记录会异步写入。刚发生的访问可能稍后才会显示。</p>
+        </div>
+      </aside>
+
+      <main class="admin-main">
+        <section class="page-heading" aria-labelledby="admin-title">
+          <div>
+            <p class="page-kicker">短链接服务</p>
+            <h1 id="admin-title">管理工作台</h1>
+            <p class="page-description">创建短链接，调整可用状态，查看已记录的访问。</p>
+          </div>
+          <span class="page-clock"><span aria-hidden="true"></span>统计时区 Asia/Shanghai</span>
+        </section>
+
+        <section class="token-panel" aria-labelledby="token-title">
+          <div class="token-copy">
+            <h2 id="token-title">管理令牌</h2>
+            <p>用于状态和统计接口。仅在当前页面使用，刷新后需要重新输入。</p>
+          </div>
+          <div class="token-controls">
+            <label class="visually-hidden" for="internal-token">管理令牌</label>
+            <input id="internal-token" type="password" autocomplete="off" spellcheck="false" placeholder="输入部署时配置的令牌">
+            <button id="clear-token-button" class="quiet-button" type="button">清除</button>
+          </div>
+          <p id="token-hint" class="token-hint">令牌通过 HTTPS 请求头发送。请勿在公共设备上使用。</p>
+        </section>
+
+        <section id="create-section" class="admin-section" aria-labelledby="create-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">创建</p>
+              <h2 id="create-title">创建短链接</h2>
+              <p>每次提交都会创建一条新的映射。</p>
+            </div>
+            <span class="route-label"><b>POST</b> /api/links</span>
+          </div>
+
+          <div class="create-layout">
+            <form id="admin-create-form" class="surface-card create-form" novalidate>
+              <div class="field-block">
+                <label for="original-url">原始网址</label>
+                <input id="original-url" name="originalUrl" type="url" inputmode="url" autocomplete="url" spellcheck="false" maxlength="4096" placeholder="https://example.com/article?id=17" required aria-describedby="url-help create-error">
+                <p id="url-help" class="field-help">请输入完整的 HTTP 或 HTTPS 网址，最多 4096 个字符。</p>
+              </div>
+
+              <fieldset class="field-block expiry-fieldset">
+                <legend>有效期限</legend>
+                <div class="expiry-options">
+                  <label class="expiry-option">
+                    <input type="radio" name="expiry-mode" value="permanent" checked>
+                    <span class="radio-mark" aria-hidden="true"></span>
+                    <span><strong>永久有效</strong><small>不会自动过期</small></span>
+                  </label>
+                  <label class="expiry-option">
+                    <input type="radio" name="expiry-mode" value="limited">
+                    <span class="radio-mark" aria-hidden="true"></span>
+                    <span><strong>限时有效</strong><small>按分钟设置</small></span>
+                  </label>
+                </div>
+                <div id="duration-field" class="duration-field" hidden>
+                  <label for="valid-minutes">有效分钟数</label>
+                  <div class="duration-input">
+                    <input id="valid-minutes" type="number" inputmode="numeric" min="1" max="5256000" step="1" placeholder="例如 60" disabled>
+                    <span>分钟</span>
+                  </div>
+                  <p class="field-help">请输入 1 至 5,256,000 之间的整数。</p>
+                </div>
+              </fieldset>
+
+              <p id="create-error" class="inline-message error-message" role="alert" hidden></p>
+              <button id="create-button" class="primary-button" type="submit">
+                <span id="create-button-label">生成短链接</span>
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </form>
+
+            <section id="create-result" class="surface-card result-card" aria-live="polite" aria-labelledby="result-title">
+              <div class="result-heading">
+                <div>
+                  <h3 id="result-title">最近创建</h3>
+                  <p id="result-summary">生成的短链接会显示在这里。</p>
+                </div>
+                <span id="create-result-state" class="state-pill">等待创建</span>
+              </div>
+              <div id="result-empty" class="result-empty">
+                <span class="empty-link-mark" aria-hidden="true">/s/ ······</span>
+                <p>提交原始网址后查看结果</p>
+              </div>
+              <div id="result-content" class="result-content" hidden>
+                <span class="result-field-label">短链接</span>
+                <a id="result-short-url" class="result-short-url" href="#" target="_blank" rel="noopener noreferrer"></a>
+                <div class="result-actions">
+                  <button id="copy-result-button" class="secondary-button" type="button">复制</button>
+                  <a id="open-result-link" class="text-link" href="#" target="_blank" rel="noopener noreferrer">打开短链接</a>
+                </div>
+                <p id="copy-message" class="copy-message" role="status" aria-live="polite"></p>
+                <dl class="result-metadata">
+                  <div><dt>短码</dt><dd><code id="result-short-code">—</code></dd></div>
+                  <div><dt>有效期</dt><dd id="result-expires-at">—</dd></div>
+                  <div class="original-result"><dt>原始网址</dt><dd id="result-original-url"></dd></div>
+                </dl>
+                <div class="result-manage-action">
+                  <button id="manage-created-code" class="quiet-button" type="button">管理此短码</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="state-section" class="admin-section" aria-labelledby="state-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">映射</p>
+              <h2 id="state-title">状态管理</h2>
+              <p>服务端尚未提供状态查询；在操作成功前状态显示为未知。</p>
+            </div>
+            <span class="route-label"><b>PUT</b> /api/links/{code}/enabled</span>
+          </div>
+
+          <div class="surface-card state-card">
+            <form id="state-form" class="state-form" novalidate>
+              <div class="field-block code-field">
+                <label for="managed-code">短码</label>
+                <input id="managed-code" type="text" inputmode="latin" autocomplete="off" spellcheck="false" minlength="4" maxlength="8" pattern="[A-Za-z0-9]{4,8}" placeholder="例如 Ab12" aria-describedby="code-help">
+                <p id="code-help" class="field-help">4 至 8 位英文字母或数字。</p>
+              </div>
+              <div class="state-current" aria-live="polite">
+                <span class="field-label">最近操作结果</span>
+                <strong id="state-current-value">未知</strong>
+              </div>
+              <div class="state-actions">
+                <button id="enable-button" class="secondary-button" type="button" data-enabled="true">启用</button>
+                <button id="disable-button" class="danger-button" type="button" data-enabled="false">禁用</button>
+              </div>
+            </form>
+            <p id="state-message" class="inline-message" role="status" aria-live="polite"></p>
+            <p id="state-error" class="inline-message error-message" role="alert" hidden></p>
+          </div>
+        </section>
+
+        <section id="stats-section" class="admin-section" aria-labelledby="stats-title">
+          <div class="section-heading stats-heading">
+            <div>
+              <p class="section-kicker">访问</p>
+              <h2 id="stats-title">访问统计</h2>
+              <p>统计基于已记录的访问事件，写入可能稍有延迟。UV 是匿名访客标识去重数。</p>
+            </div>
+            <span class="route-label"><b>GET</b> /api/internal/links/{code}/stats</span>
+          </div>
+
+          <div class="surface-card stats-controls">
+            <div class="selected-code">
+              <span class="field-label">统计短码</span>
+              <code id="stats-code-label">尚未选择</code>
+            </div>
+            <div class="date-range">
+              <div class="field-block">
+                <label for="stats-from">开始日期</label>
+                <input id="stats-from" type="date" required>
+              </div>
+              <span class="date-separator" aria-hidden="true">至</span>
+              <div class="field-block">
+                <label for="stats-to">结束日期</label>
+                <input id="stats-to" type="date" required>
+              </div>
+              <p class="date-range-help">可选最近 30 个上海统计日，包含今天。</p>
+            </div>
+            <button id="query-stats-button" class="primary-button query-button" type="button">
+              <span id="query-button-label">查询访问数据</span>
+            </button>
+          </div>
+
+          <p id="stats-range-error" class="inline-message error-message" role="alert" hidden></p>
+          <div id="collection-notice" class="collection-notice" role="status" hidden>
+            <span aria-hidden="true">i</span>
+            <p>当前已关闭新访问采集。历史数据仍可查看，之后的跳转不会新增访问统计。</p>
+          </div>
+
+          <div class="metrics-band" aria-label="所选日期范围的访问总量">
+            <div class="metric-value"><span>PV · 访问事件</span><strong id="range-pv">—</strong></div>
+            <div class="metric-divider" aria-hidden="true"></div>
+            <div class="metric-value"><span>UV · 匿名访客</span><strong id="range-uv">—</strong></div>
+            <p id="stats-meta" class="metrics-meta">选择短码和日期范围后查询。</p>
+          </div>
+          <p id="stats-message" class="inline-message" role="status" aria-live="polite"></p>
+          <div class="surface-card table-card">
+            <div class="table-heading">
+              <div><h3>每日访问</h3><p>按上海自然日统计，UV 不能跨日相加。</p></div>
+              <button id="retry-stats-button" class="quiet-button" type="button" hidden>重新查询统计</button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th scope="col">统计日</th><th scope="col">PV</th><th scope="col">UV</th><th scope="col">数据状态</th></tr></thead>
+                <tbody id="daily-rows"><tr><td class="table-empty" colspan="4">尚无查询结果</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="surface-card table-card visits-card">
+            <div class="table-heading">
+              <div><h3>访问日志</h3><p>展示服务端保留的最小化访问信息。</p></div>
+              <span id="visit-count" class="count-label"></span>
+            </div>
+            <div class="table-scroll">
+              <table class="visit-table">
+                <thead><tr><th scope="col">发生时间</th><th scope="col">访客网络</th><th scope="col">来源网站</th><th scope="col">浏览器信息</th></tr></thead>
+                <tbody id="visit-rows"><tr><td class="table-empty" colspan="4">尚无查询结果</td></tr></tbody>
+              </table>
+            </div>
+            <div class="visit-footer">
+              <p id="visits-message" class="inline-message" role="status" aria-live="polite"></p>
+              <div class="visit-buttons">
+                <button id="retry-visits-button" class="quiet-button" type="button" hidden>重新查询日志</button>
+                <button id="load-more-button" class="secondary-button" type="button" hidden>加载更多</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer class="admin-footer">
+          <span>管理接口 <code>X-Internal-Token</code></span>
+          <a href="/">返回公开创建页</a>
+        </footer>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
