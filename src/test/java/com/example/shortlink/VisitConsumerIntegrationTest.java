@@ -29,9 +29,13 @@ import java.util.*;
 import java.util.concurrent.atomic.*;
 import static org.assertj.core.api.Assertions.*;
 
-@SpringBootTest(properties={"short-link.stats.rabbit.consumer-enabled=false","short-link.stats.rabbit.port=${RABBIT_TEST_PORT:5672}","short-link.stats.rabbit.virtual-host=${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:link-consumer-test}"})
+@SpringBootTest(properties={"short-link.internal-token=0123456789abcdef0123456789abcdef","short-link.stats.rabbit.consumer-enabled=false","short-link.stats.rabbit.port=${RABBIT_TEST_PORT:5672}","short-link.stats.rabbit.virtual-host=${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:link-consumer-test}"})
+@org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 @ActiveProfiles("test") @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
 class VisitConsumerIntegrationTest {
+ @Autowired org.springframework.test.web.servlet.MockMvc http;
+ @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name="statsDataSource")
+ com.zaxxer.hikari.HikariDataSource statsPool;
  @Autowired JdbcTemplate db;
  @Autowired javax.sql.DataSource dataSource;
  @Autowired VisitPersistence persistence;
@@ -44,14 +48,14 @@ class VisitConsumerIntegrationTest {
  @Autowired @Qualifier("visitConsumerConnectionFactory") CachingConnectionFactory consumerFactory;
  private VisitEvent event;
  private String code;
- private final HttpClient management=HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
+ private final HttpClient management=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).version(HttpClient.Version.HTTP_1_1).build();
  private final com.fasterxml.jackson.databind.ObjectMapper json=new com.fasterxml.jackson.databind.ObjectMapper();
  private String vhost=System.getenv().getOrDefault("SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST","link-consumer-test");
  private String api=System.getenv().getOrDefault("RABBIT_MANAGEMENT_URL","http://127.0.0.1:15673")+"/api/";
  private String path(String value){return URLEncoder.encode(value,StandardCharsets.UTF_8).replace("+","%20");}
  private String request(String method,String suffix,String body) throws Exception {
   String credentials=System.getenv().getOrDefault("RABBITMQ_USERNAME","guest")+":"+System.getenv().getOrDefault("RABBITMQ_PASSWORD","guest");
-  var r=HttpRequest.newBuilder(URI.create(api+suffix)).header("Authorization","Basic "+Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8))).header("Content-Type","application/json").method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(body)).build();
+  var r=HttpRequest.newBuilder(URI.create(api+suffix)).timeout(Duration.ofSeconds(5)).header("Authorization","Basic "+Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8))).header("Content-Type","application/json").method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(body)).build();
   var response=management.send(r,HttpResponse.BodyHandlers.ofString());assertThat(response.statusCode()).isBetween(200,299);return response.body();
  }
  @BeforeEach void setup() throws Exception {
@@ -66,7 +70,8 @@ class VisitConsumerIntegrationTest {
   event=new VisitEvent(UUID.randomUUID(),code,at,at.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(),new byte[32],1,null,null,null);
  }
  @AfterEach void cleanup() {
-  listener.stop();db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);
+  listener.stop();org.mockito.Mockito.reset(statsPool);db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);
+  db.update("DELETE FROM short_link WHERE short_code=?",code);
   admin.purgeQueue(VisitRabbitConfiguration.QUEUE);admin.purgeQueue(VisitRabbitConfiguration.DLQ);
  }
  private void publish(byte[] body){rabbit.send(VisitRabbitConfiguration.EXCHANGE,VisitRabbitConfiguration.KEY,new Message(body,new MessageProperties()));}
@@ -78,6 +83,91 @@ class VisitConsumerIntegrationTest {
   return new VisitEvent(UUID.randomUUID(),code,time,time.atZone(ZoneId.of("Asia/Shanghai")).toLocalDate(),new byte[32],1,null,null,null);
  }
  private void consumerAt(Instant time) {listener.setMessageListener(new VisitConsumer(codec,persistence,Clock.fixed(time,ZoneOffset.UTC)));}
+ @Test void concurrentFirstInsertsOfSameEventSaveOnceAndConfirmDuplicate() throws Exception {
+  assertThat(rows()).isZero();
+  var insertGate=new java.util.concurrent.CyclicBarrier(2);
+  var competingInserts=new AtomicInteger();
+  interceptEventInsert(()->{competingInserts.incrementAndGet();insertGate.await(5,java.util.concurrent.TimeUnit.SECONDS);},()->{});
+  var workers=java.util.concurrent.Executors.newFixedThreadPool(2);
+  try {
+   var first=workers.submit(()->persistence.persist(event));
+   var second=workers.submit(()->persistence.persist(event));
+   assertThat(List.of(first.get(10,java.util.concurrent.TimeUnit.SECONDS),second.get(10,java.util.concurrent.TimeUnit.SECONDS)))
+    .containsExactlyInAnyOrder(VisitPersistence.Outcome.SAVED,VisitPersistence.Outcome.DUPLICATE);
+   assertThat(competingInserts).hasValue(2);assertThat(rows()).isEqualTo(1);
+  } finally {
+   workers.shutdownNow();assertThat(workers.awaitTermination(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+  }
+  assertThat(writes.snapshot().inFlight()).isZero();
+  assertThat(statsPool.getHikariPoolMXBean().getActiveConnections()).isZero();
+ }
+ @Test void committedInsertWithLostReplyRetriesOriginalEventAndAcknowledgesSingleVisit() throws Exception {
+  db.update("INSERT INTO short_link(short_code,original_url,created_at,enabled) VALUES(?,?,UTC_TIMESTAMP(3),true)",code,"https://example.com/");
+  var injected=new AtomicBoolean();
+  var before=writes.snapshot();
+  interceptEventInsert(()->{},()->{
+   if(injected.compareAndSet(false,true)) {
+    assertThat(rows()).isEqualTo(1); // Separate connection sees the real auto-committed INSERT.
+    throw new java.sql.SQLException("Test lost INSERT reply","08S01");
+   }
+  });
+  var attempts=new java.util.concurrent.CopyOnWriteArrayList<VisitEvent>();
+  var real=new VisitConsumer(codec,value->{attempts.add(value);return persistence.persist(value);},Clock.fixed(event.occurredAt(),ZoneOffset.UTC));
+  listener.setMessageListener(real);listener.start();publish(codec.encode(event));
+  await(()->assertThat(real.snapshot().outcomes().get(VisitConsumer.Category.DUPLICATE)).isEqualTo(1));
+  assertThat(injected).isTrue();assertThat(attempts).hasSize(2);
+  for(var attempt:attempts) {
+   assertThat(attempt.eventId()).isEqualTo(event.eventId());assertThat(attempt.occurredAt()).isEqualTo(event.occurredAt());
+   assertThat(attempt.statDate()).isEqualTo(event.statDate());assertThat(attempt.shortCode()).isEqualTo(code);
+   assertThat(attempt.visitorHash()).containsExactly(event.visitorHash());assertThat(attempt.visitorKeyVersion()).isEqualTo(event.visitorKeyVersion());
+  }
+  assertThat(real.snapshot().outcomes().get(VisitConsumer.Category.SAVED)).isZero();
+  assertThat(real.snapshot().outcomes().get(VisitConsumer.Category.ATTEMPT_FAILED)).isEqualTo(1);
+  assertThat(writes.snapshot().outcomes().get(VisitWriteObservations.Outcome.UNCERTAIN)).isEqualTo(before.outcomes().get(VisitWriteObservations.Outcome.UNCERTAIN)+1);
+  assertThat(writes.snapshot().outcomes().get(VisitWriteObservations.Outcome.DUPLICATE)).isEqualTo(before.outcomes().get(VisitWriteObservations.Outcome.DUPLICATE)+1);
+  await(()->{
+   try {
+    var queue=json.readTree(request("GET","queues/"+path(vhost)+"/"+path(VisitRabbitConfiguration.QUEUE),null));
+    assertThat(queue.get("messages_ready").asInt()).isZero();assertThat(queue.get("messages_unacknowledged").asInt()).isZero();
+    var dead=json.readTree(request("GET","queues/"+path(vhost)+"/"+path(VisitRabbitConfiguration.DLQ),null));
+    assertThat(dead.get("messages").asInt()).isZero();
+   } catch(Exception failure) {throw new AssertionError(failure);}
+  });
+  assertThat(rows()).isEqualTo(1);
+  for(String endpoint:List.of("stats","visits")) {
+   var response=http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/internal/links/"+code+"/"+endpoint)
+    .header("X-Internal-Token","0123456789abcdef0123456789abcdef").param("from",event.statDate().toString()).param("to",event.statDate().toString()))
+    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk()).andReturn().getResponse();
+   var result=json.readTree(response.getContentAsString());
+   if(endpoint.equals("stats")) {assertThat(result.get("pv").asInt()).isEqualTo(1);assertThat(result.get("uv").asInt()).isEqualTo(1);}
+   else {assertThat(result.get("items").size()).isEqualTo(1);assertThat(result.get("hasMore").asBoolean()).isFalse();}
+  }
+  assertThat(writes.snapshot().inFlight()).isZero();
+  assertThat(statsPool.getHikariPoolMXBean().getActiveConnections()).isZero();
+ }
+ @FunctionalInterface private interface SqlHook {void run() throws Exception;}
+ private void interceptEventInsert(SqlHook beforeExecute,SqlHook afterExecute) throws Exception {
+  var eventBytes=java.nio.ByteBuffer.allocate(16).putLong(event.eventId().getMostSignificantBits()).putLong(event.eventId().getLeastSignificantBits()).array();
+  org.mockito.Mockito.doAnswer(invocation->{
+   var connection=(java.sql.Connection)invocation.callRealMethod();
+   return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{java.sql.Connection.class},(proxy,method,args)->{
+    var result=invokeJdbc(connection,method,args);
+    if(!method.getName().equals("prepareStatement") || !((String)args[0]).contains("INSERT INTO short_link_visit_log"))return result;
+    var statement=(java.sql.PreparedStatement)result;var target=new AtomicBoolean();
+    return java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{java.sql.PreparedStatement.class},(p,m,a)->{
+     if(m.getName().equals("setBytes") && (Integer)a[0]==1)target.set(Arrays.equals(eventBytes,(byte[])a[1]));
+     boolean execute=m.getName().equals("executeUpdate") && target.get();
+     if(execute)beforeExecute.run();
+     var value=invokeJdbc(statement,m,a);
+     if(execute)afterExecute.run();
+     return value;
+    });
+   });
+  }).when(statsPool).getConnection();
+ }
+ private static Object invokeJdbc(Object target,java.lang.reflect.Method method,Object[] args) throws Throwable {
+  try {return method.invoke(target,args);}catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
+ }
  @Test void midnightAndOutOfOrderEventsKeepOriginalTimeIdentityAndDayDespiteMappingState() {
   var older=at("2026-09-30T15:59:59.123Z");var newer=at("2026-09-30T16:00:00.123Z");
   db.update("INSERT INTO short_link(short_code,original_url,created_at,expires_at,enabled) VALUES(?,?,?, ?,false)",code,"https://example.com",java.sql.Timestamp.from(older.occurredAt().minusSeconds(10)),java.sql.Timestamp.from(newer.occurredAt().plusSeconds(10)));
