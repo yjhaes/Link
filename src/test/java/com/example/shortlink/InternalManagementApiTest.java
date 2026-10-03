@@ -1,6 +1,7 @@
 package com.example.shortlink;
 
 
+
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.cache.RedirectCacheProperties;
 import com.example.shortlink.persistence.MySqlShortLinkWriter;
@@ -189,8 +190,8 @@ class InternalManagementApiTest {
         @Bean com.example.shortlink.stats.MySqlVisitStatsQuery visitStatsQuery() {
             return mock(com.example.shortlink.stats.MySqlVisitStatsQuery.class);
         }
-        @Bean com.example.shortlink.stats.VisitWriteObservations visitWriteObservations() {
-            return new com.example.shortlink.stats.VisitWriteObservations(mock(javax.sql.DataSource.class));
+        @Bean com.example.shortlink.stats.persistence.VisitWriteObservations visitWriteObservations() {
+            return new com.example.shortlink.stats.persistence.VisitWriteObservations(mock(javax.sql.DataSource.class));
         }
         @Bean com.example.shortlink.stats.VisitStatsProperties visitStatsProperties() {
             return new com.example.shortlink.stats.VisitStatsProperties(

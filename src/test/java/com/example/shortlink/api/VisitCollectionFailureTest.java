@@ -1,10 +1,11 @@
 package com.example.shortlink.api;
 
 
+
 import com.example.shortlink.service.RedirectDecision;
 import com.example.shortlink.stats.VisitRecorder;
 import com.example.shortlink.stats.VisitStatsProperties;
-import com.example.shortlink.stats.VisitWriteObservations;
+import com.example.shortlink.stats.persistence.VisitWriteObservations;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import javax.crypto.Mac;

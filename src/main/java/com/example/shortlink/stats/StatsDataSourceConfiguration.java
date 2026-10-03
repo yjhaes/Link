@@ -1,5 +1,6 @@
 package com.example.shortlink.stats;
 
+
 import com.zaxxer.hikari.HikariDataSource;
 
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;

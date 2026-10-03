@@ -1,4 +1,5 @@
 package com.example.shortlink.stats.messaging;
+
 import com.example.shortlink.stats.VisitEvent;
 
 import org.junit.jupiter.api.Test;

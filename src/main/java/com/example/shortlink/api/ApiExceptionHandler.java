@@ -1,5 +1,6 @@
 package com.example.shortlink.api;
 
+
 import com.example.shortlink.service.error.CreateCacheCoordinationException;
 import com.example.shortlink.service.error.InvalidRequestException;
 import com.example.shortlink.service.error.LinkDisabledException;

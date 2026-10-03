@@ -1,4 +1,6 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.persistence;
+import com.example.shortlink.stats.VisitEvent;
+import com.example.shortlink.stats.VisitStatsProperties;
 
 
 import org.junit.jupiter.api.Test;

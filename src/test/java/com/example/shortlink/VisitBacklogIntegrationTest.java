@@ -1,13 +1,14 @@
 package com.example.shortlink;
 
 
+
 import com.example.shortlink.stats.messaging.AsyncVisitRecorder;
 import com.example.shortlink.stats.messaging.VisitConsumer;
 import com.example.shortlink.stats.VisitEvent;
 import com.example.shortlink.stats.messaging.VisitMessageCodec;
-import com.example.shortlink.stats.VisitPersistence;
+import com.example.shortlink.stats.persistence.VisitPersistence;
 import com.example.shortlink.stats.messaging.VisitRabbitConfiguration;
-import com.example.shortlink.stats.VisitWriteObservations;
+import com.example.shortlink.stats.persistence.VisitWriteObservations;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.*;
 import org.springframework.boot.test.context.SpringBootTest;

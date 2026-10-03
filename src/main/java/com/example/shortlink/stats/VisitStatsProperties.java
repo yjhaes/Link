@@ -1,5 +1,6 @@
 package com.example.shortlink.stats;
 
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.Base64;

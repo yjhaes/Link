@@ -1,5 +1,6 @@
 package com.example.shortlink.stats.messaging;
 
+
 import com.example.shortlink.stats.messaging.VisitPublisherBrokerTest;
 import com.example.shortlink.stats.messaging.VisitPublisherFailureTest;
 import com.example.shortlink.stats.messaging.AsyncVisitRecorder;

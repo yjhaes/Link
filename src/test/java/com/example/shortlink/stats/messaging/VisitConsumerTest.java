@@ -1,7 +1,8 @@
 package com.example.shortlink.stats.messaging;
+
 import com.example.shortlink.stats.VisitEvent;
-import com.example.shortlink.stats.VisitPersistence;
-import com.example.shortlink.stats.VisitPersistenceException;
+import com.example.shortlink.stats.persistence.VisitPersistence;
+import com.example.shortlink.stats.persistence.VisitPersistenceException;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.*;
 import java.time.*;

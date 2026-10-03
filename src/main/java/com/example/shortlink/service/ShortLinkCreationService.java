@@ -1,5 +1,6 @@
 package com.example.shortlink.service;
 
+
 import com.example.shortlink.cache.RedirectCache;
 import com.example.shortlink.persistence.MySqlShortLinkWriter;
 import com.example.shortlink.persistence.ShortCodeCollisionException;

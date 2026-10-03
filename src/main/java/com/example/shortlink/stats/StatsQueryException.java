@@ -1,5 +1,6 @@
 package com.example.shortlink.stats;
 
+
 public class StatsQueryException extends RuntimeException {
     public enum Reason {
         BUSY,

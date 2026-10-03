@@ -1,5 +1,6 @@
 package com.example.shortlink.stats;
 
+
 import java.net.IDN;
 import java.net.InetAddress;
 import java.net.URI;

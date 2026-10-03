@@ -1,5 +1,6 @@
 package com.example.shortlink.stats;
 
+
 import com.example.shortlink.service.error.InvalidRequestException;
 
 import java.time.LocalDate;

@@ -1,6 +1,7 @@
 package com.example.shortlink.stats.messaging;
 
-import com.example.shortlink.stats.VisitPersistence;
+
+import com.example.shortlink.stats.persistence.VisitPersistence;
 
 import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.core.Binding;

@@ -1,4 +1,5 @@
-package com.example.shortlink.stats;
+package com.example.shortlink.stats.persistence;
+
 
 import com.zaxxer.hikari.HikariDataSource;
 

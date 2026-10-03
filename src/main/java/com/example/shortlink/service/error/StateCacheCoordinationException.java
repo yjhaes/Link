@@ -1,5 +1,6 @@
 package com.example.shortlink.service.error;
 
+
 public class StateCacheCoordinationException extends RuntimeException {
     private final String shortCode;
 

@@ -1,5 +1,6 @@
 package com.example.shortlink.cache;
 
+
 import java.util.Objects;
 
 public record RedirectCacheRead(Status status, String generation, RedirectCacheEntry entry) {

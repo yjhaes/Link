@@ -1,5 +1,6 @@
 package com.example.shortlink.stats.messaging;
 
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("short-link.stats.rabbit")

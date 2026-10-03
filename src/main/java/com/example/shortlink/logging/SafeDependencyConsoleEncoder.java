@@ -1,5 +1,6 @@
 package com.example.shortlink.logging;
 
+
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.spi.ILoggingEvent;

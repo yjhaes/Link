@@ -1,5 +1,6 @@
 package com.example.shortlink.shortcode;
 
+
 import org.springframework.stereotype.Component;
 
 import java.math.BigInteger;

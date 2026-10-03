@@ -1,12 +1,13 @@
 package com.example.shortlink.api;
 
+
 import com.example.shortlink.service.RedirectDecision;
 import com.example.shortlink.stats.VisitEvent;
 import com.example.shortlink.stats.VisitIdentity;
 import com.example.shortlink.stats.VisitMetadata;
 import com.example.shortlink.stats.VisitRecorder;
 import com.example.shortlink.stats.VisitStatsProperties;
-import com.example.shortlink.stats.VisitWriteObservations;
+import com.example.shortlink.stats.persistence.VisitWriteObservations;
 
 import jakarta.servlet.http.HttpServletRequest;
 

@@ -1,5 +1,6 @@
 package com.example.shortlink.stats;
 
+
 import com.example.shortlink.service.error.LinkNotFoundException;
 
 import org.springframework.beans.factory.annotation.Qualifier;
