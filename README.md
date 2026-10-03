@@ -21,7 +21,6 @@
 
 ```sql
 CREATE DATABASE short_link CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
-CREATE DATABASE short_link_test CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
 ```
 
 应用启动时会执行版本控制中的 `schema.sql`。表使用短码作主键，映射记录中的到期时间允许为空。
@@ -145,23 +144,25 @@ X-Internal-Token: <部署配置中的管理秘密>
 
 ## 测试
 
-不依赖外部 MySQL 或 Redis 的测试可单独运行：
+无设施单元/MVC与真实设施集成使用统一入口；无需私人 MySQL 或 RabbitMQ。要求 JDK 17、Python 3.10+；无设施/完整入口在存在页面测试时还需要 Node.js 18+。完整回归需要 Docker Engine 与 Compose v2。
+
+Windows PowerShell 7：
 
 ```powershell
-.\mvnw.cmd '-Dmaven.repo.local=.tools/maven-repository' '-Dtest=ShortLinkUseCasesTest,ShortLinkStateServiceTest,RedirectLoadCoalescingTest,PermutedShortCodeEncoderTest,RedisRedirectCacheTest,RedirectCachePropertiesTest,InternalManagementApiTest,InternalManagementDisabledApiTest,InternalManagementConfigurationTest' test
+pwsh -NoProfile -File ops/tests/run.ps1 unit
+pwsh -NoProfile -File ops/tests/run.ps1 integration
+# 两层完整回归：pwsh -NoProfile -File ops/tests/run.ps1 all
 ```
 
-`PermutedShortCodeEncoderTest` 位于 `shortcode` 测试包。管理边界测试使用真实 MVC 和业务服务，以及数据库/缓存边界的测试替身，独立验证拒绝无副作用、鉴权先于损坏请求体解析、精确比较、重复头、未配置关闭、配置长度及公开接口不需令牌。这里使用被 Git 忽略的工作区 Maven 缓存，适合默认缓存目录不可写的环境；正常环境也可省略 `-Dmaven.repo.local` 参数。完整测试集还包含原 MySQL/Redis 回归和真实 RabbitMQ 异步、故障、资源与生命周期验收。
+Linux：
 
-`ShortLinkApiTest` 连接真实 MySQL。默认测试库为本机 `short_link_test`，用户名为 `root`，密码为 `123456`；其他环境可按需设置测试连接变量：
-
-```powershell
-$env:MYSQL_TEST_URL = 'jdbc:mysql://localhost:3306/short_link_test?serverTimezone=UTC'
-$env:MYSQL_TEST_USERNAME = 'root'
-$env:MYSQL_TEST_PASSWORD = '<本地测试数据库密码>'
-.\mvnw.cmd test
+```sh
+sh ops/tests/run.sh unit
+sh ops/tests/run.sh integration
+# 两层完整回归：sh ops/tests/run.sh all
 ```
 
+真实入口自动创建随机 project、动态 localhost 端口、独立 MySQL/Redis/RabbitMQ和测试账号/vhost/policy；结束后仅清理本次设施。失败/错误/跳过或缺 Docker 均返回非零，安全报告保存在 `target/regression/<运行标识>/`。测试配置只含隔离测试值，数据库默认不可连接地址避免误用本机数据；禁止用于部署。详细分类、报告、失败定位与清理见 [可复现测试说明](docs/testing.md)。
 `RedisRedirectIntegrationTest` 使用 Docker/Testcontainers 启动 MySQL 8.4 与 Redis 7.2，验证版本化结构、有限 TTL 占位、轮换与条目丢失后的旧回填拒绝、重复跳转、SQL 次数、大小写隔离，以及 MySQL 提交后受控版本协调对禁用和重新启用跳转的影响；每个测试前都会清理 Redis。完整测试集需要 Docker 可用。其他集成测试通过 HTTP 接口及真实 MySQL 验证永久与限时创建、期限持久化、有效期边界、302 跳转、禁用与重新启用状态和错误响应。
 
 创建与 404 的集成验收还覆盖：独立 Spring 应用上下文共享真实 Redis/MySQL 的迟到旧查询竞态；创建后的新请求可见性；404 命中不查库及自然到期；查询失败不产生负缓存；503 部分完成、协调执行后响应超时与重复恢复；恢复不增加映射或发号，也不恢复已经禁用的状态。服务和 Redis 边界测试使用可控随机输入验证 TTL 抖动端点及未确认提交的失败语义。

@@ -22,12 +22,12 @@ report = ROOT / "target" / "regression" / run_id
 report.mkdir(parents=True)
 project = "link-tests-" + run_id
 # Never inherit personal connection settings or secrets.
-env = {k: v for k, v in os.environ.items() if not k.startswith(("DB_", "MYSQL_TEST_", "REDIS_", "RABBIT", "SHORT_LINK_", "SPRING_"))}
-env.update(MYSQL_TEST_USERNAME="linktest", MYSQL_TEST_PASSWORD=secrets.token_hex(24),
+env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("DB_", "MYSQL_TEST_", "REDIS_", "RABBIT", "SHORT_LINK_", "SPRING_")) and k.upper() not in ("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "MAVEN_OPTS")}
+test_env = dict(MYSQL_TEST_USERNAME="linktest", MYSQL_TEST_PASSWORD=secrets.token_hex(24),
            MYSQL_ROOT_PASSWORD=secrets.token_hex(24), RABBITMQ_USERNAME="linktest",
            RABBITMQ_PASSWORD=secrets.token_hex(24), RABBITMQ_HOST="127.0.0.1",
            RABBITMQ_VIRTUAL_HOST="/")
-secret_values = [env[k] for k in ("MYSQL_TEST_PASSWORD", "MYSQL_ROOT_PASSWORD", "RABBITMQ_PASSWORD")]
+secret_values = [test_env[k] for k in ("MYSQL_TEST_PASSWORD", "MYSQL_ROOT_PASSWORD", "RABBITMQ_PASSWORD")]
 
 def safe(text):
     for value in secret_values:
@@ -35,8 +35,11 @@ def safe(text):
     return text
 
 def command(argv, name, *, check=True, timeout=900):
-    result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True, errors="replace", timeout=timeout)
+    try:
+        result = subprocess.run(argv, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, errors="replace", timeout=timeout)
+    except OSError as failure:
+        raise RuntimeError(f"{name}: required executable {argv[0]} unavailable") from failure
     (report / (name + ".log")).write_text(safe(result.stdout), encoding="utf-8")
     if check and result.returncode:
         raise RuntimeError(f"{name} failed (exit {result.returncode}); inspect {report / (name + '.log')}")
@@ -57,6 +60,7 @@ def api(method, suffix, data):
 
 def facilities():
     global started
+    env.update(test_env)
     command(["docker", "info", "--format", "{{.ServerVersion}}"], "docker-preflight", timeout=30)
     command(["docker", "compose", "version"], "compose-preflight", timeout=30)
     started = True  # Also clean partial startup failures.
@@ -96,8 +100,9 @@ for source in (ROOT / "src/test/java").rglob("*Test.java"):
 def run_tests(names, label, vhost="/"):
     if not names:
         raise RuntimeError("No tests selected for " + label)
-    env["SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST"] = vhost
-    env["RABBITMQ_VIRTUAL_HOST"] = vhost
+    if label.startswith("integration"):
+        env["SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST"] = vhost
+        env["RABBITMQ_VIRTUAL_HOST"] = vhost
     destination = report / label
     destination.mkdir()
     wrapper = str(ROOT / ("mvnw.cmd" if os.name == "nt" else "mvnw"))
@@ -114,10 +119,11 @@ def run_tests(names, label, vhost="/"):
             totals[key] += int(suite.attrib.get(key, 0))
     for path in destination.glob("*.txt"):
         path.write_text(safe(path.read_text(encoding="utf-8")), encoding="utf-8")
-    summary = {"suite": label, "exit": result.returncode, **totals}
+    discovered = {ET.parse(xml).getroot().attrib["name"] for xml in reports}
+    summary = {"suite": label, "exit": result.returncode, **totals,
+               "missingClasses": sorted(set(names) - discovered), "unexpectedClasses": sorted(discovered - set(names))}
     (destination / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary), flush=True)
-    discovered = {ET.parse(xml).getroot().attrib["name"] for xml in reports}
     if result.returncode or discovered != set(names) or totals["tests"] == 0 or any(totals[k] for k in ("failures", "errors", "skipped")):
         raise RuntimeError(f"{label} failed or skipped required tests; inspect {destination}")
 
