@@ -15,3 +15,7 @@
 指标标签仅使用模板路由、固定请求组及类别，自动HTTP观察也收敛到固定标签；requestId/短码/IP/任意method与路径都不作为标签。复用现有MQ/统计/清理snapshot，broker confirm不是数据库保存，累计均速不是窗口吞吐，处理延迟不是HTTP延迟，未知清理观察不是零。broker ready/unacked仍由受限Management核验。
 
 安全业务日志与明确依赖/HTTP框架编码边界采用有界采样，保留降级恢复、生命周期、固定失败类别及必要协调短码；这不是全局自动脱敏或完整分布式追踪。单位、标签与保护范围见 [观测说明](../../docs/observability.md)。Windows PowerShell7与Docker Linux容器实跑，原生Linux宿主完整入口未实跑；资源轻载观察不构成性能或生产SLA。
+
+## 审查后补验
+
+Spec审查发现Tomcat在Filter前以INFO携原始解析异常记录非法目标；25541f0已保护所有HTTP框架携Throwable事件。原始Socket验收红→绿，修后9项针对性测试通过，两个审查轴focused复核剩余0。上述314+2全量及100Compose仍明确属于49d34d7，未冒称修后重复全量；详见 [集成记录](04-08-verification.md)。

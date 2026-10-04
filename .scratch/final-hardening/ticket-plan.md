@@ -259,8 +259,8 @@ flowchart TD
 | [04：跳转限流与实际回源并发保护](issues/04-redirect-rate-limiting-and-load-admission.md) | 03 | resolved |
 | [05：鉴权后的管理写入与查询限流](issues/05-management-rate-limiting.md) | 01、03 | resolved |
 | [06：全栈Compose运行、持久卷和资源边界](issues/06-compose-runtime.md) | 01 | resolved |
-| [07：分组健康检查与安全管理端口](issues/07-health-and-management-exposure.md) | 06 | ready-for-agent |
-| [08：请求与异步结果的安全日志和最小指标](issues/08-safe-logs-and-metrics.md) | 04、05、07 | ready-for-agent |
+| [07：分组健康检查与安全管理端口](issues/07-health-and-management-exposure.md) | 06 | resolved |
+| [08：请求与异步结果的安全日志和最小指标](issues/08-safe-logs-and-metrics.md) | 04、05、07 | resolved |
 | [09：业务OpenAPI与页面错误契约](issues/09-api-docs-and-error-ui.md) | 04、05 | ready-for-agent |
 | [10：CI自动回归与全栈最终冒烟](issues/10-ci-and-final-verification.md) | 02、08、09 | ready-for-agent |
 | [11：有限性能观察与故障演示证据](issues/11-performance-and-failure-evidence.md) | 02、08 | ready-for-agent |
@@ -269,3 +269,5 @@ flowchart TD
 执行需另获用户授权；依赖全部 resolved 后才可认领，默认选择最小未阻塞编号。
 
 2026-10-04 执行更新：用户仅授权 01～03，三项已实现、验收并完成双轴审查修复；证据见 [01～03 集成记录](01-03-verification.md)。04～12 尚未认领，父规格未整体 resolved。上文发布状态描述保留此前发布时的事实。
+
+2026-10-04 执行更新：用户追加授权04～08，五项均已实现并独立验收。最终源码49d34d7通过Java314及Node2完整回归、100项真实Compose断言；最终双轴审查与集成证据见 [04～08验证记录](04-08-verification.md)。09～12仍未开始，父规格未整体resolved。

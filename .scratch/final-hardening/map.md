@@ -164,3 +164,9 @@
 
 - 2026-10-04：用户追加授权执行 04、05、06、07、08。集成分支为 codex/final-hardening-04-08；实现使用当前模型，最终 Standards Review 和 Spec Review 继续使用 GPT-6.1 Sol / high。
 - 04、05、06 已独立验收并合并；07 正在实施，08 等待健康管理出口。09～12 未获本轮执行授权。最终集成回归及双轴审查结果将在完成后追加。
+
+## 04～08 完成
+
+- 用户授权的04～08均已实现、独立验收并合入codex/final-hardening-04-08。最终源码全量Java314+Node2与100项Compose断言通过。
+- Standards Review和Spec Review均明确GPT-6.1 Sol/high；各发现1项，统一提交25541f0修复，修后9项重点验收通过，两轴focused复核剩余0。
+- 全量与审查修复后补验的版本边界见 [04～08集成证据](04-08-verification.md)，未将旧测试结果冒称当前版本重新执行。09～12未开始，父规格未整体resolved。
