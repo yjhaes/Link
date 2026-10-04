@@ -49,6 +49,6 @@ Java合计314与页面2均通过，所有Java分组missingClasses及unexpectedCl
 
 修复提交 `25541f0` 更新控制台HTTP框架携Throwable事件保护、真实原始Socket隐私验收及采样文档。Socket测试修复前确实失败，暴露原始查询canary；修复后9项针对性测试全部通过（失败/错误/跳过0），包括5项真实HTTP流程、编码器、请求上下文清理和双端口健康。报告保留在 `target/review-fixes-green` 与 `target/review-fixes-green.log`。
 
-前述Java314+Node2完整回归及100项Compose属于49d34d7源码版本，未在25541f0重复全量；最终修复采用针对性真实Tomcat解析与原观察边界回归补验，不将先前全量称作修后版本重新运行。最终文档提交不改变生产/测试源码。两个复核代理仍为GPT-6.1 Sol / high，Standards剩余0、Spec剩余0。
+前述Java314+Node2完整回归及100项Compose属于49d34d7源码版本，未在25541f0重复全量；最终修复采用针对性真实Tomcat解析与原观察边界回归补验，不将先前全量称作修后版本重新运行。随后仅整理文档及文件尾多余空行，无生产或测试语义改动。两个复核代理仍为GPT-6.1 Sol / high，Standards剩余0、Spec剩余0。
 
 04～08均resolved，09～12未开始；父规格仍保留整体未完成状态。五个临时工作树归档前，必要安全原始报告已复制保留在主工作树target，归档不影响集成分支源码和提交。

@@ -96,5 +96,3 @@ class RedirectLoadProtectionTest {
         } finally { release.countDown(); executor.shutdownNow(); }
     }
 }
-
-

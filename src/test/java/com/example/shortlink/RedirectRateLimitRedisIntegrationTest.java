@@ -122,4 +122,3 @@ class RedirectRateLimitRedisIntegrationTest {
         verify(mapper,times(1)).selectById("Ij90");
     }
 }
-

@@ -120,4 +120,3 @@ public class RedisRateLimiter implements RateLimiter, DisposableBean {
         client.shutdown();
     }
 }
-
