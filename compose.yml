@@ -1,0 +1,79 @@
+name: short-link
+services:
+  app:
+    build: .
+    image: short-link-local:0.0.1
+    mem_limit: ${APP_MEMORY_LIMIT:-768m}
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${APP_MAX_HEAP:-384m}
+      DB_URL: jdbc:mysql://mysql:3306/short_link?serverTimezone=UTC
+      DB_USERNAME: ${DB_USERNAME:?Run ops/init-local-secrets first}
+      DB_PASSWORD: ${DB_PASSWORD:?Run ops/init-local-secrets first}
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?}
+      RABBITMQ_VIRTUAL_HOST: ${RABBITMQ_VIRTUAL_HOST:?}
+      SHORT_LINK_INTERNAL_TOKEN: ${SHORT_LINK_INTERNAL_TOKEN:?}
+      SHORT_LINK_VISITOR_HMAC_KEY: ${SHORT_LINK_VISITOR_HMAC_KEY:?}
+      SHORT_LINK_VISITOR_KEY_VERSION: ${SHORT_LINK_VISITOR_KEY_VERSION:-1}
+      SHORT_LINK_STATS_ENABLED: "true"
+      SHORT_LINK_STATS_CONSUMER_ENABLED: ${SHORT_LINK_STATS_CONSUMER_ENABLED:-true}
+      SHORT_LINK_BASE_URL: http://localhost:${APP_PORT:-8080}
+      SERVER_ADDRESS: 0.0.0.0
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+  mysql:
+    image: mysql:8.4.4@sha256:23818b7d7de427096ab1427b2e3d9d5e14a5b933f9a4431a482d6414bc879091
+    mem_limit: ${MYSQL_MEMORY_LIMIT:-1g}
+    environment:
+      MYSQL_DATABASE: short_link
+      MYSQL_USER: ${DB_USERNAME:?}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD=$$MYSQL_PASSWORD mysql -h 127.0.0.1 -u "$$MYSQL_USER" -D short_link -e "SELECT 1" >/dev/null 2>&1']
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+  redis:
+    image: redis:7.4.2-alpine@sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952
+    mem_limit: ${REDIS_MEMORY_LIMIT:-256m}
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-128mb}", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  rabbitmq:
+    image: rabbitmq:3.13.7-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69
+    hostname: rabbitmq
+    mem_limit: ${RABBITMQ_MEMORY_LIMIT:-1g}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VIRTUAL_HOST:?}
+      # Bound Erlang schedulers on high-core demonstration hosts.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: +S 2:2
+      RABBITMQ_CTL_ERL_ARGS: +S 1:1
+    entrypoint: ["sh", "/opt/link/bootstrap.sh"]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./ops/compose/rabbit-bootstrap.sh:/opt/link/bootstrap.sh:ro
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/link-policies-ready && rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 20s
+volumes:
+  mysql-data:
+  rabbitmq-data:
