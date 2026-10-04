@@ -285,10 +285,13 @@ class Evidence:
                 self.until(lambda: self.metric('shortlink.redirect.load.inflight') == 4, 'four actual active mapping loads', timeout=10)
                 waiting = int(self.sql("SELECT COUNT(*) FROM performance_schema.threads WHERE PROCESSLIST_DB='short_link' AND PROCESSLIST_INFO LIKE 'SELECT%FROM short_link%WHERE short_code%' AND PROCESSLIST_STATE='Waiting for table metadata lock';", 'max4-actual-waiting').strip())
                 self.check(waiting == 4, 'real MySQL independently shows four blocked mapping SELECTs')
+                accepted_before = self.metric('shortlink.mq.event.outcomes', result='local-accepted')
                 rejection_started = time.monotonic()
                 status, headers, body = self.http('GET', '/s/ObsA%04d' % (self.samples + 5))
                 rejection_ms = (time.monotonic() - rejection_started) * 1000
                 self.check(status == 503 and body['code'] == 'REDIRECT_LOAD_BUSY' and 'set-cookie' not in headers, 'fifth HTTP load immediately rejects 503 without event cookie')
+                accepted_after = self.metric('shortlink.mq.event.outcomes', result='local-accepted')
+                self.check(accepted_before == accepted_after, 'fifth rejected GET does not accept an asynchronous visit event')
                 self.check(self.metric('shortlink.redirect.load.inflight') == 4, 'fifth rejection does not admit a fifth actual query')
                 lock.stdin.write('UNLOCK TABLES;\nquit\n')
                 lock.stdin.flush()
@@ -297,6 +300,7 @@ class Evidence:
             self.scenarios['blocked-database-max4'] = {'statuses': {'302': 4, '429': 0, '503': 1},
                 'mapping_select_executions': actual_queries, 'independent_mysql_blocked_queries': waiting,
                 'actual_load_inflight_observed': 4, 'fifth_rejection_latency_ms': rejection_ms,
+                'visit_events_accepted_before': accepted_before, 'visit_events_accepted_after': accepted_after,
                 'note': 'fifth HTTP includes Redis failure waits before immediate no-queue load rejection'}
             self.check(actual_queries == 4, 'four admitted SELECT executions and no rejected fifth query')
             self.check(self.metric('shortlink.redirect.load.inflight') == 0 and self.http('HEAD', '/s/ObsA%04d' % (self.samples + 5))[0] == 302, 'real queries release all permits and next request succeeds')
@@ -318,6 +322,7 @@ class Evidence:
         self.ports()
         self.until(lambda: self.http('GET', '/readyz')[0] == 200, name + ' core ready')
         self.check(self.http('HEAD', '/s/' + self.code)[0] == 302, name + ' authoritative mapping survives controlled recovery')
+        self.check(self.dc(['exec', '-T', 'redis', 'redis-cli', 'CONFIG', 'GET', 'maxmemory'], name + '-restored-memory').splitlines() == ['maxmemory', '134217728'], name + ' restores original 128MiB Redis limit')
 
     def memory_pressure(self):
         config = self.dc(['exec', '-T', 'redis', 'redis-cli', 'CONFIG', 'GET', 'maxmemory', 'maxmemory-policy'], 'memory-config').splitlines()
@@ -327,13 +332,22 @@ class Evidence:
         fill = "for i in $(seq 1 160); do answer=$(head -c 1048576 /dev/zero | tr '\\000' x | redis-cli -x SET evidence:pressure:$i); if [ \"$answer\" != 'OK' ]; then printf '%s\\n%s\\n' \"$i\" \"$answer\"; exit 0; fi; done; printf 'NO_OOM\\n'"
         filled = self.dc(['exec', '-T', 'redis', 'sh', '-c', fill], 'memory-fill').splitlines()
         self.check(len(filled) == 2 and filled[0].isdigit() and filled[1].startswith('OOM '), 'bounded isolated direct SET reaches real Redis OOM without eviction')
+        # A rejected 1MiB SET need not deny a tiny Lua write. Tighten ONLY this disposable
+        # probe cap below measured allocation, then restore the Compose 128MiB default by reconstruction.
+        info = self.dc(['exec', '-T', 'redis', 'redis-cli', 'INFO', 'memory'], 'pressure-before-small-write')
+        used = int(next(line.split(':', 1)[1] for line in info.splitlines() if line.startswith('used_memory:')))
+        fault_cap = max(1048576, used - 1048576)
+        self.check(self.dc(['exec', '-T', 'redis', 'redis-cli', 'CONFIG', 'SET', 'maxmemory', str(fault_cap)], 'pressure-temporary-cap').strip() == 'OK', 'temporary isolated probe cap below allocation guarantees small-write OOM')
         # Controlled reconstruction above leaves no creation bucket; this tests its first write under pressure.
         business_before = self.sql('USE short_link; SELECT (SELECT COUNT(*) FROM short_link),(SELECT COUNT(*) FROM short_code_issuance);', 'pressure-business-before').strip()
         status, headers, body = self.http('POST', '/api/links', {'originalUrl': 'https://example.com/pressure-rejected'})
         self.check(status == 503 and body['code'] == 'RATE_LIMIT_UNAVAILABLE', 'real memory-pressure creation fails closed before business')
         self.check(self.sql('USE short_link; SELECT (SELECT COUNT(*) FROM short_link),(SELECT COUNT(*) FROM short_code_issuance);', 'pressure-business-after').strip() == business_before, 'memory-pressure refusal does not issue an ID or create a mapping')
         self.check(self.http('HEAD', '/s/ObsA%04d' % (self.samples + 8))[0] == 302, 'real Redis pressure redirect falls back successfully')
-        self.scenarios['redis-memory-pressure'] = {'fill': filled, 'memory': self.dc(['exec', '-T', 'redis', 'redis-cli', 'INFO', 'memory'], 'redis-pressure-memory')}
+        self.scenarios['redis-memory-pressure'] = {'fill': filled, 'default_maxmemory_bytes': 134217728,
+            'used_memory_before_probe_bytes': used, 'temporary_probe_maxmemory_bytes': fault_cap,
+            'note': 'default large-write OOM followed by explicit temporary cap tightening to deny small writes; no production default adjustment',
+            'memory': self.dc(['exec', '-T', 'redis', 'redis-cli', 'INFO', 'memory'], 'redis-pressure-memory')}
         self.recover('pressure-recovery')
 
     def run(self):
