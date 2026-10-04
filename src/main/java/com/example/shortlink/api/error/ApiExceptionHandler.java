@@ -67,6 +67,14 @@ public class ApiExceptionHandler {
                                 exception.shortCode()));
     }
 
+    @ExceptionHandler(com.example.shortlink.service.error.RedirectLoadBusyException.class)
+    public ResponseEntity<?> handleRedirectBusy(com.example.shortlink.service.error.RedirectLoadBusyException exception,
+            jakarta.servlet.http.HttpServletRequest request) {
+        if ("HEAD".equals(request.getMethod())) return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .cacheControl(CacheControl.noStore()).build();
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "REDIRECT_LOAD_BUSY", exception.getMessage());
+    }
+
     @ExceptionHandler(LinkNotFoundException.class)
     public ResponseEntity<ApiError> handleNotFound(LinkNotFoundException exception) {
         return error(HttpStatus.NOT_FOUND, "LINK_NOT_FOUND", "Short link not found.");

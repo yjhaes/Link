@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @Service
+@org.springframework.boot.context.properties.EnableConfigurationProperties(RedirectLoadProperties.class)
 public class RedirectService {
     private static final Logger LOGGER = LoggerFactory.getLogger(RedirectService.class);
     private final ShortLinkMapper shortLinkMapper;
@@ -32,12 +33,20 @@ public class RedirectService {
     private final ConcurrentHashMap<LoadKey, CompletableFuture<LoadedRedirect>> redirectLoads =
             new ConcurrentHashMap<>();
     private final long loadWaitNanos;
+    private final java.util.concurrent.Semaphore queryPermits;
 
     public RedirectService(
             ShortLinkMapper shortLinkMapper,
             Clock clock,
             RedirectCache redirectCache,
             RedirectCacheProperties properties) {
+        this(shortLinkMapper, clock, redirectCache, properties, new RedirectLoadProperties(4));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RedirectService(ShortLinkMapper shortLinkMapper, Clock clock, RedirectCache redirectCache,
+            RedirectCacheProperties properties, RedirectLoadProperties loadProperties) {
+        this.queryPermits = new java.util.concurrent.Semaphore(loadProperties.maxConcurrent());
         this.shortLinkMapper = shortLinkMapper;
         this.clock = clock;
         this.redirectCache = redirectCache;
@@ -121,7 +130,14 @@ public class RedirectService {
     }
 
     private LoadedRedirect loadRedirect(String code, RedirectCacheRead read) {
-        ShortLinkEntity entity = shortLinkMapper.selectById(code);
+        if (!queryPermits.tryAcquire()) throw new com.example.shortlink.service.error.RedirectLoadBusyException();
+        ShortLinkEntity entity;
+        try {
+            entity = shortLinkMapper.selectById(code);
+        } finally {
+            // Release on the actual query's completion, before cache coordination or shared-result use.
+            queryPermits.release();
+        }
         RedirectCacheRead.Status status;
         RedirectCacheEntry entry = null;
         if (entity == null) {

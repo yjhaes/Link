@@ -19,6 +19,12 @@ class CreateRateLimitConfigurationTest {
             var properties = context.getBean(RateLimitProperties.class);
             assertThat(properties.createCapacity()).isEqualTo(3);
             assertThat(properties.refillMillis()).isEqualTo(6000);
+            assertThat(properties.redirectCapacity()).isEqualTo(60);
+            assertThat(properties.redirectRefillMillis()).isEqualTo(100);
+            assertThat(properties.managementWriteCapacity()).isEqualTo(5);
+            assertThat(properties.managementWriteRefillMillis()).isEqualTo(1000);
+            assertThat(properties.managementQueryCapacity()).isEqualTo(5);
+            assertThat(properties.managementQueryRefillMillis()).isEqualTo(1000);
         });
     }
 
