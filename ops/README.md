@@ -1,5 +1,7 @@
 # Consumer policies and safe logs
 
+新环境运行完整演示使用 [全栈 Compose 入口](../docs/compose.md)：一次秘密初始化后构建启动，自动创建项目账号/vhost并重复应用 policy；默认只发布 localhost 应用、独立Actuator管理端口和 MQ Management，持久卷及受控恢复见该文档。以下手工 policy 入口保留给已有设施维护。
+
 主队列策略同时包含 DLX/key、10000 条 ready 或 16 MiB、24 小时 TTL、reject-publish；所有字段保持在同一最高优先级普通 policy。EXPIRED 是合法消费终局，AUTO 确认且不写 MySQL。
 
 ## 部署和维护
@@ -32,6 +34,8 @@ Policy priority 20 configures the business queue DLX/key, 10000 ready messages o
 
 One synchronous listener delivery makes at most three persistence attempts, with 200 ms and 500 ms pauses. SAVED/DUPLICATE and valid EXPIRED returns allow AUTO ACK; EXPIRED never enters MySQL. Controlled busy/transient/uncertain causes retry; permanent/invalid/unrecognized causes reject immediately. Exhaustion rejects without requeue. The decoded event stays unchanged throughout this round. A process crash or unacked connection loss can start a fresh three-attempt round; x-death counts dead-letter events, not ordinary requeues. There is no automatic DLQ consumer or replay.
 
-The console encoder retains every JDBC/Hikari/AMQP/native Rabbit log event, severity, logger, timestamp and thread, but replaces unsafe dependency messages and exceptions with a fixed database/mq category. This scope includes core Hikari/Spring JDBC logs as well as statistics, because these dependencies share logger names. Safe application categories remain readable. Driver text, connection credentials, payloads and visitor hashes are not printed by these dependency events; troubleshooting uses safe application outcomes and broker/DB metrics. This does not change logger levels or disable logging. Any extra appender introduced later must use the same encoding boundary before emitting dependency data.
+The console encoder emits bounded samples of JDBC/Hikari/AMQP/native Rabbit events, retaining severity, logger, timestamp and thread while replacing unsafe dependency messages and exceptions with a fixed database/mq category. Each category and severity emits at most one sample per 30 seconds; metrics provide cumulative outcomes, so logs are not a complete event history. This scope includes core Hikari/Spring JDBC logs as well as statistics, because these dependencies share logger names. Safe application categories remain readable. Driver text, connection credentials, payloads and visitor hashes are not printed by these dependency events; troubleshooting uses safe application outcomes and broker/DB metrics. Logger levels remain unchanged, while repeated dependency events are suppressed at the output boundary. Additional Redis, HTTP framework and business protection boundaries and their limits are documented in [observability](../docs/observability.md). Any extra appender introduced later must use the same encoding boundary before emitting dependency data.
 
 代码资源所有权见 [实际架构](../docs/architecture.md)：应用 MQ 生命周期由 `stats.messaging.VisitMqRuntime` 集中，发布恢复只重建发布连接，终止由后台 adapter 执行并共用有限等待预算。统计持久化仅确认保存；本轮目录重构没有改动本目录拓扑、policy 或部署参数。
+
+本地独立秘密初始化与默认采集/消费行为见 [本地秘密说明](../docs/local-secrets.md)。初始化只生成配置，不创建数据库或 broker 账号。

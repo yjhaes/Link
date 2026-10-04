@@ -18,6 +18,19 @@ class AsyncVisitRoundtripTest {
  @Autowired MockMvc http; @Autowired JdbcTemplate db;
  @Autowired com.example.shortlink.stats.messaging.AsyncVisitRecorder recorder;
  @org.springframework.test.context.bean.override.mockito.MockitoSpyBean(name="visitRabbitTemplate") org.springframework.amqp.rabbit.core.RabbitTemplate publishing;
+ @Test void createdLinkRedirectsAndBecomesVisibleThroughStatsApi() throws Exception {
+  var response=http.perform(post("/api/links").contentType("application/json")
+    .content("{\"originalUrl\":\"https://example.com/roundtrip\"}"))
+    .andExpect(status().isCreated()).andReturn().getResponse();
+  String code=new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getContentAsString()).get("shortCode").asText();
+  try {
+   http.perform(get("/s/"+code)).andExpect(status().isFound())
+    .andExpect(header().string("Location","https://example.com/roundtrip"));
+   org.awaitility.Awaitility.await().atMost(Duration.ofSeconds(20)).untilAsserted(()->
+    http.perform(get("/api/internal/links/"+code+"/stats").header("X-Internal-Token","0123456789abcdef0123456789abcdef"))
+     .andExpect(status().isOk()).andExpect(jsonPath("$.pv").value(1)).andExpect(jsonPath("$.uv").value(1)));
+  } finally {db.update("DELETE FROM short_link_visit_log WHERE short_code=?",code);db.update("DELETE FROM short_link WHERE short_code=?",code);}
+ }
  @Test void repeatedGetsUseNewEventsAndSameCookieIdentityThroughRealBrokerAndDatabase() throws Exception {
   String code="Q"+java.util.UUID.randomUUID().toString().replace("-", "").substring(0,7);
   db.update("INSERT INTO short_link(short_code,original_url,created_at,enabled) VALUES (?,'https://example.com/',UTC_TIMESTAMP(3),true)",code);

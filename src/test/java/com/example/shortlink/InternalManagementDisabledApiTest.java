@@ -24,6 +24,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebAppConfiguration
 @TestPropertySource(properties = "short-link.base-url=http://localhost")
 class InternalManagementDisabledApiTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.example.shortlink.ratelimit.RateLimiter limiter;
     @Autowired WebApplicationContext context;
     @Autowired ShortLinkMapper mapper;
     @Autowired RedirectCache cache;
@@ -41,7 +43,7 @@ class InternalManagementDisabledApiTest {
                     .andExpect(status().isNotFound()).andExpect(header().string("Cache-Control", "no-store"));
             }
         }
-        verifyNoInteractions(query, mapper, cache, transactions, issuer);
+        verifyNoInteractions(limiter, query, mapper, cache, transactions, issuer);
     }
 
     @Test
@@ -53,6 +55,6 @@ class InternalManagementDisabledApiTest {
                     .andExpect(status().isNotFound())
                     .andExpect(header().string("Cache-Control", "no-store"));
         }
-        verifyNoInteractions(mapper, cache, transactions, issuer);
+        verifyNoInteractions(limiter, mapper, cache, transactions, issuer);
     }
 }

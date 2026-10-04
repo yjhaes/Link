@@ -1,0 +1,86 @@
+{
+  "sourceCommit": "c4b47a3f31710fec5d99ac78ae4586c17e402716",
+  "ciRun": "a3b7acbf7e1e",
+  "environment": {
+    "python": "3.14.0",
+    "platform": "Windows-11-10.0.22621-SP0",
+    "java": "openjdk version \"17.0.17\" 2025-10-21 LTS\nOpenJDK Runtime Environment Corretto-17.0.17.10.1 (build 17.0.17+10-LTS)\nOpenJDK 64-Bit Server VM Corretto-17.0.17.10.1 (build 17.0.17+10-LTS, mixed mode, sharing)",
+    "node": "v24.19.0",
+    "docker": "29.8.1",
+    "compose": "5.5.1",
+    "sourceCommit": "c4b47a3f31710fec5d99ac78ae4586c17e402716",
+    "sourceDirty": false
+  },
+  "githubHostedExecution": false,
+  "java": {
+    "unit": 146,
+    "integrationMain": 149,
+    "consumer": 13,
+    "lifecycle": 9,
+    "total": 317,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "missingClasses": [],
+    "unexpectedClasses": []
+  },
+  "node": {
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "python": {
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "regressionRun": "10be088bdf9a",
+  "compose": {
+    "project": "link-smoke-2f8ecc2ff4da",
+    "checksPassed": 136,
+    "failure": null,
+    "environment": {
+      "python": "3.14.0",
+      "host": "win32",
+      "docker": "29.8.1",
+      "compose": "Docker Compose version v5.5.1",
+      "sourceCommit": "c4b47a3f31710fec5d99ac78ae4586c17e402716",
+      "images": {
+        "app": {
+          "reference": "link-smoke-app-2f8ecc2ff4da:acceptance",
+          "id": "sha256:688347d5a634f10f087714d26dd67b4c1e6ea861756ba50a1b7c388842af4334"
+        },
+        "mysql": {
+          "reference": "mysql:8.4.4@sha256:23818b7d7de427096ab1427b2e3d9d5e14a5b933f9a4431a482d6414bc879091",
+          "id": "sha256:23818b7d7de427096ab1427b2e3d9d5e14a5b933f9a4431a482d6414bc879091"
+        },
+        "rabbitmq": {
+          "reference": "rabbitmq:3.13.7-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69",
+          "id": "sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69"
+        },
+        "redis": {
+          "reference": "redis:7.4.2-alpine@sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952",
+          "id": "sha256:02419de7eddf55aa5bcf49efb74e88fa8d931b4d77c07eff8a6b2144472b6952"
+        }
+      },
+      "app": "Picked up JAVA_TOOL_OPTIONS: -Xmx384m\nopenjdk version \"17.0.14\" 2025-01-21\nOpenJDK Runtime Environment Temurin-17.0.14+7 (build 17.0.14+7)\nOpenJDK 64-Bit Server VM Temurin-17.0.14+7 (build 17.0.14+7, mixed mode, sharing)",
+      "mysql": "mysql  Ver 8.4.4 for Linux on x86_64 (MySQL Community Server - GPL)",
+      "redis": "Redis server v=7.4.2 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=9d14eaf5f599583e",
+      "rabbitmq": "3.13.7"
+    }
+  },
+  "artifact": {
+    "files": 81,
+    "forbiddenFiles": []
+  },
+  "cleanup": {
+    "containers": 0,
+    "volumes": 0,
+    "networks": 0,
+    "secretFileRemoved": true,
+    "isolatedImageTagRemoved": true
+  },
+  "performanceGate": false
+}

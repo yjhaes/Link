@@ -93,11 +93,9 @@ VALUES (?,?,?,?,?,?,?,?,?)
             SQLException sqlFailure = sqlCause(failure);
             if (phase == Phase.CLEANUP) {
                 observations.category(VisitWriteObservations.Category.CLEANUP);
-                LOG.warn(
-                        "Visit write confirmed, cleanup failed: event={}, category=CLEANUP,"
-                                + " phase={}",
-                        event.eventId(),
-                        phase);
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LOG,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.STAT_CLEANUP,
+                        VisitWriteObservations.Category.CLEANUP, phase);
             } else if (phase == Phase.EXECUTE && sqlFailure != null && eventDuplicate(sqlFailure)) {
                 observations.outcome(VisitWriteObservations.Outcome.DUPLICATE);
                 result = Outcome.DUPLICATE;
@@ -116,11 +114,8 @@ VALUES (?,?,?,?,?,?,?,?,?)
                                 ? VisitWriteObservations.Outcome.UNCERTAIN
                                 : VisitWriteObservations.Outcome.FAILED);
                 observations.category(category);
-                LOG.warn(
-                        "Visit write unconfirmed: event={}, category={}, phase={}",
-                        event.eventId(),
-                        category,
-                        phase);
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LOG,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.STAT_WRITE, category, phase);
                 var kind =
                         phase == Phase.EXECUTE && !rejected
                                 ? VisitPersistenceException.Failure.UNCERTAIN

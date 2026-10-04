@@ -153,3 +153,31 @@
 - [Redis 限流算法比较](https://redis.io/tutorials/howtos/ratelimiting/)
 - [Compose 启动与健康检查](https://docs.docker.com/compose/how-tos/startup-order/)
 - [Spring Boot Actuator](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html)
+
+## 01～03 实施与验收
+
+- 2026-10-04：用户调用 implement-spec，仅授权 01、02、03，后续任务等待用户再次授权。实现使用当前模型，Standards Review 与 Spec Review 均明确使用 GPT-6.1 Sol / high。
+- 三项已在 `codex/final-hardening-01-03` 实现并 resolved。完整集成回归 282 项 Java 与 1 项页面测试通过；审查发现全部修复后，独立 30 项 Java 及页面测试通过，两轴剩余发现为 0。完整回归与修复后针对性验收的版本边界见 [集成验证记录](01-03-verification.md)。
+- 配置、隔离测试入口与匿名创建限流已落地；本文前面的“尚未实现/本轮未运行”描述属于设计发布时历史。04～12 未开始，跳转/管理限流、回源保护及全栈工程化仍待后续。
+
+## 04～08 实施（进行中）
+
+- 2026-10-04：用户追加授权执行 04、05、06、07、08。集成分支为 codex/final-hardening-04-08；实现使用当前模型，最终 Standards Review 和 Spec Review 继续使用 GPT-6.1 Sol / high。
+- 04、05、06 已独立验收并合并；07 正在实施，08 等待健康管理出口。09～12 未获本轮执行授权。最终集成回归及双轴审查结果将在完成后追加。
+
+## 04～08 完成
+
+- 用户授权的04～08均已实现、独立验收并合入codex/final-hardening-04-08。最终源码全量Java314+Node2与100项Compose断言通过。
+- Standards Review和Spec Review均明确GPT-6.1 Sol/high；各发现1项，统一提交25541f0修复，修后9项重点验收通过，两轴focused复核剩余0。
+- 全量与审查修复后补验的版本边界见 [04～08集成证据](04-08-verification.md)，未将旧测试结果冒称当前版本重新执行。09～12未开始，父规格未整体resolved。
+
+## 09～12 实施（进行中）
+
+- 2026-10-04：用户继续授权09、10、11、12。集成分支codex/final-hardening-09-12，审查基点58250091239f1088b87c4782e2ed719d681bcf09。09与11前置均已resolved，独立工作树并行实施；10等待09，12等待10/11。
+- 实现继续使用当前模型；最终Standards Review与Spec Review仍显式GPT-6.1 Sol/high。真实测量、完整验证与最终展示文档只在取得本轮证据后声明完成。
+
+## 全部实施完成
+
+- 2026-10-04：09～12全部resolved并合入codex/final-hardening-09-12。完整CI等价实跑317 Java/2 Node/4 Python及136Compose全部通过；正式有限观察47断言通过；README冷启动演示26检查和53本地链接通过。
+- 最终Standards Review与Spec Review均明确GPT-6.1 Sol/high，针对5825009至3d768cd各0项发现。最终仅关闭父规格/索引并补准确文档名，不改变已测生产或测试语义。
+- 01～12和父规格已resolved，正式版本边界及限制见 [验证总入口](../../docs/verification.md)与 [09～12记录](09-12-verification.md)。托管GitHub未运行、原生Linux全量未跑，未发布公网；不夸大性能或best-effort统计。

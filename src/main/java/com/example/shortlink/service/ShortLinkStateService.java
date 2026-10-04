@@ -92,10 +92,8 @@ public class ShortLinkStateService {
                 if (attempt == MAX_COORDINATION_ATTEMPTS) {
                     throw unconfirmed(shortCode, failure);
                 }
-                LOGGER.warn(
-                        "Cache coordination attempt {} failed for short code {}; retrying.",
-                        attempt,
-                        shortCode);
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.STATE_RETRY);
                 try {
                     retryWait.pause(RETRY_DELAY_MILLIS * attempt);
                 } catch (InterruptedException interrupted) {
@@ -108,10 +106,8 @@ public class ShortLinkStateService {
 
     private StateCacheCoordinationException unconfirmed(String shortCode, Throwable cause) {
         LOGGER.error(
-                "Database state update committed for short code {}; cache coordination unconfirmed."
-                        + " Recover coordination using this short code.",
-                shortCode,
-                cause);
+                "Coordination unconfirmed: operation=management_write category=committed-cache-unconfirmed shortCode={}",
+                shortCode);
         return new StateCacheCoordinationException(shortCode, cause);
     }
 

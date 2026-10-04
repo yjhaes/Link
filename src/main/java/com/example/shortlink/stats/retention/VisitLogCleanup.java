@@ -115,7 +115,8 @@ public class VisitLogCleanup {
             catchUp = true;
             publish(Outcome.FAILED, deleted);
             // Driver text can contain connection details; expose only a controlled category.
-            LOG.warn("Visit log cleanup failed; deferred to the next maintenance round");
+            com.example.shortlink.logging.SafeOperationalLog.sampled(LOG,
+                    com.example.shortlink.logging.SafeOperationalLog.Category.CLEANUP);
         } finally {
             capacity.release();
         }

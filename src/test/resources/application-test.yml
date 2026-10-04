@@ -1,12 +1,27 @@
 spring:
   datasource:
-    url: ${MYSQL_TEST_URL:jdbc:mysql://127.0.0.1:3306/short_link_test?serverTimezone=UTC}
-    username: ${MYSQL_TEST_USERNAME:root}
-    password: ${MYSQL_TEST_PASSWORD:123456}
-
+    url: ${MYSQL_TEST_URL:jdbc:mysql://127.0.0.1:1/short_link_test?serverTimezone=UTC}
+    username: ${MYSQL_TEST_USERNAME:linktest}
+    password: ${MYSQL_TEST_PASSWORD:test-only-not-a-production-secret}
 short-link:
+  internal-token: 0123456789abcdef0123456789abcdef
   stats:
+    enabled: false
+    visitor-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    visitor-key-version: 1
     rabbit:
       consumer-enabled: false
-      port: ${RABBIT_TEST_PORT:5672}
+      port: ${RABBIT_TEST_PORT:1}
+      virtual-host: ${SHORT_LINK_STATS_RABBIT_VIRTUAL_HOST:/}
+      username: ${RABBITMQ_USERNAME:linktest}
+      password: ${RABBITMQ_PASSWORD:test-only-not-a-production-secret}
+  rate-limit:
+    create-capacity: 1000000
+    create-refill-interval: 1ms
+    redirect-capacity: 1000000
+    redirect-refill-interval: 1ms
+    management-write-capacity: 1000000
+    management-write-refill-interval: 1ms
+    management-query-capacity: 1000000
+    management-query-refill-interval: 1ms
   base-url: http://short.local

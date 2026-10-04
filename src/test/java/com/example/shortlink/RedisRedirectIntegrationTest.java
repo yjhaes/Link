@@ -114,6 +114,10 @@ class RedisRedirectIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    // Cache fault tests deliberately allow admission, so they still reach committed coordination.
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private com.example.shortlink.ratelimit.RateLimiter rateLimiter;
+
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -156,6 +160,14 @@ class RedisRedirectIntegrationTest {
 
     @BeforeEach
     void clearTestData() {
+        org.mockito.Mockito.when(rateLimiter.admitCreate(anyString()))
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
+        org.mockito.Mockito.when(rateLimiter.admitRedirect(anyString()))
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
+        org.mockito.Mockito.when(rateLimiter.admitManagementWrite())
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
+        org.mockito.Mockito.when(rateLimiter.admitManagementQuery())
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
         jdbcTemplate.update("DELETE FROM short_link");
         jdbcTemplate.update("DELETE FROM short_code_issuance");
         redisTemplate.execute((RedisCallback<Void>) connection -> {

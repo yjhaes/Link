@@ -187,6 +187,15 @@ class InternalManagementApiTest {
     @Import({ShortLinkCreationService.class, ShortLinkStateService.class, RedirectService.class,
             MySqlShortLinkWriter.class, PermutedShortCodeEncoder.class, FutureManagementController.class})
     static class WebConfiguration {
+        // These tests isolate existing auth/business behavior from the Redis admission boundary.
+        @Bean com.example.shortlink.ratelimit.RateLimiter rateLimiter() {
+            return new com.example.shortlink.ratelimit.RateLimiter() {
+                public Decision admitCreate(String peer) { return Decision.allowed(); }
+                public Decision admitRedirect(String peer) { return Decision.allowed(); }
+                public Decision admitManagementWrite() { return Decision.allowed(); }
+                public Decision admitManagementQuery() { return Decision.allowed(); }
+            };
+        }
         @Bean com.example.shortlink.stats.query.MySqlVisitStatsQuery visitStatsQuery() {
             return mock(com.example.shortlink.stats.query.MySqlVisitStatsQuery.class);
         }

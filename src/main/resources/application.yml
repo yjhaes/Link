@@ -1,12 +1,18 @@
 spring:
+  servlet:
+    multipart:
+      enabled: false
   lifecycle:
     timeout-per-shutdown-phase: 2s
   application:
     name: short-link
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/short_link?serverTimezone=UTC}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:123456}
+    username: ${DB_USERNAME:short_link}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: ${CORE_DB_MAX_POOL_SIZE:8}
+      connection-timeout: ${CORE_DB_CONNECTION_TIMEOUT_MS:500}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -22,18 +28,29 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 short-link:
+  redirect-load:
+    max-concurrent: ${SHORT_LINK_REDIRECT_MAX_CONCURRENT:4}
+  rate-limit:
+    create-capacity: ${SHORT_LINK_CREATE_RATE_CAPACITY:3}
+    create-refill-interval: ${SHORT_LINK_CREATE_RATE_REFILL_INTERVAL:6s}
+    redirect-capacity: ${SHORT_LINK_REDIRECT_RATE_CAPACITY:60}
+    redirect-refill-interval: ${SHORT_LINK_REDIRECT_RATE_REFILL_INTERVAL:100ms}
+    management-write-capacity: ${SHORT_LINK_MANAGEMENT_WRITE_RATE_CAPACITY:5}
+    management-write-refill-interval: ${SHORT_LINK_MANAGEMENT_WRITE_RATE_REFILL_INTERVAL:1s}
+    management-query-capacity: ${SHORT_LINK_MANAGEMENT_QUERY_RATE_CAPACITY:5}
+    management-query-refill-interval: ${SHORT_LINK_MANAGEMENT_QUERY_RATE_REFILL_INTERVAL:1s}
   stats:
-    enabled: ${SHORT_LINK_STATS_ENABLED:true}
+    enabled: ${SHORT_LINK_STATS_ENABLED:false}
     rabbit:
       consumer-enabled: ${SHORT_LINK_STATS_CONSUMER_ENABLED:true}
       host: ${RABBITMQ_HOST:localhost}
       port: ${RABBITMQ_PORT:5672}
-      username: ${RABBITMQ_USERNAME:guest}
-      password: ${RABBITMQ_PASSWORD:guest}
-      virtual-host: ${RABBITMQ_VIRTUAL_HOST:/}
-    visitor-key: ${SHORT_LINK_VISITOR_HMAC_KEY:kPUaP271mwyCNIxFd210L1ZTWvFu9ZIemflWX73qiAE=}
+      username: ${RABBITMQ_USERNAME:short_link}
+      password: ${RABBITMQ_PASSWORD:}
+      virtual-host: ${RABBITMQ_VIRTUAL_HOST:short_link}
+    visitor-key: ${SHORT_LINK_VISITOR_HMAC_KEY:}
     visitor-key-version: ${SHORT_LINK_VISITOR_KEY_VERSION:1}
-  internal-token: ${SHORT_LINK_INTERNAL_TOKEN:kPUaP271mwyCNIxFd210L1ZTWvFu9ZIemflWX73qiAE=}
+  internal-token: ${SHORT_LINK_INTERNAL_TOKEN:}
   base-url: ${SHORT_LINK_BASE_URL:http://localhost:8080}
   redirect-cache:
     enabled: ${SHORT_LINK_REDIRECT_CACHE_ENABLED:true}
@@ -42,3 +59,68 @@ short-link:
     expired-ttl: ${SHORT_LINK_EXPIRED_CACHE_TTL:5m}
     disabled-ttl: ${SHORT_LINK_DISABLED_CACHE_TTL:15s}
     load-wait: ${SHORT_LINK_REDIRECT_LOAD_WAIT:200ms}
+
+# Local operational boundary; Compose overrides only the container bind address.
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+  endpoints:
+    access:
+      default: none
+      max-permitted: read-only
+    web:
+      exposure:
+        include: health,info,metrics
+      discovery:
+        enabled: false
+    jmx:
+      exposure:
+        exclude: "*"
+  endpoint:
+    info:
+      access: read-only
+    metrics:
+      access: read-only
+    health:
+      access: read-only
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+          show-details: never
+          show-components: never
+          additional-path: server:/livez
+        readiness:
+          include: readinessState,coreDatabase
+          show-details: never
+          show-components: never
+          additional-path: server:/readyz
+        dependencies:
+          include: redisDependency,mqDependency,statisticsDatabase,statistics
+  health:
+    defaults:
+      enabled: false
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  info:
+    defaults:
+      enabled: false
+    build:
+      enabled: true
+
+# Business documentation stays on the application port and never includes Actuator.
+springdoc:
+  packages-to-scan: com.example.shortlink.api
+  paths-to-match: /api/links/**,/api/internal/links/**,/s/**
+  show-actuator: false
+  use-management-port: false
+  override-with-generic-response: false
+  swagger-ui:
+    persist-authorization: false
+    disable-swagger-default-url: true

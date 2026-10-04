@@ -17,9 +17,10 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 class VisitPublisherBrokerTest {
+ static void configureCredentials(CachingConnectionFactory factory) {factory.setUsername(System.getenv().getOrDefault("RABBITMQ_USERNAME","linktest"));factory.setPassword(System.getenv().getOrDefault("RABBITMQ_PASSWORD","test-only-not-a-production-secret"));}
  @Test void realBrokerDistinguishesRoutedReturnAndMissingExchangeThenAcceptsNewEvent() {
   var factory=new CachingConnectionFactory("127.0.0.1",Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")));
-  factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);factory.setPublisherReturns(true);
+  configureCredentials(factory); factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);factory.setPublisherReturns(true);
   factory.setChannelCacheSize(16);factory.setChannelCheckoutTimeout(200);factory.setCloseTimeout(500);
   var template=new RabbitTemplate(factory);template.setMandatory(true);
   var admin=new RabbitAdmin(factory);String queue="visit-test-03-"+java.util.UUID.randomUUID();
@@ -45,9 +46,9 @@ class VisitPublisherBrokerTest {
  }
  @Test void realTcpBlackoutExpiresConfirmAndRecoveryAcceptsOnlyNewEvents() throws Exception {
   try(var proxy=new TcpBlackout(Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")))) {
-   var factory=new CachingConnectionFactory("127.0.0.1",proxy.port());factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);factory.setPublisherReturns(true);factory.setCloseTimeout(500);
+   var factory=new CachingConnectionFactory("127.0.0.1",proxy.port());configureCredentials(factory);factory.setPublisherConfirmType(CachingConnectionFactory.ConfirmType.CORRELATED);factory.setPublisherReturns(true);factory.setCloseTimeout(500);
    var template=new RabbitTemplate(factory);template.setMandatory(true);var admin=new RabbitAdmin(factory);
-   var consumerFactory=new CachingConnectionFactory("127.0.0.1",Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")));var consumerConnection=consumerFactory.createConnection();
+   var consumerFactory=new CachingConnectionFactory("127.0.0.1",Integer.parseInt(System.getenv().getOrDefault("RABBIT_TEST_PORT","15672")));configureCredentials(consumerFactory);var consumerConnection=consumerFactory.createConnection();
    String queue="visit-tcp-03-"+java.util.UUID.randomUUID();
    var recorder=new AsyncVisitRecorder(new VisitRabbitProperties(null,null,null,null,null,null,null,null,null,null,null,null,false),template,new VisitMessageCodec(),factory);
    try {

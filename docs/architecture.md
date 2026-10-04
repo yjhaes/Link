@@ -134,3 +134,48 @@ JdbcTemplate、事务和 Hikari 绑定；真实设施测试继续验证 Mapper/�
 已核对所有生产引用和受信任维护说明：`deleteIfVersion` 没有调用或独立维护用途，已删除 interface 操作、Lua 和对应测试桩。维护完成仍通过 `ShortLinkCreationService.recoverCacheCoordination` 轮换版本，而不是手工删除。坏值按原值条件删除的 Redis 私有操作继续保留，用于避免删除并发写入的新值。
 
 这两个用例集中各自的复杂规则；删除创建用例会把验证、重试和完成状态散回 HTTP，删除跳转用例会把并发与版本规则散回调用方。持久化保存 adapter 集中数据库特有分类，缓存 adapter 保留协议深度；已有发号、缓存和 Clock seam 继续支持测试与复用。
+
+
+## 最终工程职责与关键时序
+
+`ratelimit`封装四请求组共享的Redis Lua令牌桶；`api`拦截器在发号/业务前执行，管理鉴权更早。`RedirectService`实际SQL由每实例并发许可保护，缓存命中与共享等待不占许可。`observability`提供安全健康、固定类别指标与请求上下文；`logging`约束控制台业务/Redis/JDBC/AMQP/HTTP框架危险日志。业务OpenAPI由`api.docs.BusinessOpenApiConfiguration`装配，不包含管理端口Actuator。完整运行边界见[首页架构图](../README.md)、[API](api.md)、[健康](health.md)和[观测清单](observability.md)。
+
+```mermaid
+sequenceDiagram
+    participant A as 请求A
+    participant B as 请求B
+    participant R as 同一Redis主实例
+    A->>R: EVALSHA(请求组桶)
+    Note over R: 一个Lua执行内读取TIME、补充、判断、扣减、设置TTL
+    R-->>A: 最后一个令牌获准
+    B->>R: 同桶EVALSHA
+    R-->>B: 无令牌，等待预算
+    B-->>B: HTTP429 + Retry-After + no-store
+    Note over A,R: 命令响应丢失不盲重扣；按请求组故障策略处理
+```
+
+Lua原子性只覆盖Redis桶操作；不覆盖MySQL事务，后续业务失败不退令牌，Redis重建额度可重置。桶按连接对端或固定管理分组，不按短码/令牌身份。
+
+```mermaid
+sequenceDiagram
+    participant C as 创建或状态维护请求
+    participant S as 同一应用服务
+    participant D as MySQL权威
+    participant R as Redis版本缓存
+    C->>S: 已获限流许可的业务请求
+    S->>D: 创建映射 / 行锁更新状态
+    D-->>S: COMMIT已确认
+    S->>R: 轮换版本并清除旧结果
+    alt Redis响应确认
+      R-->>S: 已确认
+      S-->>C: 创建201 / 状态200
+    else 异常或响应超时
+      S-->>C: 专用503 + shortCode + no-store
+      Note over D,R: DB已提交；Redis可能执行过，但不能宣称协调完成
+      C->>S: 受信任应用上下文按同短码恢复协调
+      S->>D: 确认映射存在
+      S->>R: 仅轮换版本，不再次创建或回写旧状态
+    end
+```
+
+状态维护的请求内协调最多三次；创建不通过重POST恢复。普通数据库失败/提交未确认不能宣称已保存；业务前`RATE_LIMIT_UNAVAILABLE`和`REDIRECT_LOAD_BUSY`不属于上述已提交503。[完整恢复规则](redis-recovery.md)仍适用。
