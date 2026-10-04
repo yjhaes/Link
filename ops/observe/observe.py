@@ -321,9 +321,11 @@ class Evidence:
     def memory_pressure(self):
         config = self.dc(['exec', '-T', 'redis', 'redis-cli', 'CONFIG', 'GET', 'maxmemory', 'maxmemory-policy'], 'memory-config').splitlines()
         self.check(dict(zip(config[::2], config[1::2])) == {'maxmemory': '134217728', 'maxmemory-policy': 'noeviction'}, 'real Redis pressure uses unchanged 128MiB noeviction starting point')
-        script = "local value=string.rep('x',1048576); local n=0; for i=1,160 do local r=redis.pcall('SET','evidence:pressure:'..i,value); if type(r)=='table' and r.err then return {n,r.err} end; n=n+1 end; return {n,'NO_OOM'}"
-        filled = self.dc(['exec', '-T', 'redis', 'redis-cli', 'EVAL', script, '0'], 'memory-fill').splitlines()
-        self.check(len(filled) == 2 and 'OOM' in filled[1], 'bounded isolated-key allocation reaches real Redis OOM without eviction')
+        # Each SET is a separate protocol command: Lua can exceed maxmemory within a script.
+        # Stop at the first real denial; no writes are replayed and no versions/buckets are deleted.
+        fill = "for i in $(seq 1 160); do answer=$(head -c 1048576 /dev/zero | tr '\\000' x | redis-cli -x SET evidence:pressure:$i); if [ \"$answer\" != 'OK' ]; then printf '%s\\n%s\\n' \"$i\" \"$answer\"; exit 0; fi; done; printf 'NO_OOM\\n'"
+        filled = self.dc(['exec', '-T', 'redis', 'sh', '-c', fill], 'memory-fill').splitlines()
+        self.check(len(filled) == 2 and filled[0].isdigit() and filled[1].startswith('OOM '), 'bounded isolated direct SET reaches real Redis OOM without eviction')
         # Controlled reconstruction above leaves no creation bucket; this tests its first write under pressure.
         business_before = self.sql('USE short_link; SELECT (SELECT COUNT(*) FROM short_link),(SELECT COUNT(*) FROM short_code_issuance);', 'pressure-business-before').strip()
         status, headers, body = self.http('POST', '/api/links', {'originalUrl': 'https://example.com/pressure-rejected'})
