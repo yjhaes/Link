@@ -11,7 +11,7 @@ Actuator 使用当前 Spring Boot 3.5.16 的 starter，没有升级技术栈或�
 | `/actuator/health/dependencies` | 404 | 固定类别详情 | Redis、MQ被动连接观察、独立统计池、统计意图/实际 |
 | `/actuator/health` | 404 | 安全固定状态详情 | 聚合所有组成员，可能因可选依赖DOWN而503 |
 | `/actuator/info` | 404 | 安全构建信息 | 仅artifact/group/name/version，无环境、git、主机/系统、启动时间或秘密 |
-| `/actuator/metrics`及单项 | 404 | 基础度量 | 既有HTTP次数/耗时与独立池，业务自定义观察由08补全 |
+| `/actuator/metrics`及单项 | 404 | 基础度量 | 既有HTTP次数/耗时与独立池，业务自定义观察已实现，见观测清单 |
 
 所有健康异常仅返回`unavailable`等固定类别；不加入Throwable、异常类/消息、SQL、连接地址、账号/秘密或访客数据。DB自动聚合健康、默认Redis/Rabbit/disk等指示器全部关闭，以免将统计池错误纳入核心或泄露默认详情。显式限定核心`dataSource`、统计`statsDataSource`是装配选择，健康响应不展示这些bean名/数据库元数据。
 
