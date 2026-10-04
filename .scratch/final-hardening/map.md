@@ -170,3 +170,8 @@
 - 用户授权的04～08均已实现、独立验收并合入codex/final-hardening-04-08。最终源码全量Java314+Node2与100项Compose断言通过。
 - Standards Review和Spec Review均明确GPT-6.1 Sol/high；各发现1项，统一提交25541f0修复，修后9项重点验收通过，两轴focused复核剩余0。
 - 全量与审查修复后补验的版本边界见 [04～08集成证据](04-08-verification.md)，未将旧测试结果冒称当前版本重新执行。09～12未开始，父规格未整体resolved。
+
+## 09～12 实施（进行中）
+
+- 2026-10-04：用户继续授权09、10、11、12。集成分支codex/final-hardening-09-12，审查基点58250091239f1088b87c4782e2ed719d681bcf09。09与11前置均已resolved，独立工作树并行实施；10等待09，12等待10/11。
+- 实现继续使用当前模型；最终Standards Review与Spec Review仍显式GPT-6.1 Sol/high。真实测量、完整验证与最终展示文档只在取得本轮证据后声明完成。
