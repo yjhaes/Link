@@ -25,7 +25,7 @@ def summarize(samples, seconds):
         distribution[status] = {
             'samples': len(times), 'min': times[0], 'p50': times[math.ceil(len(times) * .50) - 1],
             'p95': times[math.ceil(len(times) * .95) - 1], 'max': times[-1]}
-    return {'statuses': dict(statuses), 'elapsed_seconds': seconds,
+    return {'statuses': {key: statuses[key] for key in sorted(set(statuses) | {'302', '429', '503'})}, 'elapsed_seconds': seconds,
             'successful_redirects_per_second': statuses['302'] / seconds,
             'latency_ms_by_status': distribution}
 
@@ -129,7 +129,7 @@ class Evidence:
         self.admin = {'X-Internal-Token': values['SHORT_LINK_INTERNAL_TOKEN']}
         self.check(len(set(self.secrets)) == 5, 'five independently generated disposable secrets')
         override = self.report / 'ports.yml'
-        override.write_text('services:\n  app:\n    ports: !override ["127.0.0.1::8080", "127.0.0.1::8081"]\n  rabbitmq:\n    ports: !override ["127.0.0.1::15672"]\n', encoding='utf-8')
+        override.write_text('services:\n  app:\n    image: short-link-evidence:' + self.run_id + '\n    ports: !override ["127.0.0.1::8080", "127.0.0.1::8081"]\n  rabbitmq:\n    ports: !override ["127.0.0.1::15672"]\n', encoding='utf-8')
         self.compose = ['docker', 'compose', '--project-name', self.project, '--env-file', str(self.secret_file), '-f', str(ROOT / 'compose.yml'), '-f', str(override)]
         self.source = self.command(['git', 'rev-parse', 'HEAD'], 'source-version').strip()
         self.source_dirty = bool(self.command(['git', 'status', '--porcelain'], 'source-status').strip())
@@ -193,9 +193,24 @@ class Evidence:
             while not stop.is_set():
                 max_inflight = max(max_inflight, self.metric('shortlink.redirect.load.inflight'))
                 max_core = max(max_core, self.metric('jdbc.connections.active', name='dataSource'))
-                max_stats = max(max_stats, self.metric('jdbc.connections.active', name='stats'))
+                max_stats = max(max_stats, self.metric('hikaricp.connections.active', pool='visit-statistics'))
                 stop.wait(.10)
-        worker = threading.Thread(target=sample)
+        resources_during = []
+        sample_errors = []
+        def sample_resource():
+            if not stop.wait((self.samples - 1) / self.rate / 2):
+                try:
+                    resources_during.extend(self.resources(name + '-resources-during'))
+                except Exception as error:
+                    sample_errors.append(error)
+        resource_worker = threading.Thread(target=sample_resource)
+        resource_worker.start()
+        def checked_sample():
+            try:
+                sample()
+            except Exception as error:
+                sample_errors.append(error)
+        worker = threading.Thread(target=checked_sample)
         worker.start()
         start = time.monotonic()
         def request(path):
@@ -215,12 +230,15 @@ class Evidence:
         finally:
             stop.set()
             worker.join(timeout=20)
+            resource_worker.join(timeout=30)
+        if sample_errors:
+            raise RuntimeError('Metric sampler failed: ' + type(sample_errors[0]).__name__)
         result = summarize(samples, elapsed)
         result.update({'mapping_select_executions': self.query_count(name + '-query-after') - count_before,
                        'sampled_actual_load_inflight_max': max_inflight,
                        'sampled_core_pool_active_max': max_core,
                        'sampled_statistics_pool_active_max': max_stats,
-                       'resources_before': resources_before, 'resources_after': self.resources(name + '-resources-after')})
+                       'resources_before': resources_before, 'resources_during': resources_during, 'resources_after': self.resources(name + '-resources-after')})
         self.scenarios[name] = result
         self.check(sum(result['statuses'].values()) == self.samples and set(result['statuses']) <= {'302', '429', '503'}, name + ' all HTTP samples separately classified')
         self.check(result['statuses'].get('302', 0) > 0, name + ' contains successful business redirects')
@@ -231,6 +249,21 @@ class Evidence:
         (self.report / (name + '-samples.json')).write_text(json.dumps(samples), encoding='utf-8')
         print(name + ': ' + json.dumps({k:v for k,v in result.items() if not k.startswith('resources')}), flush=True)
 
+    def burst(self):
+        began = time.monotonic()
+        def request(_):
+            start = time.monotonic()
+            status, headers, _ = self.http('HEAD', '/s/ObsA0000')
+            if status == 429 and not (headers.get('cache-control') == 'no-store' and int(headers.get('retry-after', '0')) >= 1 and 'set-cookie' not in headers):
+                raise RuntimeError('HEAD rejection contract failed')
+            return status, (time.monotonic() - start) * 1000
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            samples = list(pool.map(request, range(120)))
+        result = summarize(samples, time.monotonic() - began)
+        result.update({'concurrency_max': 16, 'scheduled_requests_per_second': None, 'note': 'unpaced finite cached HEAD burst; rejected responses are not business throughput'})
+        self.scenarios['healthy-cached-burst'] = result
+        self.check(result['statuses']['302'] > 0 and result['statuses']['429'] > 0 and result['statuses']['503'] == 0, 'finite default-bucket burst separates successful 302 from fast 429')
+        time.sleep(6)  # At most 60 depleted tokens refill at ten/second before the next profile.
     def max4(self):
         # Real MySQL table lock freezes four actual SELECTs; no production instrumentation or sleeps added.
         lock = subprocess.Popen(self.compose + ['exec', '-T', 'mysql', 'sh', '-c',
@@ -251,13 +284,20 @@ class Evidence:
                 self.until(lambda: self.metric('shortlink.redirect.load.inflight') == 4, 'four actual active mapping loads', timeout=10)
                 waiting = int(self.sql("SELECT COUNT(*) FROM performance_schema.threads WHERE PROCESSLIST_DB='short_link' AND PROCESSLIST_INFO LIKE 'SELECT%FROM short_link%WHERE short_code%' AND PROCESSLIST_STATE='Waiting for table metadata lock';", 'max4-actual-waiting').strip())
                 self.check(waiting == 4, 'real MySQL independently shows four blocked mapping SELECTs')
+                rejection_started = time.monotonic()
                 status, headers, body = self.http('GET', '/s/ObsA%04d' % (self.samples + 5))
+                rejection_ms = (time.monotonic() - rejection_started) * 1000
                 self.check(status == 503 and body['code'] == 'REDIRECT_LOAD_BUSY' and 'set-cookie' not in headers, 'fifth HTTP load immediately rejects 503 without event cookie')
                 self.check(self.metric('shortlink.redirect.load.inflight') == 4, 'fifth rejection does not admit a fifth actual query')
                 lock.stdin.write('UNLOCK TABLES;\nquit\n')
                 lock.stdin.flush()
                 self.check([job.result(timeout=15) for job in jobs] == [302] * 4, 'all four blocked loads finish after releasing database lock')
-            self.check(self.query_count('max4-query-after') - before == 4, 'four admitted SELECT executions and no rejected fifth query')
+            actual_queries = self.query_count('max4-query-after') - before
+            self.scenarios['blocked-database-max4'] = {'statuses': {'302': 4, '429': 0, '503': 1},
+                'mapping_select_executions': actual_queries, 'independent_mysql_blocked_queries': waiting,
+                'actual_load_inflight_observed': 4, 'fifth_rejection_latency_ms': rejection_ms,
+                'note': 'fifth HTTP includes Redis failure waits before immediate no-queue load rejection'}
+            self.check(actual_queries == 4, 'four admitted SELECT executions and no rejected fifth query')
             self.check(self.metric('shortlink.redirect.load.inflight') == 0 and self.http('HEAD', '/s/ObsA%04d' % (self.samples + 5))[0] == 302, 'real queries release all permits and next request succeeds')
         finally:
             if lock.poll() is None:
@@ -284,14 +324,11 @@ class Evidence:
         script = "local value=string.rep('x',1048576); local n=0; for i=1,160 do local r=redis.pcall('SET','evidence:pressure:'..i,value); if type(r)=='table' and r.err then return {n,r.err} end; n=n+1 end; return {n,'NO_OOM'}"
         filled = self.dc(['exec', '-T', 'redis', 'redis-cli', 'EVAL', script, '0'], 'memory-fill').splitlines()
         self.check(len(filled) == 2 and 'OOM' in filled[1], 'bounded isolated-key allocation reaches real Redis OOM without eviction')
-        # Existing Lua buckets can remain writable; prove fail-close with newly initializing fixed bucket.
-        # Delete only rate bucket for this controlled pressure probe, never cache version state.
-        keys = self.dc(['exec', '-T', 'redis', 'redis-cli', '--scan', '--pattern', 'shortlink:rate-limit:v1:*'], 'rate-keys').splitlines()
-        # Namespace is verified against source, not guessed; no personal Redis is connected.
-        if keys:
-            self.dc(['exec', '-T', 'redis', 'redis-cli', 'DEL'] + keys, 'memory-remove-isolated-rate-state')
+        # Controlled reconstruction above leaves no creation bucket; this tests its first write under pressure.
+        business_before = self.sql('USE short_link; SELECT (SELECT COUNT(*) FROM short_link),(SELECT COUNT(*) FROM short_code_issuance);', 'pressure-business-before').strip()
         status, headers, body = self.http('POST', '/api/links', {'originalUrl': 'https://example.com/pressure-rejected'})
         self.check(status == 503 and body['code'] == 'RATE_LIMIT_UNAVAILABLE', 'real memory-pressure creation fails closed before business')
+        self.check(self.sql('USE short_link; SELECT (SELECT COUNT(*) FROM short_link),(SELECT COUNT(*) FROM short_code_issuance);', 'pressure-business-after').strip() == business_before, 'memory-pressure refusal does not issue an ID or create a mapping')
         self.check(self.http('HEAD', '/s/ObsA%04d' % (self.samples + 8))[0] == 302, 'real Redis pressure redirect falls back successfully')
         self.scenarios['redis-memory-pressure'] = {'fill': filled, 'memory': self.dc(['exec', '-T', 'redis', 'redis-cli', 'INFO', 'memory'], 'redis-pressure-memory')}
         self.recover('pressure-recovery')
@@ -303,6 +340,7 @@ class Evidence:
             self.demo()
             self.observe('healthy-hit')
             self.observe('healthy-distinct-miss', different=True)
+            self.burst()
             self.dc(['stop', 'rabbitmq'], 'mq-stop')
             self.until(lambda: self.http('GET', '/actuator/health/dependencies', operations=True)[2]['components']['mqDependency']['status'] == 'DOWN', 'MQ actually down', timeout=40)
             self.check(self.http('GET', '/s/' + self.code, headers={'Cookie': self.cookie})[0] == 302 and self.http('GET', '/readyz')[0] == 200, 'MQ failure preserves actual GET redirect and core readiness')
@@ -339,7 +377,7 @@ class Evidence:
                        'redirect_refill_ms': 100, 'creation_capacity': 3, 'creation_refill_seconds': 6, 'actual_load_max': 4,
                        'fixtures': self.samples + 16, 'fixture_source': 'isolated direct SQL plus real demo HTTP creation',
                        'latency': 'new localhost HTTP connection per request; nearest-rank p50/p95; HEAD does not record events',
-                       'sampling': '100ms sampled load/pool gauges, before/after Docker stats, isolated MySQL digest execution deltas',
+                       'sampling': '100ms sampled load/pool gauges, before/midpoint/after Docker stats, isolated MySQL digest execution deltas',
                        'limitations': 'finite scheduled closed-loop sample, no stable p99, no SLA or maximum-throughput claim; sampled resource values can miss peaks'},
                        'passed': self.checks, 'scenarios': self.scenarios, 'failure': failure}
             (self.report / 'summary.json').write_text(self.safe(json.dumps(summary, indent=2)), encoding='utf-8')
