@@ -96,10 +96,8 @@ public class ShortLinkCreationService {
             redirectCache.replaceVersion(entity.getShortCode());
         } catch (RuntimeException exception) {
             LOGGER.error(
-                    "Database creation committed for short code {}; cache coordination unconfirmed."
-                            + " Recover coordination using this short code.",
-                    entity.getShortCode(),
-                    exception);
+                    "Coordination unconfirmed: operation=create category=committed-cache-unconfirmed shortCode={}",
+                    entity.getShortCode());
             throw new CreateCacheCoordinationException(entity.getShortCode(), exception);
         }
 
@@ -120,13 +118,11 @@ public class ShortLinkCreationService {
             redirectCache.replaceVersion(shortCode);
         } catch (RuntimeException exception) {
             LOGGER.error(
-                    "Cache coordination recovery unconfirmed for short code {}; retry using the"
-                            + " same code.",
-                    shortCode,
-                    exception);
+                    "Coordination unconfirmed: operation=recover category=committed-cache-unconfirmed shortCode={}",
+                    shortCode);
             throw exception;
         }
-        LOGGER.info("Cache coordination recovery confirmed for short code {}.", shortCode);
+        LOGGER.info("Coordination recovered: operation=recover category=cache-confirmed shortCode={}", shortCode);
     }
 
     private void insertWithCollisionRetries(ShortLinkEntity entity) {
@@ -135,7 +131,7 @@ public class ShortLinkCreationService {
             try {
                 entity.setShortCode(shortCodeEncoder.encode(issuedId));
             } catch (IllegalArgumentException exception) {
-                LOGGER.error("Could not encode issued short-code ID {}.", issuedId, exception);
+                LOGGER.error("Short-code generation failed: category=encoding");
                 throw new ShortCodeGenerationException();
             }
 
@@ -144,16 +140,11 @@ public class ShortLinkCreationService {
                 return;
             } catch (ShortCodeCollisionException exception) {
                 if (attempt == MAX_SHORT_CODE_INSERT_ATTEMPTS) {
-                    LOGGER.error(
-                            "Short-code primary-key collision persisted after issuing a replacement"
-                                    + " ID.",
-                            exception);
+                    LOGGER.error("Short-code generation failed: category=collision-exhausted");
                     throw new ShortCodeGenerationException();
                 }
-                LOGGER.warn(
-                        "Short-code primary-key collision for issued ID {}; retrying once.",
-                        issuedId,
-                        exception);
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.GENERATION);
             }
         }
     }

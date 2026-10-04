@@ -349,6 +349,7 @@ public class AsyncVisitRecorder implements VisitRecorder {
             recovering.set(true);
         }
         count(Outcome.RECOVERY);
+        log("recovery");
         for (var attempt : attempts) {
             attempt.finish(Outcome.UNKNOWN);
             attempt.retire();
@@ -371,12 +372,19 @@ public class AsyncVisitRecorder implements VisitRecorder {
     }
 
     private void log(String category) {
-        org.slf4j.LoggerFactory.getLogger(AsyncVisitRecorder.class)
-                .warn("Visit MQ degraded: category={}", category);
+        com.example.shortlink.logging.SafeOperationalLog.sampled(
+                org.slf4j.LoggerFactory.getLogger(AsyncVisitRecorder.class),
+                com.example.shortlink.logging.SafeOperationalLog.Category.MQ_PUBLISH);
     }
 
     private void count(Outcome category) {
         outcomes.get(category).increment();
+        if (category == Outcome.RETURN || category == Outcome.NACK || category == Outcome.UNKNOWN
+                || category == Outcome.SEND_FAILED || category == Outcome.RECOVERY_FAILED) log("publisher");
+        if (category == Outcome.ACCEPTED)
+            com.example.shortlink.logging.SafeOperationalLog.recovered(
+                    org.slf4j.LoggerFactory.getLogger(AsyncVisitRecorder.class),
+                    com.example.shortlink.logging.SafeOperationalLog.Category.MQ_PUBLISH);
     }
 
     private static Thread daemon(Runnable r, String name) {

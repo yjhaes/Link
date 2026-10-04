@@ -23,6 +23,7 @@ public class CreateRateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
         var decision = limiter.admitCreate(request.getRemoteAddr());
+        request.setAttribute("shortlink.admission", decision == null ? "unavailable" : decision.status().name().toLowerCase(java.util.Locale.ROOT));
         if (decision.status() == RateLimiter.Decision.Status.ALLOWED) {
             return true;
         }

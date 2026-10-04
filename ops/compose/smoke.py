@@ -136,6 +136,71 @@ try:
     check(all(code not in value for tag in http_metric["availableTags"] for value in tag["values"]), "HTTP metric labels do not include short-code identity")
     _, _, pool_metric = http("GET", "/actuator/metrics/jdbc.connections.max", operational=True)
     check(any(tag["tag"] == "name" and set(tag["values"]) == {"dataSource", "stats"} for tag in pool_metric["availableTags"]), "core and statistics pool metrics remain separately named")
+    # Independently exercise the observation output through real business and management HTTP.
+    def metric(name, **tags):
+        query = urllib.parse.urlencode([("tag", key + ":" + value) for key, value in tags.items()])
+        status, _, data = http("GET", "/actuator/metrics/" + name + ("?" + query if query else ""), operational=True)
+        if status != 200:
+            raise RuntimeError("Missing actual metric: " + name)
+        return data
+    def metric_value(name, **tags):
+        data = metric(name, **tags)
+        return next(item["value"] for item in data["measurements"] if item["statistic"] in ("COUNT", "VALUE"))
+    check(metric_value("shortlink.mq.publish.outcomes", result="accepted") >= 1
+          and metric_value("shortlink.statistics.write.outcomes", result="saved") >= 1,
+          "actual broker-confirmed publishing and separately saved statistics are observed")
+    check(metric_value("shortlink.mq.consumer.event.delay.samples") >= 1
+          and metric_value("shortlink.mq.consumer.completed.average") > 0,
+          "saved-event delay samples and cumulative consumer average have distinct metrics")
+    canaries = ("query-secret-canary", "client-id-canary", "request-cookie-canary", "referer-canary", "agent-canary", "original-url-canary")
+    ids = set()
+    for i in range(10):
+        status, headers, _ = http("HEAD", "/s/" + code + "?query-secret-canary", headers={
+            "X-Request-ID": "client-id-canary", "Cookie": "request-cookie-canary",
+            "Referer": "https://referer-canary/private", "User-Agent": "agent-canary"})
+        server_id = {key.lower(): value for key, value in headers.items()}.get("x-request-id", "")
+        check(status == 302 and len(server_id) == 36 and server_id not in ids and server_id != "client-id-canary",
+              "server-generated unique HEAD request identity " + str(i + 1))
+        ids.add(server_id)
+    # Actual wrong-type cache error: restore only this idle key, with no Redis reconstruction.
+    cache_key = "shortlink:redirect:v2:" + code
+    cmd(compose + ["exec", "-T", "redis", "redis-cli", "DEL", cache_key], "observe-cache-delete", 30)
+    cmd(compose + ["exec", "-T", "redis", "redis-cli", "LPUSH", cache_key, "payload-canary"], "observe-cache-wrongtype", 30)
+    check(http("HEAD", "/s/" + code)[0] == 302 and metric_value("shortlink.cache.read", result="failed") >= 1,
+          "actual cache dependency error is counted while HEAD falls back safely")
+    cmd(compose + ["exec", "-T", "redis", "redis-cli", "DEL", cache_key], "observe-cache-restore", 30)
+    check(http("HEAD", "/s/" + code)[0] == 302, "same running application observes successful cache recovery")
+    rejected = 0
+    for _ in range(12):
+        status, headers, data = http("POST", "/api/links?query-secret-canary", {"originalUrl": "https://original-url-canary.example/private"},
+                                   headers={"X-Request-ID": "client-id-canary"})
+        if status == 429:
+            rejected += 1
+            check(data["code"] == "RATE_LIMIT_EXCEEDED" and int(headers["Retry-After"]) >= 1,
+                  "actual creation rejection contract " + str(rejected))
+        elif status != 201:
+            raise RuntimeError("Unexpected creation observation result")
+    check(rejected > 0 and metric_value("shortlink.rate.admission", group="create", result="rejected") == rejected
+          and metric_value("shortlink.http.requests", group="create", result="rejected") == rejected,
+          "actual rejected requests agree with admission and HTTP outcome counters")
+    for suffix in ("first", "second", "third"):
+        check(http("GET", "/unknown-path-canary-" + suffix)[0] == 404, "unknown route observation " + suffix)
+    _, _, names = http("GET", "/actuator/metrics", operational=True)
+    observations = {name: metric(name) for name in names["names"] if name.startswith(("shortlink.", "http.server.requests"))}
+    check(all(tag["tag"] in {"route", "group", "result", "category"} for data in observations.values() for tag in data["availableTags"])
+          and all(code not in value and not any(canary in value for canary in canaries + ("unknown-path-canary", "payload-canary"))
+                  for data in observations.values() for tag in data["availableTags"] for value in tag["values"]),
+          "queried HTTP and custom metrics have finite safe labels without identity or arbitrary paths")
+    (report / "observation-metrics.json").write_text(json.dumps(observations, indent=2), encoding="utf-8")
+    app_logs = cmd(compose + ["logs", "--no-color", "app"], "observation-app-logs", 30)
+    check(not any(value in app_logs for value in secrets + list(canaries) + ["payload-canary", "unknown-path-canary"]),
+          "actual application output excludes request and dependency privacy canaries and credentials")
+    check(sum("operation=create result=rejected" in line for line in app_logs.splitlines()) == 1
+          and "operation=redirect result=redirect" not in app_logs,
+          "creation rejection burst is bounded and successful redirects have no per-request INFO")
+    check("Dependency recovery: category=cache-read" in app_logs and "category=cache-read" in app_logs
+          and "operation=lifecycle result=started" in app_logs,
+          "actual cache failure recovery and application startup produce safe operational logs")
     encoded = urllib.parse.quote(values["RABBITMQ_VIRTUAL_HOST"], safe="")
     def queue():
         status, _, data = http("GET", "/api/queues/" + encoded + "/shortlink.visit.stats.q", management=True)
@@ -218,6 +283,17 @@ try:
     until(lambda: (state := health("dependencies"))[2]["components"]["mqDependency"]["status"] == "DOWN" and state[2]["components"]["redisDependency"]["status"] == "DOWN", "live optional dependency outage observation", timeout=40)
     check(probe_pair() and health("readiness")[0] == 200 and health("dependencies")[0] == 503,
           "live Redis/MQ outage is separate from healthy actual main core probes")
+    denied_status, _, denied = http("POST", "/api/links", {"originalUrl": "https://original-url-canary.example/private"})
+    check(denied_status == 503 and denied["code"] == "RATE_LIMIT_UNAVAILABLE"
+          and metric_value("shortlink.rate.admission", group="create", result="unavailable") >= 1,
+          "actual stopped Redis admission failure is observed independently of quota rejection")
+    check(http("HEAD", "/s/" + code)[0] == 302
+          and metric_value("shortlink.rate.admission", group="redirect", result="unavailable") >= 1,
+          "actual stopped Redis fail-open redirect retains an unavailable admission metric")
+    fault_logs = cmd(compose + ["logs", "--no-color", "app"], "observation-live-fault-logs", 30)
+    check("category=rate-create" in fault_logs and "category=rate-redirect" in fault_logs
+          and not any(value in fault_logs for value in secrets + list(canaries)),
+          "actual Redis outage uses safe fixed dependency categories")
     cmd(compose + ["up", "--detach", "--force-recreate", "app"], "core-only-start", 120)
     app_port = port("app", 8080)
     operations_port = port("app", 8081)
@@ -246,6 +322,10 @@ try:
     cmd(compose + ["up", "--detach", "--wait", "mysql"], "core-database-recover", 120)
     until(probe_pair, "core database readiness recovery")
     check(health("readiness")[0] == 200, "actual core database recovery restores readiness")
+    cmd(compose + ["stop", "app"], "observation-lifecycle-stop", 60)
+    lifecycle_logs = cmd(compose + ["logs", "--no-color", "app"], "observation-lifecycle-logs", 30)
+    check("operation=lifecycle result=stopping" in lifecycle_logs and "operation=lifecycle result=started" in lifecycle_logs,
+          "actual application start and terminal stop are observable")
     cmd(compose + ["logs", "--no-color", "--tail", "200"], "safe-service-logs", 30)
     cmd(["docker", "stats", "--no-stream", "--format", "{{.Name}} {{.MemUsage}} {{.CPUPerc}}"] + cmd(compose + ["ps", "--quiet"], "final-container-ids", 30).split(), "resource-observation", 30)
 except Exception as error:
