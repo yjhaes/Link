@@ -110,8 +110,8 @@ class Evidence:
                         'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root -N -B'], label, input=text + '\n')
 
     def query_count(self, label):
-        # Digest counts statement executions, not connection count or HTTP request count.
-        output = self.sql("SELECT COALESCE(SUM(COUNT_STAR),0) FROM performance_schema.events_statements_summary_by_digest WHERE SCHEMA_NAME='short_link' AND DIGEST_TEXT LIKE 'SELECT%FROM `short_link`%WHERE%';", label)
+        # Only project Query/Execute mapping SELECTs; exclude root observer SQL and Prepare registrations.
+        output = self.sql("SELECT COUNT(*) FROM mysql.general_log WHERE command_type IN ('Query','Execute') AND user_host NOT LIKE 'root[root]%' AND argument LIKE 'SELECT%FROM short_link WHERE short_code%';", label)
         return int(output.strip())
 
     def resources(self, label):
@@ -152,9 +152,10 @@ class Evidence:
         self.versions['redis'] = self.dc(['exec', '-T', 'redis', 'redis-server', '--version'], 'redis-version').strip()
         self.versions['rabbitmq'] = self.dc(['exec', '-T', 'rabbitmq', 'rabbitmq-diagnostics', '-q', 'server_version'], 'rabbit-version').strip()
         self.versions['images'] = self.dc(['images', '--format', 'json'], 'images').strip()
+        self.sql("SET GLOBAL log_output='TABLE'; SET GLOBAL general_log=ON;", 'isolated-query-observer')
         rows = ','.join("('ObsA%04d','https://example.com/evidence',UTC_TIMESTAMP(3),NULL,TRUE)" % i for i in range(self.samples + 16))
         self.sql('USE short_link; INSERT INTO short_link(short_code,original_url,created_at,expires_at,enabled) VALUES ' + rows + ';', 'isolated-fixtures')
-        self.check(self.query_count('initial-query-count') >= 0, 'actual performance_schema mapping SELECT execution counter available')
+        self.check(self.query_count('initial-query-count') >= 0, 'isolated actual MySQL Query/Execute observer available')
 
     def demo(self):
         status, _, created = self.http('POST', '/api/links', {'originalUrl': 'https://example.com/evidence-demo'})
@@ -379,7 +380,7 @@ class Evidence:
                        'redirect_refill_ms': 100, 'creation_capacity': 3, 'creation_refill_seconds': 6, 'actual_load_max': 4,
                        'fixtures': self.samples + 16, 'fixture_source': 'isolated direct SQL plus real demo HTTP creation',
                        'latency': 'new localhost HTTP connection per request; nearest-rank p50/p95; HEAD does not record events',
-                       'sampling': '100ms sampled load/pool gauges, before/midpoint/after Docker stats, isolated MySQL digest execution deltas',
+                       'sampling': '100ms sampled load/pool gauges, before/midpoint/after Docker stats, isolated MySQL general_log Query/Execute count deltas (logging overhead enabled in every profile)',
                        'limitations': 'finite scheduled closed-loop sample, no stable p99, no SLA or maximum-throughput claim; sampled resource values can miss peaks'},
                        'passed': self.checks, 'scenarios': self.scenarios, 'failure': failure}
             (self.report / 'summary.json').write_text(self.safe(json.dumps(summary, indent=2)), encoding='utf-8')
