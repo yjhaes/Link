@@ -328,7 +328,7 @@ try:
                           for service, container in by_service.items()}
     for service, argv in (("app", ["java", "-version"]), ("mysql", ["mysql", "--version"]),
                           ("redis", ["redis-server", "--version"]),
-                          ("rabbitmq", ["rabbitmq-diagnostics", "-q", "server_version"])):
+                          ("rabbitmq", ["gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "server_version"])):
         versions[service] = cmd(compose + ["exec", "-T", service, *argv], "runtime-version-" + service, 30).strip()
     check(by_service["app"]["Config"]["User"] == "10001:10001", "application runs non-root")
     for service, budget in (("app", 768), ("mysql", 1024), ("redis", 256), ("rabbitmq", 1024)):
