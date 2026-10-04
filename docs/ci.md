@@ -1,6 +1,6 @@
 # 自动正确性回归
 
-GitHub Actions `.github/workflows/correctness.yml` 在 push、pull_request 和手动 workflow_dispatch 运行 Ubuntu24.04 作业；只申请 contents:read，checkout不保留访问凭据，不部署公网或发布镜像。JDK17、Node24、Python3.13和runner的Docker/Compose是必需环境。脚本预检缺Dockerdaemon或Compose返回失败，必测JUnit缺类/零项/失败/错误/跳过不通过。
+GitHub Actions `.github/workflows/correctness.yml` 在 push、pull_request 和手动 workflow_dispatch 运行 Ubuntu24.04 作业；只申请 contents:read，checkout不保留访问凭据，不部署公网或发布镜像。JDK17、Node24、Python3.13和runner的Docker/Compose是必需环境。脚本预检缺Dockerdaemon或Compose返回失败，必测JUnit缺类/零项/失败/错误/跳过不通过。宿主设施依据[官方Ubuntu24.04 runner清单](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md)中的DockerServer和Compose，运行时仍预检，清单不代替实际成功报告。
 
 本地等价入口：Windows `pwsh -NoProfile -File ops/ci/run.ps1`；Linux `sh ops/ci/run.sh`。仅检查环境可加 `--preflight`。统一入口串行运行无设施Python检查、`ops/tests/run.py all`（页面/Java无设施及真实隔离设施），最后执行`ops/compose/smoke.py`重新构建本轮独立应用镜像，核验最终HTTP/健康/观测/文档及持久化恢复。有限性能观察另行显式执行，不自动混入CI，不作为正确性门槛。
 
