@@ -15,5 +15,7 @@ assert.doesNotMatch(message(503, 'RATE_LIMIT_UNAVAILABLE', 'state'), /已提交/
 assert.match(message(503, 'LINK_STATE_CACHE_COORDINATION_UNCONFIRMED', 'state'), /已提交.*数据库/);
 assert.match(message(503, 'STATS_BUSY', 'stats'), /繁忙/);
 assert.match(message(503, 'STATS_QUERY_TIMEOUT', 'stats'), /超时/);
+assert.match(message(503, 'REDIRECT_LOAD_BUSY', 'state'), /回源.*繁忙|繁忙.*回源/);
+assert.doesNotMatch(message(503, 'REDIRECT_LOAD_BUSY', 'state'), /已保存|已提交/);
 assert.doesNotMatch(source, /localStorage|sessionStorage/);
 console.log('Management page admission and committed-error contracts passed.');
