@@ -138,7 +138,7 @@ JdbcTemplate、事务和 Hikari 绑定；真实设施测试继续验证 Mapper/�
 
 ## 最终工程职责与关键时序
 
-`ratelimit`封装四请求组共享的Redis Lua令牌桶；`api`拦截器在发号/业务前执行，管理鉴权更早。`RedirectService`实际SQL由每实例并发许可保护，缓存命中与共享等待不占许可。`observability`提供安全健康、固定类别指标与请求上下文；`logging`约束控制台业务/Redis/JDBC/AMQP/HTTP框架危险日志。业务OpenAPI由`openapi`装配，不包含管理端口Actuator。完整运行边界见[首页架构图](../README.md)、[API](api.md)、[健康](health.md)和[观测清单](observability.md)。
+`ratelimit`封装四请求组共享的Redis Lua令牌桶；`api`拦截器在发号/业务前执行，管理鉴权更早。`RedirectService`实际SQL由每实例并发许可保护，缓存命中与共享等待不占许可。`observability`提供安全健康、固定类别指标与请求上下文；`logging`约束控制台业务/Redis/JDBC/AMQP/HTTP框架危险日志。业务OpenAPI由`api.docs.BusinessOpenApiConfiguration`装配，不包含管理端口Actuator。完整运行边界见[首页架构图](../README.md)、[API](api.md)、[健康](health.md)和[观测清单](observability.md)。
 
 ```mermaid
 sequenceDiagram

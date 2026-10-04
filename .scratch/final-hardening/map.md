@@ -175,3 +175,9 @@
 
 - 2026-10-04：用户继续授权09、10、11、12。集成分支codex/final-hardening-09-12，审查基点58250091239f1088b87c4782e2ed719d681bcf09。09与11前置均已resolved，独立工作树并行实施；10等待09，12等待10/11。
 - 实现继续使用当前模型；最终Standards Review与Spec Review仍显式GPT-6.1 Sol/high。真实测量、完整验证与最终展示文档只在取得本轮证据后声明完成。
+
+## 全部实施完成
+
+- 2026-10-04：09～12全部resolved并合入codex/final-hardening-09-12。完整CI等价实跑317 Java/2 Node/4 Python及136Compose全部通过；正式有限观察47断言通过；README冷启动演示26检查和53本地链接通过。
+- 最终Standards Review与Spec Review均明确GPT-6.1 Sol/high，针对5825009至3d768cd各0项发现。最终仅关闭父规格/索引并补准确文档名，不改变已测生产或测试语义。
+- 01～12和父规格已resolved，正式版本边界及限制见 [验证总入口](../../docs/verification.md)与 [09～12记录](09-12-verification.md)。托管GitHub未运行、原生Linux全量未跑，未发布公网；不夸大性能或best-effort统计。

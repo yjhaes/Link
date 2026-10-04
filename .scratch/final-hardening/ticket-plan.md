@@ -2,7 +2,7 @@
 
 日期：2026-10-04（Asia/Shanghai）
 
-状态：用户已确认粒度与依赖，12 张独立任务已发布，均为 ready-for-agent；未认领或开始实现。
+状态：用户分批授权后，01～12 全部已实现、验收并 resolved。下文拆分和发布描述保留发布时背景，当前结果以任务索引与完成记录为准。
 
 依据：[实现规格](spec.md)、已接受的最终设计与 ADR-0008。用户调用 to-tickets 授权任务拆分；按技能要求先评审，再逐张发布。规格状态和已接受设计保持不变。
 
@@ -264,10 +264,12 @@ flowchart TD
 | [09：业务OpenAPI与页面错误契约](issues/09-api-docs-and-error-ui.md) | 04、05 | resolved |
 | [10：CI自动回归与全栈最终冒烟](issues/10-ci-and-final-verification.md) | 02、08、09 | resolved |
 | [11：有限性能观察与故障演示证据](issues/11-performance-and-failure-evidence.md) | 02、08 | resolved |
-| [12：GitHub首页、架构图与简历收尾](issues/12-readme-and-portfolio-finish.md) | 10、11 | ready-for-agent |
+| [12：GitHub首页、架构图与简历收尾](issues/12-readme-and-portfolio-finish.md) | 10、11 | resolved |
 
 执行需另获用户授权；依赖全部 resolved 后才可认领，默认选择最小未阻塞编号。
 
 2026-10-04 执行更新：用户仅授权 01～03，三项已实现、验收并完成双轴审查修复；证据见 [01～03 集成记录](01-03-verification.md)。04～12 尚未认领，父规格未整体 resolved。上文发布状态描述保留此前发布时的事实。
 
 2026-10-04 执行更新：用户追加授权04～08，五项均已实现并独立验收。最终源码49d34d7通过Java314及Node2完整回归、100项真实Compose断言；最终双轴审查与集成证据见 [04～08验证记录](04-08-verification.md)。09～12仍未开始，父规格未整体resolved。
+
+2026-10-04 最终完成：09～12已合入codex/final-hardening-09-12。317 Java+2 Node+4 Python与136最终Compose断言、47有限观察断言、26实际README演示检查通过；Standards Review与Spec Review均GPT-6.1 Sol/high，剩余0。01～12全部resolved，父规格关闭。详见 [正式验证](../../docs/verification.md)与 [09～12集成记录](09-12-verification.md)。

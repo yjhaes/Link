@@ -1,10 +1,10 @@
-Status: ready-for-agent
+Status: resolved
 
 # 阶段 8：限流、工程化与最终收尾规格
 
 日期：2026-10-04（Asia/Shanghai）
 
-依据：已确认的 Q1～Q24、阶段 8 最终设计与 ADR-0008。本文是发布到本地任务跟踪系统的实现规格；ready-for-agent 表示规格已准备好，不代表任务已认领、代码已实现或本轮获得开发授权。
+依据：已确认的 Q1～Q24、阶段 8 最终设计与 ADR-0008。本文最初作为ready-for-agent规格发布；用户随后分批明确授权01～12实施，现全部完成并resolved。以下问题背景和“本轮不开始开发”描述是发布阶段的历史，最终实现及验收以Answer和正式验证入口为准。
 
 ## Problem Statement
 
@@ -219,3 +219,11 @@ Status: ready-for-agent
 ## Comments
 
 - 2026-10-04：用户明确调用to-spec，授权将已确认设计合成为本地规格并标记ready-for-agent；已发布，未启动开发。
+
+## Answer
+
+2026-10-04（Asia/Shanghai）：用户分批授权01～03、04～08、09～12，全部12张任务已实现、独立验收并resolved，集成分支为 `codex/final-hardening-09-12`。每批实现使用当时当前模型；Standards Review和Spec Review均按用户要求显式GPT-6.1 Sol/high。最终09～12双轴审查各0发现，历史批次发现均已修复。
+
+最终完整正确性source `c4b47a3f31710fec5d99ac78ae4586c17e402716`：317 Java、2页面、4 Python全部0失败/错误/跳过，最终镜像136项Compose断言通过。有限观察source `c7c8395adfbd2bfe0d6eef22915ba96c5e816aa3`：47项真实断言、四场景各240 HEAD、实际映射SELECT0/240/0/240；不宣称稳定p99或容量。12纯文档截图另有26项实际演示及53本地链接检查通过，未冒称重跑全量。
+
+完整能力、机器/样本/源版本、故障语义及公开安全JSON/截图见 [正式验证入口](../../docs/verification.md)、[README](../../README.md)和[集成记录](09-12-verification.md)。新版本不复用历史263项或旧55%均值下降结论。GitHub Actions已配置并静态核验、本地等价入口实跑成功；本次未推送或触发托管CI，未原生Linux宿主全量，相关限制明确保留。停止线未改变，未部署公网或增加排除组件。
