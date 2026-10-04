@@ -21,7 +21,7 @@ report = ROOT / "target" / "compose-smoke" / run_id
 report.mkdir(parents=True)
 secret_file = report / ".env.local"
 env = {k: v for k, v in os.environ.items() if not k.upper().startswith(
-    ("DB_", "MYSQL_", "REDIS_", "RABBIT", "SHORT_LINK_", "SPRING_", "APP_", "SERVER_", "COMPOSE_"))
+    ("DB_", "MYSQL_", "REDIS_", "RABBIT", "SHORT_LINK_", "SPRING_", "APP_", "SERVER_", "MANAGEMENT_", "COMPOSE_"))
     and k.upper() not in ("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")}
 secrets = []
 checks = []
@@ -72,7 +72,7 @@ try:
     check(hashlib.sha256(secret_file.read_bytes()).digest() == digest, "repeat initialization preserves independent secrets")
     # Published ports are assigned by Docker, not selected with a racy free-port check.
     override = report / "ports.yml"
-    override.write_text('services:\n  app:\n    ports: !override ["127.0.0.1::8080"]\n  rabbitmq:\n    ports: !override ["127.0.0.1::15672"]\n', encoding="utf-8")
+    override.write_text('services:\n  app:\n    ports: !override ["127.0.0.1::8080", "127.0.0.1::8081"]\n  rabbitmq:\n    ports: !override ["127.0.0.1::15672"]\n', encoding="utf-8")
     compose = ["docker", "compose", "--project-name", project, "--env-file", str(secret_file),
                "--file", str(ROOT / "compose.yml"), "--file", str(override)]
     cmd(["docker", "version", "--format", "{{.Server.Version}}"], "docker-version", 30)
@@ -86,8 +86,9 @@ try:
         return int(cmd(compose + ["port", service, str(number)], "port-" + service, 30).strip().rsplit(":", 1)[1])
     app_port = port("app", 8080)
     mq_port = port("rabbitmq", 15672)
-    def http(method, path, payload=None, headers=None, management=False):
-        connection = http_client.HTTPConnection("127.0.0.1", mq_port if management else app_port, timeout=10)
+    operations_port = port("app", 8081)
+    def http(method, path, payload=None, headers=None, management=False, operational=False):
+        connection = http_client.HTTPConnection("127.0.0.1", operations_port if operational else mq_port if management else app_port, timeout=10)
         body = json.dumps(payload).encode() if payload is not None else None
         headers = dict(headers or {})
         if body is not None:
@@ -98,11 +99,24 @@ try:
         connection.request(method, path, body, headers)
         response = connection.getresponse()
         data = response.read()
-        result = response.status, dict(response.getheaders()), json.loads(data) if data and response.getheader("Content-Type", "").startswith("application/json") else data
+        result = response.status, dict(response.getheaders()), json.loads(data) if data and response.getheader("Content-Type", "").split(";", 1)[0].endswith(("application/json", "+json")) else data
         connection.close()
         return result
     until(lambda: http("GET", "/")[0] == 200, "existing root HTTP ready")
     check(http("GET", "/")[0] == 200, "application HTTP ready")
+    def health(group):
+        return http("GET", "/actuator/health/" + group, operational=True)
+    def probe_pair():
+        return http("GET", "/livez")[2] == {"status": "UP"} and http("GET", "/readyz")[2] == {"status": "UP"}
+    check(probe_pair(), "actual main HTTP liveness/readiness probes contain only UP status")
+    check(health("liveness")[2] == {"status": "UP"} and health("readiness")[2] == {"status": "UP"}, "management core groups agree with actual main probes")
+    for path in ("/actuator/health", "/actuator/metrics", "/actuator/info", "/actuator/health/dependencies"):
+        check(http("GET", path)[0] == 404, "main port excludes " + path)
+    for endpoint in ("env", "configprops", "heapdump", "loggers", "beans", "mappings", "shutdown", "threaddump"):
+        check(http("GET", "/actuator/" + endpoint, operational=True)[0] == 404, "management excludes dangerous " + endpoint)
+    check(http("GET", "/actuator", operational=True)[0] == 404, "management discovery is disabled")
+    status, _, info = http("GET", "/actuator/info", operational=True)
+    check(status == 200 and set(info) == {"build"} and set(info["build"]) == {"artifact", "group", "name", "version"}, "info exposes only safe build metadata without old management token")
     initial_vhost = urllib.parse.quote(values["RABBITMQ_VIRTUAL_HOST"], safe="")
     until(lambda: (reply := http("GET", "/api/queues/" + initial_vhost + "/shortlink.visit.stats.q", management=True))[0] == 200 and reply[2].get("consumers", 0) == 1, "actual queue/consumer startup")
     status, headers, created = http("POST", "/api/links", {"originalUrl": "https://example.com/compose-acceptance"})
@@ -116,6 +130,12 @@ try:
         return data if status == 200 else None
     until(lambda: (data := stats()) and data["pv"] == 1 and data["uv"] == 1, "asynchronous statistics")
     check(True, "publisher route consumer records PV and UV")
+    _, _, metric_names = http("GET", "/actuator/metrics", operational=True)
+    check({"http.server.requests", "jdbc.connections.active", "jdbc.connections.max", "hikaricp.connections"}.issubset(set(metric_names["names"])), "existing HTTP and both pool metrics are available")
+    _, _, http_metric = http("GET", "/actuator/metrics/http.server.requests", operational=True)
+    check(all(code not in value for tag in http_metric["availableTags"] for value in tag["values"]), "HTTP metric labels do not include short-code identity")
+    _, _, pool_metric = http("GET", "/actuator/metrics/jdbc.connections.max", operational=True)
+    check(any(tag["tag"] == "name" and set(tag["values"]) == {"dataSource", "stats"} for tag in pool_metric["availableTags"]), "core and statistics pool metrics remain separately named")
     encoded = urllib.parse.quote(values["RABBITMQ_VIRTUAL_HOST"], safe="")
     def queue():
         status, _, data = http("GET", "/api/queues/" + encoded + "/shortlink.visit.stats.q", management=True)
@@ -133,15 +153,22 @@ try:
     env["SHORT_LINK_STATS_CONSUMER_ENABLED"] = "false"
     cmd(compose + ["up", "--detach", "--force-recreate", "app"], "pause-consumer", 120)
     app_port = port("app", 8080)
+    operations_port = port("app", 8081)
     until(lambda: http("GET", "/")[0] == 200, "paused app")
     until(lambda: (q := queue()) and q.get("consumers", -1) == 0, "consumer paused")
     check(http("GET", "/s/" + code, headers={"Cookie": cookie})[0] == 302, "mapping survives app recreation")
     until(lambda: (q := queue()) and q.get("messages_ready", 0) >= 1, "durable queued backlog")
     check(stats()["pv"] == 1, "paused consumer leaves visit queued")
+    for _ in range(3):
+        _, _, state = health("dependencies")
+        actual = state["components"]["statistics"]["details"]
+        check(actual["consumerIntent"] == "disabled" and actual["consumerActual"] == "stopped", "probe observes paused consumer intent/actual without resuming")
+    check(queue().get("consumers", -1) == 0, "repeated dependency probes do not create consumers")
     cmd(compose + ["stop"], "ordinary-stop", 120)
     cmd(compose + ["up", "--detach", "--wait", "--wait-timeout", "240"], "ordinary-restart", 300)
     app_port = port("app", 8080)
     mq_port = port("rabbitmq", 15672)
+    operations_port = port("app", 8081)
     until(lambda: http("GET", "/")[0] == 200, "restarted app")
     until(lambda: (q := queue()) and q.get("messages_ready", 0) >= 1, "persisted backlog")
     check(stats()["pv"] == 1 and stats()["uv"] == 1, "ordinary restart preserves recorded visits")
@@ -150,6 +177,7 @@ try:
     env["SHORT_LINK_STATS_CONSUMER_ENABLED"] = "true"
     cmd(compose + ["up", "--detach", "--force-recreate", "app"], "resume-consumer", 120)
     app_port = port("app", 8080)
+    operations_port = port("app", 8081)
     until(lambda: (data := stats()) and data["pv"] == 2 and data["uv"] == 1, "backlog consumption and stable UV")
     check(hashlib.sha256(secret_file.read_bytes()).digest() == digest, "identity key remains stable across ordinary restarts")
     check(True, "persisted queued visit consumed once with same anonymous UV")
@@ -180,24 +208,44 @@ try:
     check(cmd(compose + ["exec", "-T", "redis", "redis-cli", "DBSIZE"], "recovery-empty", 30).strip() == "0", "Redis reconstructed empty with writers stopped")
     cmd(compose + ["up", "--detach", "app"], "recovery-app", 120)
     app_port = port("app", 8080)
+    operations_port = port("app", 8081)
     until(lambda: http("GET", "/")[0] == 200, "recovery HTTP")
     check(http("GET", "/s/" + code, headers={"Cookie": cookie})[0] == 302, "mapping survives controlled Redis reconstruction")
     until(lambda: (data := stats()) and data["pv"] == 3 and data["uv"] == 1, "recovery statistics")
     check(True, "controlled recovery rebuilds cache and retains identity")
     # Core startup only waits on MySQL: actually start with Redis/MQ stopped.
     cmd(compose + ["stop", "redis", "rabbitmq"], "optional-dependencies-stop", 120)
+    until(lambda: (state := health("dependencies"))[2]["components"]["mqDependency"]["status"] == "DOWN" and state[2]["components"]["redisDependency"]["status"] == "DOWN", "live optional dependency outage observation", timeout=40)
+    check(probe_pair() and health("readiness")[0] == 200 and health("dependencies")[0] == 503,
+          "live Redis/MQ outage is separate from healthy actual main core probes")
     cmd(compose + ["up", "--detach", "--force-recreate", "app"], "core-only-start", 120)
     app_port = port("app", 8080)
+    operations_port = port("app", 8081)
     until(lambda: http("GET", "/")[0] == 200, "core startup without Redis/MQ")
     check(http("GET", "/s/" + code, headers={"Cookie": cookie})[0] == 302,
           "core starts and redirects while Redis and MQ are stopped")
+    check(probe_pair() and health("readiness")[0] == 200, "Redis/MQ downtime leaves liveness and core readiness UP")
+    _, _, state = health("dependencies")
+    check(state["components"]["redisDependency"]["status"] == "DOWN" and state["components"]["mqDependency"]["status"] == "DOWN", "optional dependency group actually reports stopped Redis/MQ")
+    check(all(value not in json.dumps(state) for value in secrets) and all(marker not in json.dumps(state) for marker in ("jdbc:", "redis://", "amqp://", "exception", "SELECT")), "dependency fault health reveals fixed safe categories only")
     # All writers stopped, then clean nonpersistent Redis recovery again.
     cmd(compose + ["stop", "app"], "core-only-stop", 120)
     cmd(compose + ["up", "--detach", "--wait", "redis", "rabbitmq"], "dependencies-resume", 180)
     check(cmd(compose + ["exec", "-T", "redis", "redis-cli", "DBSIZE"], "resume-empty", 30).strip() == "0", "optional dependencies recovered with no old Redis writers")
     cmd(compose + ["up", "--detach", "app"], "all-services-resume", 120)
     app_port = port("app", 8080)
+    operations_port = port("app", 8081)
     until(lambda: http("GET", "/")[0] == 200, "complete services resumed")
+    # True MySQL outage must fail readiness while preserving self-only liveness.
+    cmd(compose + ["stop", "mysql"], "core-database-stop", 120)
+    until(lambda: http("GET", "/readyz")[0] == 503, "core database readiness failure")
+    check(http("GET", "/livez")[0] == 200 and health("liveness")[0] == 200 and health("readiness")[0] == 503,
+          "actual MySQL outage fails both core probes while self-only liveness stays UP")
+    until(lambda: json.loads(cmd(compose + ["ps", "--all", "--format", "json", "app"], "unhealthy-state", 30).splitlines()[0]).get("Health") == "unhealthy", "container core health failure", timeout=100)
+    check(True, "Compose JRE probe marks actual core database failure unhealthy")
+    cmd(compose + ["up", "--detach", "--wait", "mysql"], "core-database-recover", 120)
+    until(probe_pair, "core database readiness recovery")
+    check(health("readiness")[0] == 200, "actual core database recovery restores readiness")
     cmd(compose + ["logs", "--no-color", "--tail", "200"], "safe-service-logs", 30)
     cmd(["docker", "stats", "--no-stream", "--format", "{{.Name}} {{.MemUsage}} {{.CPUPerc}}"] + cmd(compose + ["ps", "--quiet"], "final-container-ids", 30).split(), "resource-observation", 30)
 except Exception as error:

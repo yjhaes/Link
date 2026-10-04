@@ -59,3 +59,57 @@ short-link:
     expired-ttl: ${SHORT_LINK_EXPIRED_CACHE_TTL:5m}
     disabled-ttl: ${SHORT_LINK_DISABLED_CACHE_TTL:15s}
     load-wait: ${SHORT_LINK_REDIRECT_LOAD_WAIT:200ms}
+
+# Local operational boundary; Compose overrides only the container bind address.
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
+  endpoints:
+    access:
+      default: none
+      max-permitted: read-only
+    web:
+      exposure:
+        include: health,info,metrics
+      discovery:
+        enabled: false
+    jmx:
+      exposure:
+        exclude: "*"
+  endpoint:
+    info:
+      access: read-only
+    metrics:
+      access: read-only
+    health:
+      access: read-only
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+          show-details: never
+          show-components: never
+          additional-path: server:/livez
+        readiness:
+          include: readinessState,coreDatabase
+          show-details: never
+          show-components: never
+          additional-path: server:/readyz
+        dependencies:
+          include: redisDependency,mqDependency,statisticsDatabase,statistics
+  health:
+    defaults:
+      enabled: false
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  info:
+    defaults:
+      enabled: false
+    build:
+      enabled: true

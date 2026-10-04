@@ -137,7 +137,9 @@ public class AsyncVisitRecorder implements VisitRecorder {
             Map<String, Long> eventOutcomes,
             Map<String, Long> publishOutcomes,
             long localOldestQueuedAgeNanos,
-            long publishDurationNanos) {}
+            long publishDurationNanos,
+            boolean started,
+            boolean accepting) {}
 
     public Snapshot snapshot() {
         var counts = new HashMap<String, Long>();
@@ -160,7 +162,9 @@ public class AsyncVisitRecorder implements VisitRecorder {
                 Map.copyOf(events),
                 Map.copyOf(publishes),
                 age,
-                publishDurationNanos.sum());
+                publishDurationNanos.sum(),
+                started.get(),
+                accepting.get());
     }
 
     @Override
