@@ -20,6 +20,7 @@ public class RedirectRateLimitInterceptor implements HandlerInterceptor {
         String code = attribute instanceof Map<?, ?> variables ? (String) variables.get("code") : null;
         if (code == null || !code.matches("[A-Za-z0-9]{4,8}")) throw new LinkNotFoundException();
         var decision = limiter.admitRedirect(request.getRemoteAddr());
+        request.setAttribute("shortlink.admission", decision == null ? "unavailable" : decision.status().name().toLowerCase(java.util.Locale.ROOT));
         if (decision == null || decision.status() != RateLimiter.Decision.Status.REJECTED) return true;
         response.setStatus(429);
         response.setHeader("Cache-Control", "no-store");

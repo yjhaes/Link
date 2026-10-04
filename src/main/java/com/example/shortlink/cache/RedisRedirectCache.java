@@ -145,10 +145,8 @@ return 1
             } catch (JsonProcessingException
                     | DateTimeParseException
                     | IllegalArgumentException exception) {
-                LOGGER.warn(
-                        "Ignoring malformed redirect cache value for short code {}.",
-                        shortCode,
-                        exception);
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_MALFORMED);
                 deleteMalformedValue(key, serializedValue, shortCode);
             }
         }
@@ -306,10 +304,8 @@ return 1
         try {
             redisTemplate.execute(DELETE_IF_VALUE_MATCHES, List.of(key), serializedValue);
         } catch (RuntimeException exception) {
-            LOGGER.warn(
-                    "Could not delete malformed redirect cache value for short code {}.",
-                    shortCode,
-                    exception);
+            com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                    com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_CLEANUP);
         }
     }
 

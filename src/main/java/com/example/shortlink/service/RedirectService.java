@@ -34,6 +34,17 @@ public class RedirectService {
             new ConcurrentHashMap<>();
     private final long loadWaitNanos;
     private final java.util.concurrent.Semaphore queryPermits;
+    private final java.util.concurrent.atomic.AtomicInteger queries = new java.util.concurrent.atomic.AtomicInteger();
+    private io.micrometer.core.instrument.MeterRegistry meters;
+
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void observe(io.micrometer.core.instrument.MeterRegistry registry) {
+        meters = registry;
+        registry.gauge("shortlink.redirect.load.inflight", queries);
+    }
+    private void count(String name, String result) {
+        if (meters != null) meters.counter(name, "result", result).increment();
+    }
 
     public RedirectService(
             ShortLinkMapper shortLinkMapper,
@@ -113,12 +124,15 @@ public class RedirectService {
 
     private RedirectCacheRead readCache(String code) {
         try {
-            return redirectCache.find(code);
+            RedirectCacheRead value = redirectCache.find(code);
+            if (value != null) com.example.shortlink.logging.SafeOperationalLog.recovered(LOGGER,
+                    com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_READ);
+            count("shortlink.cache.read", value == null ? "unavailable" : value.status().name().toLowerCase(java.util.Locale.ROOT));
+            return value;
         } catch (RuntimeException exception) {
-            LOGGER.warn(
-                    "Redirect cache lookup failed for short code {}; falling back to MySQL.",
-                    code,
-                    exception);
+            count("shortlink.cache.read", "failed");
+            com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                    com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_READ);
             return null;
         }
     }
@@ -130,12 +144,17 @@ public class RedirectService {
     }
 
     private LoadedRedirect loadRedirect(String code, RedirectCacheRead read) {
-        if (!queryPermits.tryAcquire()) throw new com.example.shortlink.service.error.RedirectLoadBusyException();
+        if (!queryPermits.tryAcquire()) {
+            if (meters != null) meters.counter("shortlink.redirect.load.rejected").increment();
+            throw new com.example.shortlink.service.error.RedirectLoadBusyException();
+        }
+        queries.incrementAndGet();
         ShortLinkEntity entity;
         try {
             entity = shortLinkMapper.selectById(code);
         } finally {
             // Release on the actual query's completion, before cache coordination or shared-result use.
+            queries.decrementAndGet();
             queryPermits.release();
         }
         RedirectCacheRead.Status status;
@@ -178,13 +197,15 @@ public class RedirectService {
         if (isExpired(entry == null ? null : entry.expiresAt(), decidedAt)) {
             if (result.generation() != null) {
                 try {
-                    redirectCache.storeIfVersion(
+                    boolean stored = redirectCache.storeIfVersion(
                             code, result.generation(), RedirectCacheRead.Status.EXPIRED, null);
+                    count("shortlink.cache.write", stored ? "stored" : "version_changed");
+                    com.example.shortlink.logging.SafeOperationalLog.recovered(LOGGER,
+                            com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_WRITE);
                 } catch (RuntimeException exception) {
-                    LOGGER.warn(
-                            "Could not cache expired redirect result for short code {}.",
-                            code,
-                            exception);
+                    count("shortlink.cache.write", "failed");
+                    com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                            com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_WRITE);
                 }
             }
             throw new LinkExpiredException();
@@ -209,14 +230,14 @@ public class RedirectService {
                 && (read.status() == RedirectCacheRead.Status.MISS
                         || read.status() == RedirectCacheRead.Status.PLACEHOLDER)) {
             try {
-                redirectCache.storeIfVersion(code, read.generation(), status, entry);
+                boolean stored = redirectCache.storeIfVersion(code, read.generation(), status, entry);
+                count("shortlink.cache.write", stored ? "stored" : "version_changed");
+                com.example.shortlink.logging.SafeOperationalLog.recovered(LOGGER,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_WRITE);
             } catch (RuntimeException exception) {
-                LOGGER.warn(
-                        "Redirect cache write failed for short code {} and result {}; returning the"
-                                + " MySQL result.",
-                        code,
-                        status,
-                        exception);
+                count("shortlink.cache.write", "failed");
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LOGGER,
+                        com.example.shortlink.logging.SafeOperationalLog.Category.CACHE_WRITE);
             }
         }
     }

@@ -87,7 +87,8 @@ public class VisitCollection {
                             VisitMetadata.refererHost(request.getHeader("Referer"))));
         } catch (Exception failure) {
             observations.collectionFailed();
-            LOG.warn("Visit collection failed: category=collection");
+            com.example.shortlink.logging.SafeOperationalLog.sampled(LOG,
+                    com.example.shortlink.logging.SafeOperationalLog.Category.COLLECTION);
         }
         return cookie;
     }

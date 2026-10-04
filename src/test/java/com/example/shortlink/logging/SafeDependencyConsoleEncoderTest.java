@@ -26,4 +26,22 @@ class SafeDependencyConsoleEncoderTest {
    assertThat(logs.lines().count()).isEqualTo(4);assertThat(logs).doesNotContain("payload-canary","hash-canary","password-canary","SQLException","RuntimeException","IllegalArgumentException");
   } finally {context.stop();}
  }
+ @Test void redisDriverBurstIsBoundedAndRawBusinessExceptionsCannotEscape() {
+  var context=new LoggerContext();context.setMDCAdapter(new ch.qos.logback.classic.util.LogbackMDCAdapter());context.start();
+  try {
+   var output=new ByteArrayOutputStream();
+   var encoder=new SafeDependencyConsoleEncoder();encoder.setContext(context);encoder.setPattern("%level %logger %msg%n%ex");encoder.start();
+   var appender=new OutputStreamAppender<ch.qos.logback.classic.spi.ILoggingEvent>();appender.setContext(context);appender.setEncoder(encoder);appender.setOutputStream(output);appender.start();
+   var redis=context.getLogger("io.lettuce.core.protocol.CommandHandler");redis.addAppender(appender);
+   String canary="redis://password-canary original-url-canary query-canary cookie-canary visitor-hash-canary ip-canary ua-canary referer-canary payload-canary";
+   for(int i=0;i<500;i++) redis.warn("Transport {}",canary,new IllegalStateException(canary));
+   var business=context.getLogger("com.example.shortlink.service.ShortLinkCreationService");business.addAppender(appender);
+   business.error("Unexpected {}",canary,new IllegalArgumentException(canary));
+   business.error("Coordination unconfirmed: operation=create category=committed-cache-unconfirmed shortCode=Ab12");
+   String logs=output.toString(java.nio.charset.StandardCharsets.UTF_8);
+   assertThat(logs).contains("category=redis", "category=application", "shortCode=Ab12");
+   assertThat(logs.lines().count()).isEqualTo(3);
+   assertThat(logs).doesNotContain("canary","IllegalStateException","IllegalArgumentException");
+  } finally {context.stop();}
+ }
 }

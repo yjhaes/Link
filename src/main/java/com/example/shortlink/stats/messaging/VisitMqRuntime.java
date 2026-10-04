@@ -50,6 +50,7 @@ public final class VisitMqRuntime {
         synchronized (lifecycleLock) {
             if (started || closing) return;
             started = true;
+            LoggerFactory.getLogger(VisitMqRuntime.class).info("Application lifecycle: operation=lifecycle result=started");
             recorder.start();
             startup.execute(this::startupLoop);
         }
@@ -66,6 +67,7 @@ public final class VisitMqRuntime {
         synchronized (lifecycleLock) {
             if (closing) return;
             closing = true;
+            LoggerFactory.getLogger(VisitMqRuntime.class).info("Application lifecycle: operation=lifecycle result=stopping");
             recorder.stopAccepting();
             startup.shutdownNow();
         }
@@ -89,10 +91,12 @@ public final class VisitMqRuntime {
                 admin.initialize();
                 // The listener adapter also rejects start once terminal stop has claimed ownership.
                 if (!closing && properties.consumerEnabled()) listener.start();
+                com.example.shortlink.logging.SafeOperationalLog.recovered(LoggerFactory.getLogger(VisitMqRuntime.class),
+                        com.example.shortlink.logging.SafeOperationalLog.Category.MQ_STARTUP);
                 return;
             } catch (Exception failure) {
-                LoggerFactory.getLogger(VisitMqRuntime.class)
-                        .warn("Visit MQ degraded: category=startup");
+                com.example.shortlink.logging.SafeOperationalLog.sampled(LoggerFactory.getLogger(VisitMqRuntime.class),
+                        com.example.shortlink.logging.SafeOperationalLog.Category.MQ_STARTUP);
             }
             try {
                 TimeUnit.MILLISECONDS.sleep(500);

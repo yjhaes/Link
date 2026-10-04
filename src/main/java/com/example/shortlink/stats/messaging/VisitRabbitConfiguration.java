@@ -167,8 +167,9 @@ public class VisitRabbitConfiguration {
 
         c.setErrorHandler(
                 failure ->
-                        org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class)
-                                .warn("Visit listener failed: category=consumption"));
+                        com.example.shortlink.logging.SafeOperationalLog.sampled(
+                                org.slf4j.LoggerFactory.getLogger(VisitRabbitConfiguration.class),
+                                com.example.shortlink.logging.SafeOperationalLog.Category.MQ_CONSUMER));
         return c;
     }
 

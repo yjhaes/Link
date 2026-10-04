@@ -29,6 +29,7 @@ public class ManagementRateLimitInterceptor implements HandlerInterceptor {
                     || "visits".equals(method.getMethod().getName()))) {
             decision = limiter.admitManagementQuery();
         } else return true;
+        request.setAttribute("shortlink.admission", decision.status().name().toLowerCase(java.util.Locale.ROOT));
         if (decision.status() == RateLimiter.Decision.Status.ALLOWED) return true;
         response.setHeader("Cache-Control", "no-store");
         response.setContentType("application/json");

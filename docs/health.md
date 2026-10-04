@@ -35,6 +35,6 @@ Actuator 使用当前 Spring Boot 3.5.16 的 starter，没有升级技术栈或�
 
 真实Spring双HTTP服务器测试 `HealthManagementHttpTest` 使用受控JDBC/Redis/AMQP公共边界补验仅统计池故障、原始异常canary、配置enabled/人工stop的差异和AvailabilityChangeEvent关闭意图。已有MQ启动/关闭和HTTP限流装配回归继续运行。测试详情见07验收记录。
 
-HTTP基础指标使用Spring MVC模板route或固定未知/拒绝类别，不用原始URL/IP/短码等标签；JDBC指标name=dataSource与stats（Boot自动去除statsDataSource的后缀），Hikari分别观察核心与visit-statistics池。没有自动取得broker队列ready/unacked，也没有本阶段新增的全部业务指标。这里没有Prometheus/Grafana/动态日志操作。
+HTTP基础指标使用Spring MVC模板route或固定未知/拒绝类别，不用原始URL/IP/短码等标签；JDBC指标name=dataSource与stats（Boot自动去除statsDataSource的后缀），Hikari分别观察核心与visit-statistics池。没有自动取得broker队列ready/unacked。08新增的安全日志、完整最小指标与语义见 [观测清单](observability.md)；这里没有Prometheus/Grafana/动态日志操作。
 
 API依据：[Spring Boot 3.5.16 Actuator端点与健康分组](https://docs.spring.io/spring-boot/3.5/reference/actuator/endpoints.html)、[管理服务端口](https://docs.spring.io/spring-boot/3.5/reference/actuator/monitoring.html)。
