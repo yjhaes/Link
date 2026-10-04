@@ -21,7 +21,8 @@ public final class SafeDependencyConsoleEncoder extends PatternLayoutEncoder {
                 || name.equals("com.example.shortlink.stats.messaging.VisitListenerContainer") ? "mq"
                 : name.startsWith("io.lettuce.core") || name.startsWith("org.springframework.data.redis") ? "redis"
                 : (name.startsWith("org.springframework.web.") || name.startsWith("org.apache.catalina.")
-                        || name.startsWith("org.apache.coyote.")) && event.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN)
+                        || name.startsWith("org.apache.coyote.")) && (event.getThrowableProxy() != null
+                        || event.getLevel().isGreaterOrEqual(ch.qos.logback.classic.Level.WARN))
                         ? "http"
                 : name.startsWith("com.example.shortlink.") && event.getThrowableProxy() != null ? "application" : null;
         if (category == null) return super.encode(event);

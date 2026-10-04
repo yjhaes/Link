@@ -80,6 +80,21 @@ class RequestObservabilityHttpTest {
             assertThat(logs).doesNotContain("client-id-canary","query-secret-canary","visitor-cookie-canary","referer-canary","agent-canary","body-secret-canary","METHOD_CANARY","unknown-path-canary");
         }
     }
+    @Test void malformedRequestBeforeFiltersDoesNotLeakItsTarget(CapturedOutput output) throws Exception {
+        try(var context=new SpringApplicationBuilder(Application.class).run("--server.port=0", "--management.server.port=0",
+                "--spring.main.banner-mode=off","--short-link.base-url=http://localhost")) {
+            int main=((ServletWebServerApplicationContext)context).getWebServer().getPort();
+            try(var socket=new java.net.Socket("127.0.0.1",main)) {
+                socket.setSoTimeout(5000);
+                socket.getOutputStream().write(("GET /s/Ab12?parser-query-canary=< HTTP/1.1\r\n"
+                    + "Host: localhost\r\nConnection: close\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                socket.getOutputStream().flush();
+                String response=new String(socket.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+                assertThat(response).startsWith("HTTP/1.1 400");
+            }
+            assertThat(output.getAll()).contains("category=http").doesNotContain("parser-query-canary", "Invalid character found in the request target");
+        }
+    }
     @Test void actualSqlPressureAndCacheFailuresAreVisibleWithoutLeakingDriverOrBusinessCanaries(CapturedOutput output) throws Exception {
         try(var context=new SpringApplicationBuilder(Application.class).run("--server.port=0", "--management.server.port=0",
                 "--spring.main.banner-mode=off","--short-link.base-url=http://localhost")) {

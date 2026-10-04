@@ -41,6 +41,6 @@ MQ ready/unacked、队列policy和路由仍通过受限 RabbitMQ Management 与�
 
 成功跳转不逐条INFO。HTTP失败每个固定group/result最多每30秒一个样本；业务依赖错误按固定类别采样并记录 observedCount；驱动日志按固定依赖类别和级别每30秒最多一个样本。恢复日志同样有界。完整累计次数看指标，样本不承诺保留每个错误事件；重要已提交协调日志保留单次短码定位。
 
-安全编码器明确保护 Hikari/MySQL/Spring JDBC、Spring AMQP/native Rabbit及既有安全适配器、Lettuce/Spring Redis 命名空间，以及 Spring Web/Tomcat HTTP框架的WARN/ERROR（例如PageNotFound原始路径），并兜底替换本应用携带Throwable的事件。保持级别、时间、logger、thread和服务端请求上下文，丢弃驱动文本与堆栈。业务源日志只输出受控类别/枚举，已移除访问事件ID及原始异常。禁止秘密、原始URL/查询串/请求体/Cookie/访客摘要/IP/完整Referer或UA/MQ payload进入普通日志。
+安全编码器明确保护 Hikari/MySQL/Spring JDBC、Spring AMQP/native Rabbit及既有安全适配器、Lettuce/Spring Redis 命名空间，以及 Spring Web/Tomcat HTTP框架的WARN/ERROR及任何携Throwable的事件（包括请求Filter之前的INFO解析异常和PageNotFound原始路径），并兜底替换本应用携带Throwable的事件。保持级别、时间、logger、thread和服务端请求上下文，丢弃驱动文本与堆栈。业务源日志只输出受控类别/枚举，已移除访问事件ID及原始异常。禁止秘密、原始URL/查询串/请求体/Cookie/访客摘要/IP/完整Referer或UA/MQ payload进入普通日志。
 
 这不是全局任意日志自动脱敏器：新依赖、新日志源、任意无Throwable业务文本以及新增MDC字段需要重新审核。保护发生于生产控制台编码边界，另行添加文件/网络appender必须配置同等保护。独立canary测试覆盖真实业务错误及Redis/JDBC/MQ原始异常、高频Redis驱动事件；Compose验收从真实请求和故障查询指标、检查实际应用输出，证据见 `.scratch/final-hardening/08-verification.md`。
