@@ -256,9 +256,9 @@ flowchart TD
 | [01：安全默认配置与独立秘密初始化](issues/01-safe-defaults-and-secrets.md) | 无 | resolved |
 | [02：自动准备隔离设施并复现现有回归](issues/02-reproducible-integration-tests.md) | 无 | resolved |
 | [03：匿名创建的Redis Lua令牌桶与拒绝语义](issues/03-create-rate-limiting.md) | 无 | resolved |
-| [04：跳转限流与实际回源并发保护](issues/04-redirect-rate-limiting-and-load-admission.md) | 03 | ready-for-agent |
-| [05：鉴权后的管理写入与查询限流](issues/05-management-rate-limiting.md) | 01、03 | ready-for-agent |
-| [06：全栈Compose运行、持久卷和资源边界](issues/06-compose-runtime.md) | 01 | ready-for-agent |
+| [04：跳转限流与实际回源并发保护](issues/04-redirect-rate-limiting-and-load-admission.md) | 03 | resolved |
+| [05：鉴权后的管理写入与查询限流](issues/05-management-rate-limiting.md) | 01、03 | resolved |
+| [06：全栈Compose运行、持久卷和资源边界](issues/06-compose-runtime.md) | 01 | resolved |
 | [07：分组健康检查与安全管理端口](issues/07-health-and-management-exposure.md) | 06 | ready-for-agent |
 | [08：请求与异步结果的安全日志和最小指标](issues/08-safe-logs-and-metrics.md) | 04、05、07 | ready-for-agent |
 | [09：业务OpenAPI与页面错误契约](issues/09-api-docs-and-error-ui.md) | 04、05 | ready-for-agent |
