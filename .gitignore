@@ -14,3 +14,6 @@ docs/阶段文档.md
 # Local deployment secrets
 .env*
 !.env.example
+
+# Generated Python test/tool bytecode
+__pycache__/
