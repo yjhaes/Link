@@ -1,0 +1,8 @@
+# Opt-in host access for local debugging; never part of the normal run.
+services:
+  mysql:
+    ports: ["127.0.0.1:${MYSQL_DEBUG_PORT:-3306}:3306"]
+  redis:
+    ports: ["127.0.0.1:${REDIS_DEBUG_PORT:-6379}:6379"]
+  rabbitmq:
+    ports: ["127.0.0.1:${AMQP_DEBUG_PORT:-5672}:5672"]

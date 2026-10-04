@@ -1,5 +1,7 @@
 # Consumer policies and safe logs
 
+新环境运行完整演示使用 [全栈 Compose 入口](../docs/compose.md)：一次秘密初始化后构建启动，自动创建项目账号/vhost并重复应用 policy；默认只发布 localhost 应用和 MQ Management，持久卷及受控恢复见该文档。以下手工 policy 入口保留给已有设施维护。
+
 主队列策略同时包含 DLX/key、10000 条 ready 或 16 MiB、24 小时 TTL、reject-publish；所有字段保持在同一最高优先级普通 policy。EXPIRED 是合法消费终局，AUTO 确认且不写 MySQL。
 
 ## 部署和维护
