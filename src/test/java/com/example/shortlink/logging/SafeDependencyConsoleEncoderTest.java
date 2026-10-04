@@ -35,12 +35,14 @@ class SafeDependencyConsoleEncoderTest {
    var redis=context.getLogger("io.lettuce.core.protocol.CommandHandler");redis.addAppender(appender);
    String canary="redis://password-canary original-url-canary query-canary cookie-canary visitor-hash-canary ip-canary ua-canary referer-canary payload-canary";
    for(int i=0;i<500;i++) redis.warn("Transport {}",canary,new IllegalStateException(canary));
+   var http=context.getLogger("org.springframework.web.servlet.PageNotFound");http.addAppender(appender);
+   for(int i=0;i<500;i++) http.warn("No mapping for METHOD_CANARY /unknown-path-canary {}",canary);
    var business=context.getLogger("com.example.shortlink.service.ShortLinkCreationService");business.addAppender(appender);
    business.error("Unexpected {}",canary,new IllegalArgumentException(canary));
    business.error("Coordination unconfirmed: operation=create category=committed-cache-unconfirmed shortCode=Ab12");
    String logs=output.toString(java.nio.charset.StandardCharsets.UTF_8);
-   assertThat(logs).contains("category=redis", "category=application", "shortCode=Ab12");
-   assertThat(logs.lines().count()).isEqualTo(3);
+   assertThat(logs).contains("category=redis", "category=http", "category=application", "shortCode=Ab12");
+   assertThat(logs.lines().count()).isEqualTo(4);
    assertThat(logs).doesNotContain("canary","IllegalStateException","IllegalArgumentException");
   } finally {context.stop();}
  }

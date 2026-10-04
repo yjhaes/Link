@@ -23,6 +23,7 @@ class RequestContextFilterTest {
                 });
             } catch(jakarta.servlet.ServletException expected) { assertThat(expected).hasMessage("controlled failure"); }
             assertThat(MDC.get("requestId")).isNull();
+            assertThat(registry.get("shortlink.http.requests").tag("result", "failed").timer().count()).isEqualTo(1);
             MDC.put("requestId","outer-context");
             try {
                 filter.doFilter(new MockHttpServletRequest("GET","/"),new MockHttpServletResponse(),(incoming,outgoing)->assertThat(MDC.get("requestId")).isNotEqualTo("outer-context"));

@@ -37,6 +37,7 @@ class RequestObservabilityHttpTest {
         @Bean @Primary RateLimiter admission(AtomicReference<RateLimiter.Decision> decision) {
             return new RateLimiter() {
                 public Decision admitCreate(String peer) { return decision.get(); }
+                public Decision admitRedirect(String peer) { return decision.get(); }
                 public Decision admitManagementWrite() { return decision.get(); }
                 public Decision admitManagementQuery() { return decision.get(); }
             };
@@ -63,6 +64,8 @@ class RequestObservabilityHttpTest {
             for(int i=0;i<5;i++) {
                 http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+main+"/unknown-path-canary-"+i)).GET().build(),HttpResponse.BodyHandlers.ofString());
             }
+            http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+main+"/unknown-path-canary-method"))
+                .method("METHOD_CANARY",HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofString());
             var metrics=http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+management+"/actuator/metrics/shortlink.http.requests?tag=group:create&tag=result:rejected"))
                 .GET().build(),HttpResponse.BodyHandlers.ofString());
             assertThat(metrics.statusCode()).isEqualTo(200);
@@ -74,7 +77,7 @@ class RequestObservabilityHttpTest {
             String logs=output.getAll();
             assertThat(logs).contains("operation=create result=rejected", "requestId=");
             assertThat(logs.lines().filter(line->line.contains("operation=create result=rejected")).count()).isEqualTo(1);
-            assertThat(logs).doesNotContain("client-id-canary","query-secret-canary","visitor-cookie-canary","referer-canary","agent-canary","body-secret-canary");
+            assertThat(logs).doesNotContain("client-id-canary","query-secret-canary","visitor-cookie-canary","referer-canary","agent-canary","body-secret-canary","METHOD_CANARY","unknown-path-canary");
         }
     }
     @Test void actualSqlPressureAndCacheFailuresAreVisibleWithoutLeakingDriverOrBusinessCanaries(CapturedOutput output) throws Exception {
@@ -83,6 +86,9 @@ class RequestObservabilityHttpTest {
             int main=((ServletWebServerApplicationContext)context).getWebServer().getPort();
             int management=context.getEnvironment().getRequiredProperty("local.management.port",Integer.class);
             var http=HttpClient.newHttpClient();
+            @SuppressWarnings("unchecked")
+            var admission=(AtomicReference<RateLimiter.Decision>)context.getBean(AtomicReference.class);
+            admission.set(RateLimiter.Decision.unavailable());
             var cache=context.getBean(com.example.shortlink.cache.RedirectCache.class);
             var mapper=context.getBean(com.example.shortlink.persistence.ShortLinkMapper.class);
             org.mockito.Mockito.when(cache.find(org.mockito.ArgumentMatchers.anyString())).thenThrow(new IllegalStateException(
@@ -147,8 +153,8 @@ class RequestObservabilityHttpTest {
             var http=HttpClient.newHttpClient();
             @SuppressWarnings("unchecked")
             var decision=(AtomicReference<RateLimiter.Decision>)context.getBean(AtomicReference.class);
-            for(String group:java.util.List.of("management_write","management_query")) {
-                String path=group.endsWith("write")?"/api/links/Ab12/enabled":"/api/internal/links/Ab12/stats";
+            for(String group:java.util.List.of("management_write","management_query","redirect")) {
+                String path=group.endsWith("write")?"/api/links/Ab12/enabled":group.equals("redirect")?"/s/Ab12":"/api/internal/links/Ab12/stats";
                 var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+main+path)).header("X-Internal-Token",InternalManagementApiTest.TOKEN);
                 var denied=http.send(group.endsWith("write")?builder.PUT(HttpRequest.BodyPublishers.ofString("{")).build():builder.GET().build(),HttpResponse.BodyHandlers.ofString());
                 assertThat(denied.statusCode()).isEqualTo(429);

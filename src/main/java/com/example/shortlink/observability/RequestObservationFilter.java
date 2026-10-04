@@ -31,13 +31,17 @@ public final class RequestObservationFilter extends OncePerRequestFilter {
         MDC.put("requestId", id);
         response.setHeader("X-Request-ID", id);
         long began = System.nanoTime();
-        try { chain.doFilter(request, response); }
-        finally {
+        boolean completed = false;
+        try {
+            chain.doFilter(request, response);
+            completed = true;
+        } finally {
             try {
                 Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
                 String route = MetricPrivacyConfiguration.route(pattern == null ? "" : pattern.toString());
                 String group = MetricPrivacyConfiguration.group(route);
-                String result = MetricPrivacyConfiguration.result(response.getStatus());
+                int status = completed ? response.getStatus() : 500;
+                String result = MetricPrivacyConfiguration.result(status);
                 Object admission = request.getAttribute("shortlink.admission");
                 if (admission != null && !group.equals("other")) {
                     meters.counter("shortlink.rate.admission", "group", group, "result", admission.toString()).increment();
@@ -49,7 +53,7 @@ public final class RequestObservationFilter extends OncePerRequestFilter {
                 long elapsed = System.nanoTime() - began;
                 meters.timer("shortlink.http.requests", "route", route, "group", group, "result", result)
                         .record(elapsed, TimeUnit.NANOSECONDS);
-                if (!group.equals("other") && response.getStatus() >= 400) {
+                if (!group.equals("other") && status >= 400) {
                     // The key contains only four fixed groups and six fixed results.
                     String key = group + ":" + result;
                     lastLog.compute(key, (ignored, last) -> {
