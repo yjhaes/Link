@@ -106,7 +106,7 @@ def main():
         # Fixed messages only; do not echo dependency output/exception details into public console.
         failure = str(error) if isinstance(error, RuntimeError) else type(error).__name__
     summary = {"run": run_id, "environment": versions, "stages": stages, "failure": failure,
-               "githubHostedExecution": False if not os.environ.get("GITHUB_ACTIONS") else True,
+               "githubHostedExecution": os.environ.get("GITHUB_ACTIONS") == "true",
                "performanceGate": False}
     artifact.mkdir(parents=True, exist_ok=True)
     (artifact / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
