@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import socket
 import sys
 import time
 import urllib.parse
@@ -19,12 +20,14 @@ run_id = uuid.uuid4().hex[:12]
 project = "link-smoke-" + run_id
 report = ROOT / "target" / "compose-smoke" / run_id
 report.mkdir(parents=True)
+print("Safe reports: " + str(report), flush=True)
 secret_file = report / ".env.local"
 env = {k: v for k, v in os.environ.items() if not k.upper().startswith(
     ("DB_", "MYSQL_", "REDIS_", "RABBIT", "SHORT_LINK_", "SPRING_", "APP_", "SERVER_", "MANAGEMENT_", "COMPOSE_"))
     and k.upper() not in ("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")}
 secrets = []
 checks = []
+versions = {"python": sys.version.split()[0], "host": sys.platform}
 
 def check(condition, name):
     if not condition:
@@ -59,6 +62,7 @@ def until(test, name, timeout=120):
 
 compose = []
 started = False
+image_built = False
 failure = None
 try:
     initializer = (["pwsh", "-NoProfile", "-File", str(ROOT / "ops/init-local-secrets.ps1"), "-Path"]
@@ -72,14 +76,16 @@ try:
     check(hashlib.sha256(secret_file.read_bytes()).digest() == digest, "repeat initialization preserves independent secrets")
     # Published ports are assigned by Docker, not selected with a racy free-port check.
     override = report / "ports.yml"
-    override.write_text('services:\n  app:\n    ports: !override ["127.0.0.1::8080", "127.0.0.1::8081"]\n  rabbitmq:\n    ports: !override ["127.0.0.1::15672"]\n', encoding="utf-8")
+    override.write_text('services:\n  app:\n    image: link-smoke-app-' + run_id + ':acceptance\n    ports: !override ["127.0.0.1::8080", "127.0.0.1::8081"]\n  rabbitmq:\n    ports: !override ["127.0.0.1::15672"]\n', encoding="utf-8")
     compose = ["docker", "compose", "--project-name", project, "--env-file", str(secret_file),
                "--file", str(ROOT / "compose.yml"), "--file", str(override)]
-    cmd(["docker", "version", "--format", "{{.Server.Version}}"], "docker-version", 30)
-    cmd(["docker", "compose", "version"], "compose-version", 30)
+    versions["docker"] = cmd(["docker", "version", "--format", "{{.Server.Version}}"], "docker-version", 30).strip()
+    versions["compose"] = cmd(["docker", "compose", "version"], "compose-version", 30).strip()
+    versions["sourceCommit"] = cmd(["git", "rev-parse", "HEAD"], "source-commit", 30).strip()
     cmd(compose + ["config", "--quiet"], "compose-validation", 30)
     print("Building real multistage image; isolated project " + project, flush=True)
     cmd(compose + ["build", "app"], "build", 1200)
+    image_built = True
     started = True
     cmd(compose + ["up", "--detach", "--wait", "--wait-timeout", "240"], "clean-up", 300)
     def port(service, number):
@@ -104,6 +110,52 @@ try:
         return result
     until(lambda: http("GET", "/")[0] == 200, "existing root HTTP ready")
     check(http("GET", "/")[0] == 200, "application HTTP ready")
+    # Query the real generated contract and shipped Swagger resources in the final image.
+    status, _, document = http("GET", "/v3/api-docs")
+    expected_paths = {"/api/links", "/s/{code}", "/api/links/{code}/enabled",
+                      "/api/internal/links/{code}/stats", "/api/internal/links/{code}/visits"}
+    check(status == 200 and set(document["paths"]) == expected_paths,
+          "final image generates exactly the five business OpenAPI routes")
+    check(not any(value in json.dumps(document) for value in secrets) and "/actuator/" not in json.dumps(document),
+          "actual business document has no credentials or Actuator operations")
+    for path in expected_paths:
+        method = "post" if path == "/api/links" else "put" if path.endswith("/enabled") else "get"
+        operation = document["paths"][path][method]
+        check("503" in operation["responses"] and
+              {"Retry-After", "Cache-Control"}.issubset(operation["responses"]["429"]["headers"]),
+              "actual contract preserves distinct 503 and rate rejection headers " + path)
+        if method == "get":
+            head = document["paths"][path]["head"]
+            check(all("content" not in response for response in head["responses"].values()),
+                  "all documented HEAD results have no response body " + path)
+        if "internal" in path or path.endswith("/enabled"):
+            check(operation["security"] == [{"InternalToken": []}],
+                  "actual management contract requires the token header " + path)
+    check(document["components"]["securitySchemes"]["InternalToken"]["name"] == "X-Internal-Token",
+          "actual security scheme identifies the existing management header")
+    for code_name in ("RATE_LIMIT_UNAVAILABLE", "REDIRECT_LOAD_BUSY", "STATS_BUSY", "STATS_QUERY_TIMEOUT",
+                      "CREATE_CACHE_COORDINATION_UNCONFIRMED", "LINK_STATE_CACHE_COORDINATION_UNCONFIRMED"):
+        check(code_name in json.dumps(document), "final contract distinguishes error " + code_name)
+    status, _, swagger = http("GET", "/v3/api-docs/swagger-config")
+    check(status == 200 and swagger.get("persistAuthorization") is False
+          and not any(value in json.dumps(swagger) for value in secrets),
+          "actual Swagger config never persists or prefills the generated credentials")
+    check(http("GET", "/swagger-ui/index.html")[0] == 200, "final image serves local Swagger UI")
+    status, _, initializer_js = http("GET", "/swagger-ui/swagger-initializer.js")
+    check(status == 200 and b"preauthorizeApiKey" not in initializer_js
+          and not any(value.encode() in initializer_js for value in secrets),
+          "shipped Swagger initializer does not preauthorize a secret")
+    check(http("GET", "/v3/api-docs", operational=True)[0] != 200,
+          "separate operational port does not publish the business OpenAPI")
+    # Real pre-filter Tomcat parser rejection: application filters cannot sanitize this target.
+    with socket.create_connection(("127.0.0.1", app_port), timeout=5) as connection:
+        connection.sendall(b"GET /s/Ab12?parser-query-canary=< HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        response = connection.recv(4096)
+    check(response.startswith(b"HTTP/1.1 400"), "actual final Tomcat rejects malformed pre-filter request")
+    parser_logs = cmd(compose + ["logs", "--no-color", "app"], "observation-parser-logs", 30)
+    check("category=http" in parser_logs and "parser-query-canary" not in parser_logs
+          and "Invalid character found in the request target" not in parser_logs,
+          "actual final image parser logs preserve a safe category without private target")
     def health(group):
         return http("GET", "/actuator/health/" + group, operational=True)
     def probe_pair():
@@ -125,6 +177,23 @@ try:
     status, headers, _ = http("GET", "/s/" + code)
     cookie = headers.get("Set-Cookie", "").split(";", 1)[0]
     check(status == 302 and headers["Location"] == "https://example.com/compose-acceptance" and headers["Cache-Control"] == "no-store" and bool(cookie), "redirect and collection cookie")
+    status, head_headers, body = http("HEAD", "/s/" + code)
+    check(status == 302 and body == b"" and head_headers.get("Location") == "https://example.com/compose-acceptance"
+          and head_headers.get("Cache-Control") == "no-store" and "Set-Cookie" not in head_headers,
+          "actual successful HEAD preserves redirect headers without cookie or body")
+    status, error_headers, error = http("GET", "/s/invalid-code")
+    check(status == 404 and error["code"] == "LINK_NOT_FOUND" and error_headers.get("Cache-Control") == "no-store"
+          and "Set-Cookie" not in error_headers, "actual illegal short code rejects without a visit cookie")
+    status, error_headers, body = http("HEAD", "/s/invalid-code")
+    check(status == 404 and body == b"" and error_headers.get("Cache-Control") == "no-store"
+          and "Set-Cookie" not in error_headers, "actual HEAD error has no response body or visit cookie")
+    for suffix in ("stats", "visits"):
+        status, error_headers, error = http("GET", "/api/internal/links/" + code + "/" + suffix)
+        check(status == 401 and error["code"] == "INTERNAL_UNAUTHORIZED" and error_headers.get("Cache-Control") == "no-store",
+              "actual unauthorized management contract " + suffix)
+        status, error_headers, body = http("HEAD", "/api/internal/links/" + code + "/" + suffix)
+        check(status == 401 and body == b"" and error_headers.get("Cache-Control") == "no-store",
+              "actual unauthorized management HEAD has no body " + suffix)
     def stats():
         status, _, data = http("GET", "/api/internal/links/" + code + "/stats", headers={"X-Internal-Token": values["SHORT_LINK_INTERNAL_TOKEN"]})
         return data if status == 200 else None
@@ -152,7 +221,7 @@ try:
     check(metric_value("shortlink.mq.consumer.event.delay.samples") >= 1
           and metric_value("shortlink.mq.consumer.completed.average") > 0,
           "saved-event delay samples and cumulative consumer average have distinct metrics")
-    canaries = ("query-secret-canary", "client-id-canary", "request-cookie-canary", "referer-canary", "agent-canary", "original-url-canary")
+    canaries = ("query-secret-canary", "client-id-canary", "request-cookie-canary", "referer-canary", "agent-canary", "original-url-canary", "parser-query-canary")
     ids = set()
     for i in range(10):
         status, headers, _ = http("HEAD", "/s/" + code + "?query-secret-canary", headers={
@@ -255,6 +324,12 @@ try:
     inspected = json.loads(inspected_result.stdout)
     by_service = {c["Config"]["Labels"]["com.docker.compose.service"]: c for c in inspected}
     check(set(by_service) == {"app", "mysql", "redis", "rabbitmq"}, "exactly four resident services")
+    versions["images"] = {service: {"reference": container["Config"]["Image"], "id": container["Image"]}
+                          for service, container in by_service.items()}
+    for service, argv in (("app", ["java", "-version"]), ("mysql", ["mysql", "--version"]),
+                          ("redis", ["redis-server", "--version"]),
+                          ("rabbitmq", ["gosu", "rabbitmq", "rabbitmq-diagnostics", "-q", "server_version"])):
+        versions[service] = cmd(compose + ["exec", "-T", service, *argv], "runtime-version-" + service, 30).strip()
     check(by_service["app"]["Config"]["User"] == "10001:10001", "application runs non-root")
     for service, budget in (("app", 768), ("mysql", 1024), ("redis", 256), ("rabbitmq", 1024)):
         check(by_service[service]["HostConfig"]["Memory"] == budget * 1024 * 1024, service + " memory budget")
@@ -287,6 +362,13 @@ try:
     check(denied_status == 503 and denied["code"] == "RATE_LIMIT_UNAVAILABLE"
           and metric_value("shortlink.rate.admission", group="create", result="unavailable") >= 1,
           "actual stopped Redis admission failure is observed independently of quota rejection")
+    for suffix in ("stats", "visits"):
+        status, unavailable_headers, unavailable_body = http("HEAD", "/api/internal/links/" + code + "/" + suffix,
+                headers={"X-Internal-Token": values["SHORT_LINK_INTERNAL_TOKEN"]})
+        check(status == 503 and unavailable_body == b"" and unavailable_headers.get("Cache-Control") == "no-store",
+              "actual Redis outage management HEAD failure has no body " + suffix)
+    check("shortCode" not in denied and "COORDINATION_UNCONFIRMED" not in json.dumps(denied),
+          "actual business-before-start 503 never claims a committed mapping")
     check(http("HEAD", "/s/" + code)[0] == 302
           and metric_value("shortlink.rate.admission", group="redirect", result="unavailable") >= 1,
           "actual stopped Redis fail-open redirect retains an unavailable admission metric")
@@ -339,8 +421,13 @@ finally:
             cmd(compose + ["down", "--volumes", "--remove-orphans"], "isolated-cleanup", 120)
         except Exception:
             failure = failure or "Cleanup failed; isolated project: " + project
+    if image_built:
+        try:
+            cmd(["docker", "image", "rm", "link-smoke-app-" + run_id + ":acceptance"], "isolated-image-cleanup", 60)
+        except Exception:
+            failure = failure or "Isolated image cleanup failed: link-smoke-app-" + run_id
     secret_file.unlink(missing_ok=True)
-    (report / "summary.json").write_text(json.dumps({"project": project, "passed": checks, "failure": failure}, indent=2), encoding="utf-8")
+    (report / "summary.json").write_text(json.dumps({"project": project, "environment": versions, "passed": checks, "failure": failure}, indent=2), encoding="utf-8")
     print("Safe reports: " + str(report), flush=True)
 if failure:
     sys.exit(1)

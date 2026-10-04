@@ -38,4 +38,10 @@ MYSQL_TEST_PASSWORD=cleanup-placeholder MYSQL_ROOT_PASSWORD=cleanup-placeholder 
   docker compose --project-name link-tests-<本轮标识> --file ops/tests/compose.yml down --volumes --remove-orphans
 ```
 
-这是现有回归设施入口；全栈演示 Compose、CI、后续限流/回源/健康验收分别由后续任务交付。
+## 完整正确性入口与 CI
+
+`pwsh -NoProfile -File ops/ci/run.ps1`（Windows）或 `sh ops/ci/run.sh`（Linux）与 GitHub Actions 使用相同 Python 入口：先验证 JDK17 / Node / Python / Docker / Compose，执行无设施 Python 公共边界检查，再运行上述 `all`，最后从新隔离 project 构建真实最终镜像并执行完整 Compose 冒烟。任何层失败或必测项跳过均使入口非零退出，性能数字不作为门槛。
+
+最终镜像验收包括初始化/重复启动/持久卷/policy/消费、Redis重建和受控恢复、MQ隔离、真实健康/安全日志和低基数指标，以及生成OpenAPI/Swagger UI、HEAD和各错误契约；原核心/缓存/MQ/统计与限流/回源故障由全部JUnit回归覆盖。Compose单独入口为 `pwsh -NoProfile -File ops/compose/smoke.ps1` 或 `sh ops/compose/smoke.sh`，采用独立随机应用镜像tag，避免覆盖演示或测量镜像。
+
+`target/ci/<运行标识>/reports/` 只收集本轮白名单安全文字证据；CI无论成功或普通失败均上传该目录，不上传整个target、秘密文件、raw inspect/expanded config或容器镜像。清理与取消边界、固定Actions来源及本轮实际执行范围见 [CI说明](ci.md)。已配置工作流与已经获得GitHub托管运行报告分别记录，不把本地等价验证声称为远程成功。
