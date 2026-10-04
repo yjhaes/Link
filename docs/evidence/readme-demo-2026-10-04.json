@@ -1,0 +1,129 @@
+{
+  "date": "2026-10-04",
+  "sourceCommit": "635ffef140e8232c8b2fbdc93775b18a288d2cc0",
+  "sourceDirty": true,
+  "changes": "documentation and screenshots only; application sources match full CI source c4b47a3",
+  "project": "link-readme-d4a8a71c12",
+  "imageId": "sha256:7b7b9435a3b2eae55bb48c8bf81d049c5431c962f0af286aaa7eb8efa659aa42",
+  "coldNamedVolumes": true,
+  "ports": {
+    "application": "http://127.0.0.1:2763",
+    "management": "http://127.0.0.1:4911",
+    "binding": "127.0.0.1"
+  },
+  "secrets": {
+    "count": 5,
+    "distinct": true,
+    "repeatInitializationPreserved": true,
+    "valuesPublished": false
+  },
+  "services": [
+    {
+      "service": "app",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "mysql",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "redis",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "rabbitmq",
+      "status": "running",
+      "health": "healthy"
+    }
+  ],
+  "checks": [
+    "public_home_200",
+    "create_201",
+    "short_url_uses_isolated_project",
+    "head_302_empty_no_store_location",
+    "get_302_1",
+    "get_302_2",
+    "async_pv2_uv1_same_cookie",
+    "disable_200",
+    "disabled_403",
+    "enable_200",
+    "enabled_head_302",
+    "create_429_retry_after_no_store",
+    "create_429_retry_after_no_store",
+    "default_create_limit_rejects",
+    "public_/livez_200",
+    "public_/readyz_200",
+    "public_/swagger-ui/index.html_200",
+    "public_/v3/api-docs_200",
+    "openapi_no_actuator",
+    "openapi_eight_operations",
+    "management_/actuator/health_UP",
+    "management_/actuator/health/dependencies_UP",
+    "app_healthy",
+    "mysql_healthy",
+    "redis_healthy",
+    "rabbitmq_healthy"
+  ],
+  "createBurstStatuses": [
+    201,
+    201,
+    429,
+    429
+  ],
+  "screenshots": [
+    "docs/images/home.png",
+    "docs/images/swagger.png"
+  ],
+  "cleanup": {
+    "containersRemaining": 0,
+    "volumesRemaining": 0,
+    "networksRemaining": 0,
+    "temporaryImageRemoved": true,
+    "temporarySecretFileRemoved": true,
+    "scope": "this randomly named demonstration project only"
+  },
+  "rabbitPolicies": [
+    {
+      "name": "shortlink-visit-consumer",
+      "definition": {
+        "dead-letter-exchange": "shortlink.visit.dlx",
+        "dead-letter-routing-key": "visit.failed.v1",
+        "max-length": 10000,
+        "max-length-bytes": 16777216,
+        "message-ttl": 86400000,
+        "overflow": "reject-publish"
+      }
+    },
+    {
+      "name": "shortlink-visit-dead-letter",
+      "definition": {
+        "max-length": 1000,
+        "max-length-bytes": 4194304,
+        "message-ttl": 86400000,
+        "overflow": "drop-head"
+      }
+    }
+  ],
+  "screenshotsVerified": {
+    "browser": "isolated headless Edge / Playwright context",
+    "authorizationEntered": false,
+    "publicHomeEmptyState": true,
+    "swaggerEightOperations": true,
+    "visuallyInspected": true,
+    "viewport": "1280x900"
+  },
+  "limitations": [
+    "Windows host running Linux containers; native Linux host not rerun",
+    "Document-only worktree changes; full Java CI results refer to c4b47a3",
+    "Application base URL changed only in temporary override to isolated random port; README standard port remains 8080",
+    "Screenshots show public empty home and unauthenticated Swagger; API flow independently verified without publishing secrets"
+  ],
+  "documentationChecks": {
+    "utf8Files": 8,
+    "localLinkTargets": 53,
+    "brokenTargets": 0
+  }
+}
