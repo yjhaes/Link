@@ -174,6 +174,7 @@ function errorMessage(error, purpose) {
   if (error.code === 'LINK_STATE_CACHE_COORDINATION_UNCONFIRMED') {
     return `短码 ${error.body?.shortCode || '未知'} 的状态已提交到数据库，但缓存协调尚未确认。请保留短码并联系维护者恢复，不要自动重复操作。`;
   }
+  if (error.code === 'REDIRECT_LOAD_BUSY') return '跳转回源繁忙，本次请求未跳转，请稍后重试。';
   if (error.code === 'STATS_BUSY') return '统计查询繁忙，请稍后重新查询。';
   if (error.code === 'STATS_QUERY_TIMEOUT') return '统计查询超时，请稍后重新查询。';
   if (error.code === 'INVALID_REQUEST') {
