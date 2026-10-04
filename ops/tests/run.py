@@ -130,10 +130,10 @@ def run_tests(names, label, vhost="/"):
 try:
     print(f"Reports: {report}\nCompose project: {project}", flush=True)
     if args.suite in ("unit", "all"):
-        page_test = ROOT / "src/test/js/create-rate-limit-page.test.mjs"
-        if page_test.exists():
+        page_tests = sorted((ROOT / "src/test/js").glob("*.test.mjs"))
+        if page_tests:
             import re
-            result = command(["node", "--test", "--test-reporter=tap", str(page_test)], "node-page", check=False)
+            result = command(["node", "--test", "--test-reporter=tap", *[str(path) for path in page_tests]], "node-page", check=False)
             counts = {key: int(re.search(r"^# " + field + r" (\d+)$", result.stdout, re.MULTILINE).group(1))
                       for key, field in (("tests", "tests"), ("failures", "fail"), ("skipped", "skipped"), ("errors", "cancelled"))}
             summary = {"suite": "node-page", "exit": result.returncode, **counts}

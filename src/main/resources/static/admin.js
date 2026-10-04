@@ -58,12 +58,13 @@ const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
 const numberFormatter = new Intl.NumberFormat('zh-CN');
 
 class ApiRequestError extends Error {
-  constructor(status, body) {
+  constructor(status, body, retryAfter = null) {
     super(body?.message || `HTTP ${status}`);
     this.name = 'ApiRequestError';
     this.status = status;
     this.code = body?.code;
     this.body = body;
+    this.retryAfter = /^\d{1,10}$/.test(retryAfter ?? "") ? Number(retryAfter) : null;
   }
 }
 
@@ -80,7 +81,7 @@ let visitRequestBusy = false;
 async function requestJson(url, options = {}) {
   const response = await fetch(url, options);
   const body = await response.json().catch(() => null);
-  if (!response.ok) throw new ApiRequestError(response.status, body);
+  if (!response.ok) throw new ApiRequestError(response.status, body, response.headers.get("Retry-After"));
   return body;
 }
 
@@ -151,6 +152,14 @@ function errorMessage(error, purpose) {
   }
   if (!(error instanceof ApiRequestError)) {
     return purpose === 'create' ? '创建失败，请检查输入或服务状态后重试。' : '请求失败，请检查输入或服务状态后重试。';
+  }
+  if (error.code === 'RATE_LIMIT_EXCEEDED') {
+    return error.retryAfter ? `请求过于频繁，请至少等待 ${error.retryAfter} 秒后重试；等待后仍需重新确认额度。` : '请求过于频繁，请稍后重试。';
+  }
+  if (error.code === 'RATE_LIMIT_UNAVAILABLE') {
+    if (purpose === 'create') return '限流服务暂不可用，创建尚未开始，请稍后重试。';
+    if (purpose === 'state') return '限流服务暂不可用，状态操作尚未开始，请稍后重试。';
+    return '限流服务暂不可用，查询尚未开始，请稍后重试。';
   }
   if (error.status === 401 || error.code === 'INTERNAL_UNAUTHORIZED') return '管理令牌无效，请检查后重新输入。';
   if (error.status === 404 && error.code === 'RESOURCE_NOT_FOUND') return '管理接口尚未启用，请让维护者配置 SHORT_LINK_INTERNAL_TOKEN。';
@@ -254,7 +263,7 @@ createForm.addEventListener('submit', async (event) => {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
-      const error = new ApiRequestError(response.status, data);
+      const error = new ApiRequestError(response.status, data, response.headers.get("Retry-After"));
       if (error.code === 'CREATE_CACHE_COORDINATION_UNCONFIRMED' && data?.shortCode) {
         renderCreatedResult(data, originalUrl, true);
         showCreateMessage(errorMessage(error, 'create'), null, true);
