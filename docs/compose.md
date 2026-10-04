@@ -24,7 +24,7 @@ docker compose --env-file .env.local up --build --detach --wait --wait-timeout 2
 
 新 MySQL 卷由官方镜像创建 `short_link` 数据库和 `.env.local` 项目账号，应用启动幂等建表。新 RabbitMQ 卷由官方镜像创建项目用户/vhost；固定 hostname 保持 broker 节点数据路径稳定。启动包装脚本等待 broker，重复应用 [既有队列 policy](../ops/visit-consumer-policies.json)，成功后才使 broker 健康；不删除队列，不清空积压。策略源码在 `ops/compose/rabbit-bootstrap.sh`，隔离冒烟逐项核对实际 broker 与权威 JSON。应用后台声明 durable direct exchange、classic 业务队列、DLX/DLQ 与绑定；声明冲突必须排查，不自动删除队列修复。
 
-浏览器打开 `http://localhost:8080`，RabbitMQ Management 是 `http://localhost:15672`（项目账号秘密自行从本地配置查看）。容器内按 mysql/redis/rabbitmq 服务名连接。端口绑定支持容器网络；宿主仅发布 127.0.0.1 的应用和 MQ Management。完整 Actuator 管理端口/健康分组由任务 07 增补；本阶段没有临时健康 API。`up --wait` 对应用只说明运行，必须用实际页面及业务冒烟确认就绪。应用启动硬依赖仅 MySQL 健康，不等待 Redis/MQ；故障隔离不代表统计正常，完整演示仍检查队列、策略、消费者与异步 PV/UV。
+浏览器打开 `http://localhost:8080`，RabbitMQ Management 是 `http://localhost:15672`（项目账号秘密自行从本地配置查看）。容器内按 mysql/redis/rabbitmq 服务名连接。端口绑定支持容器网络；宿主仅发布 127.0.0.1 的应用8080、独立Actuator管理8081和MQ Management15672。应用容器真实JRE-only探针读取主8080的 `/readyz`，包含应用就绪与核心MySQL，Redis/MQ健康不会令核心探针失败；`up --wait` 等待该核心探针，完整业务和统计还需实际冒烟确认。详见 [分组健康与管理端口](health.md)。应用启动硬依赖仅 MySQL 健康，不等待 Redis/MQ；故障隔离不代表统计正常，完整演示仍检查队列、策略、消费者与异步 PV/UV。
 
 默认 MySQL/Redis/AMQP 不向宿主发布。确需调试时显式增加 override：
 
@@ -32,7 +32,7 @@ docker compose --env-file .env.local up --build --detach --wait --wait-timeout 2
 docker compose --env-file .env.local -f compose.yml -f compose.debug.yml up --detach
 ```
 
-调试端口也只发布 localhost；请先检查本机端口占用。可通过 `APP_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`MYSQL_DEBUG_PORT`、`REDIS_DEBUG_PORT`、`AMQP_DEBUG_PORT` 调整。普通用户不要增加 debug 文件。
+调试端口也只发布 localhost；请先检查本机端口占用。可通过 `APP_PORT`、`MANAGEMENT_HTTP_PORT`、`RABBITMQ_MANAGEMENT_PORT`、`MYSQL_DEBUG_PORT`、`REDIS_DEBUG_PORT`、`AMQP_DEBUG_PORT` 调整。普通用户不要增加 debug 文件。
 
 ## 资源起点
 
@@ -93,6 +93,6 @@ pwsh -NoProfile -File ops/compose/smoke.ps1
 sh ops/compose/smoke.sh
 ```
 
-创建唯一 Compose 项目、独立秘密和 Docker 分配的随机 localhost 端口；真实多阶段构建、新建账号/schema/policy、HTTP 创建/302、异步 PV/UV、消费暂停积压、整体普通重启、积压恢复、身份稳定、实际资源/端口/卷、Redis 受控重建，以及 Redis/MQ 停止时实际重新启动应用并保持 302。报告在 `target/compose-smoke/<run-id>`；失败明确非零退出，不把缺设施当跳过。结束只删除这个隔离项目的临时卷/秘密；不连接或删除个人设施。统计轮询 1 秒，保持真实限流，POST 503 不盲重试。成功后报告为安全摘要，不保存展开配置或容器环境。
+创建唯一 Compose 项目、独立秘密和 Docker 分配的随机 localhost 端口；真实多阶段构建、新建账号/schema/policy、HTTP 创建/302、异步 PV/UV、消费暂停积压、整体普通重启、积压恢复、身份稳定、实际资源/端口/卷、Redis 受控重建，以及Redis/MQ实时停机时核心探针保持UP、实际重新启动应用仍302、MySQL实时停机时核心探针503且liveness仍UP、真实容器unhealthy/恢复和管理端口安全边界。报告在 `target/compose-smoke/<run-id>`；失败明确非零退出，不把缺设施当跳过。结束只删除这个隔离项目的临时卷/秘密；不连接或删除个人设施。统计轮询 1 秒，保持真实限流，POST 503 不盲重试。成功后报告为安全摘要，不保存展开配置或容器环境。
 
 来源：[官方 MySQL 镜像](https://hub.docker.com/_/mysql)、[RabbitMQ 3.13 配置](https://www.rabbitmq.com/docs/3.13/configure)、[Maven 官方镜像](https://hub.docker.com/_/maven/)。这些入口说明初始化与构建机制；实际部署兼容性以本仓库冒烟为准。

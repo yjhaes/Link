@@ -24,7 +24,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class CreateRateLimitEmbeddedHttpTest {
     @Configuration
     @EnableAutoConfiguration(exclude = {DataSourceAutoConfiguration.class, RedisAutoConfiguration.class,
-            RedisRepositoriesAutoConfiguration.class, RabbitAutoConfiguration.class})
+            RedisRepositoriesAutoConfiguration.class, RabbitAutoConfiguration.class,
+            org.springframework.boot.actuate.autoconfigure.health.HealthEndpointAutoConfiguration.class})
     @Import(InternalManagementApiTest.WebConfiguration.class)
     static class Application {
         @Bean AtomicReference<RateLimiter.Decision> decision() {
@@ -40,7 +41,7 @@ class CreateRateLimitEmbeddedHttpTest {
         try (var context = new SpringApplicationBuilder(Application.class)
                 .properties("server.port=0", "spring.main.banner-mode=off", "short-link.base-url=http://localhost",
                         "spring.servlet.multipart.max-file-size=1KB", "spring.servlet.multipart.max-request-size=1KB")
-                .run()) {
+                .run("--management.server.port=0")) {
             int port = ((ServletWebServerApplicationContext) context).getWebServer().getPort();
             URI endpoint = URI.create("http://127.0.0.1:" + port + "/api/links");
             var http = HttpClient.newHttpClient();

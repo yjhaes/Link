@@ -21,8 +21,17 @@ services:
       SHORT_LINK_STATS_CONSUMER_ENABLED: ${SHORT_LINK_STATS_CONSUMER_ENABLED:-true}
       SHORT_LINK_BASE_URL: http://localhost:${APP_PORT:-8080}
       SERVER_ADDRESS: 0.0.0.0
+      MANAGEMENT_ADDRESS: 0.0.0.0
+      MANAGEMENT_PORT: 8081
     ports:
       - "127.0.0.1:${APP_PORT:-8080}:8080"
+      - "127.0.0.1:${MANAGEMENT_HTTP_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "java", "-Xmx32m", "-cp", "/app/probe", "com.example.shortlink.observability.CoreReadinessProbe"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     depends_on:
       mysql:
         condition: service_healthy
