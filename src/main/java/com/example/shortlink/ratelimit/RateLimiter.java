@@ -4,6 +4,10 @@ package com.example.shortlink.ratelimit;
 public interface RateLimiter {
     Decision admitCreate(String peerAddress);
 
+    default Decision admitRedirect(String peerAddress) { return Decision.unavailable(); }
+    default Decision admitManagementWrite() { return Decision.unavailable(); }
+    default Decision admitManagementQuery() { return Decision.unavailable(); }
+
     record Decision(Status status, long waitMillis) {
         public enum Status { ALLOWED, REJECTED, UNAVAILABLE }
 
@@ -28,3 +32,4 @@ public interface RateLimiter {
         }
     }
 }
+

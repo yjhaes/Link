@@ -69,13 +69,30 @@ public class RedisRateLimiter implements RateLimiter, DisposableBean {
 
     @Override
     public Decision admitCreate(String peerAddress) {
+        return admitPeer("create", peerAddress, properties.createCapacity(), properties.refillMillis());
+    }
+    @Override
+    public Decision admitRedirect(String peerAddress) {
+        return admitPeer("redirect", peerAddress, properties.redirectCapacity(), properties.redirectRefillMillis());
+    }
+    @Override
+    public Decision admitManagementWrite() {
+        return admit("management-write", properties.managementWriteCapacity(), properties.managementWriteRefillMillis());
+    }
+    @Override
+    public Decision admitManagementQuery() {
+        return admit("management-query", properties.managementQueryCapacity(), properties.managementQueryRefillMillis());
+    }
+    private Decision admitPeer(String group, String peerAddress, int capacity, long refillMillis) {
         try {
-            if (peerAddress == null || !peerAddress.matches("[0-9a-fA-F:.%]+")) {
-                return Decision.unavailable();
-            }
-            String normalized = InetAddress.getByName(peerAddress).getHostAddress();
-            String[] keys = {"shortlink:rate-limit:v1:create:" + normalized};
-            String[] args = {Integer.toString(properties.createCapacity()), Long.toString(properties.refillMillis())};
+            if (peerAddress == null || !peerAddress.matches("[0-9a-fA-F:.%]+")) return Decision.unavailable();
+            return admit(group + ":" + InetAddress.getByName(peerAddress).getHostAddress(), capacity, refillMillis);
+        } catch (Exception exception) { return Decision.unavailable(); }
+    }
+    private Decision admit(String identity, int capacity, long refillMillis) {
+        try {
+            String[] keys = {"shortlink:rate-limit:v1:" + identity};
+            String[] args = {Integer.toString(capacity), Long.toString(refillMillis)};
             // Each admission gets a fresh bounded connection. No offline queue or reconnect replay;
             // a later HTTP request can reconnect safely after an unavailable decision.
             try (var connection = client.connect()) {
@@ -103,3 +120,4 @@ public class RedisRateLimiter implements RateLimiter, DisposableBean {
         client.shutdown();
     }
 }
+

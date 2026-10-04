@@ -27,7 +27,7 @@ class CreateRateLimitConfigurationTest {
         for (String property : new String[]{"create-capacity=", "create-capacity=0", "create-capacity=-1", "create-capacity=1000001",
                 "create-refill-interval=0ms", "create-refill-interval=-1s", "create-refill-interval=", 
                 "create-refill-interval=9223372036854775807d", "create-refill-interval=25h",
-                "create-refill-interval=7d"}) {
+                "create-refill-interval=7d", "redirect-capacity=0", "redirect-refill-interval=", "management-write-capacity=-1", "management-query-refill-interval=0ms"}) {
             runner.withPropertyValues("short-link.rate-limit." + property)
                     .run(context -> assertThat(context).hasFailed());
         }
