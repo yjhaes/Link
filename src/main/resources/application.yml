@@ -113,3 +113,14 @@ management:
       enabled: false
     build:
       enabled: true
+
+# Business documentation stays on the application port and never includes Actuator.
+springdoc:
+  packages-to-scan: com.example.shortlink.api
+  paths-to-match: /api/links/**,/api/internal/links/**,/s/**
+  show-actuator: false
+  use-management-port: false
+  override-with-generic-response: false
+  swagger-ui:
+    persist-authorization: false
+    disable-swagger-default-url: true
