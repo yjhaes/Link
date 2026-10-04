@@ -25,7 +25,6 @@ Type: task
 
 - 已拆分创建与跳转完整用例，持久化集中 MySQL 错误分类，集中并校验已有缓存配置，删除确认无用途的缓存操作；同步 README 与架构说明。
 - 原 HTTP、短码、事务提交、Redis v2、请求合并与内部恢复行为保持；没有实现范围外功能。
-- 基线 48 项与最终完整测试 115 项全部通过，0 失败、0 错误、0 跳过；真实本地 MySQL、Docker MySQL／Redis 和 Spring 代理场景均已运行。
 - Standards Review 与 Spec Review 均使用 GPT-6.1 Sol／high，分别 0 项发现。
 - 详细验收证据见 [verification.md](../verification.md)。
 

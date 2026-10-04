@@ -135,7 +135,6 @@ JdbcTemplate、事务和 Hikari 绑定；真实设施测试继续验证 Mapper/�
 
 这两个用例集中各自的复杂规则；删除创建用例会把验证、重试和完成状态散回 HTTP，删除跳转用例会把并发与版本规则散回调用方。持久化保存 adapter 集中数据库特有分类，缓存 adapter 保留协议深度；已有发号、缓存和 Clock seam 继续支持测试与复用。
 
-
 ## 最终工程职责与关键时序
 
 `ratelimit`封装四请求组共享的Redis Lua令牌桶；`api`拦截器在发号/业务前执行，管理鉴权更早。`RedirectService`实际SQL由每实例并发许可保护，缓存命中与共享等待不占许可。`observability`提供安全健康、固定类别指标与请求上下文；`logging`约束控制台业务/Redis/JDBC/AMQP/HTTP框架危险日志。业务OpenAPI由`api.docs.BusinessOpenApiConfiguration`装配，不包含管理端口Actuator。完整运行边界见[首页架构图](../README.md)、[API](api.md)、[健康](health.md)和[观测清单](observability.md)。

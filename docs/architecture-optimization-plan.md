@@ -1,5 +1,7 @@
 # Link 项目架构优化完整方案
 
+> **历史方案，已实施。** 当前目录和职责见 [实际架构](architecture.md)，实施与验收见 [架构优化验证](../.scratch/architecture-optimization/verification.md)，后续完整版本验收见 [正式验证](verification.md)。以下正文保留 2026-10-03 设计时点的原始内容；“尚未实施”、文件数量及迁移路径均对应当时基线，不代表当前状态。
+
 日期：2026-10-03  
 评估基线：`e9dd03d4980f624c4d0f04cf97b815ae8f3124aa`  
 文档状态：方案，尚未实施。本文描述目标结构与迁移验收，不替代当前架构说明或已有 ADR。
@@ -235,8 +237,6 @@ flowchart LR
 
 deletion test 的应用：删除旧 MySQL record 适配与 findOriginalUrl 不会把业务规则散回生产调用者；删除 persist、decide、缓存协议或消费决定则会。因此前两者收敛，后几者保留 depth。新增 runtime 应吸收完整生命周期规则，不能只是逐项调用别人而保留原有分散所有权。
 
-## 6. MQ 生命周期设计
-
 ### 6.1 逻辑所有权与执行职责
 
 只有 VisitMqRuntime 接收应用级 ready、context-close 和 destroy 通知，并保证重复通知幂等。AsyncVisitRecorder 不再知道消费者或拓扑声明。
@@ -302,8 +302,6 @@ sequenceDiagram
 现有 externally-managed destroy hook、VisitConnectionFactory 与 VisitListenerContainer 是为真实关停语义存在的 adapter，不应在搬包时顺手删除。
 
 把相关配置、Bean 名和注释集中在 messaging。迁移后必须用真实 Spring context-close 证明生命周期 stop 不执行同步网络 reset、连接 destroy 不被框架再次调用、framework 执行器关闭后不触发替代 worker。只有这些证据成立，才允许后续简化保护实现。
-
-## 7. 持久化、配置、时间与错误整理
 
 ### 7.1 访问日志持久化
 
@@ -442,8 +440,6 @@ git status --short
 
 真实设施测试需要沿用 README 与 ops 的既有环境配置。没有设施、测试启动失败或被跳过时，记录缺失的验收项，不能用定向测试结果替代完整回归。不要在命令输出中暴露测试凭据。
 
-## 11. 文档、回退和预期收益
-
 ### 11.1 文档更新
 
 实施后更新 `docs/architecture.md` 的目录、实际依赖、异步现状、资源所有权和测试导航；同步 `README.md`、访问采集/异步统计/查询/运维说明中的类名与职责。`ops` 的拓扑和策略值不变，仅在涉及说明路径时更新导航。
@@ -564,5 +560,3 @@ CONTEXT.md 继续是唯一领域术语来源。VisitMqRuntime、CoreDataSourceCo
 ### 本轮交付记录
 
 本轮完成完整方案文档和配套 HTML 阅读版，未实施生产代码、配置、SQL、测试或既有 ADR 修改，未运行 Maven 或真实设施测试。迁移表按当前文件清单生成，覆盖 74 个生产 Java 文件且目标路径无重复。文档引用的 32 个测试类均存在。根据现有引用进行的静态搬包模拟未发现目标包循环；该检查不证明未来新增 runtime 的实现和 Spring 装配正确，仍须按验收矩阵验证。
-
-

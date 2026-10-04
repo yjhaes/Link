@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: 01, 03
 
-# 05：鉴权后的管理写入与查询限流
-
 ## Parent
 
 [阶段 8 实现规格](../spec.md)

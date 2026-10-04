@@ -32,15 +32,12 @@
 
 ## 续接测试环境
 
-本轮创建的测试容器在交付时停止，保留数据；后续验证可用 Docker 启动：`link-async-test-mysql`、`link-async-test-rabbit`、`link-async-test-redis`。
-
 - MySQL：localhost:13306，测试用户 root，测试密码 123456。
 - RabbitMQ：AMQP localhost:15672；management localhost:15673；测试 guest/guest。
 - Redis：localhost:16379。
 - 数据库：`short_link_test`、`short_link_consumer_test`、`short_link_lifecycle_test`；基线测量使用独立 `short_link_benchmark`。
 - vhost：`/`、`link-consumer-test`、`link-lifecycle-test`，guest 权限已配置。并行任务使用独立数据库及 vhost。
 - 环境：`MYSQL_TEST_URL=jdbc:mysql://127.0.0.1:13306/<测试库>?serverTimezone=UTC`，`RABBIT_TEST_PORT=15672`，`RABBITMQ_PORT=15672`，`REDIS_PORT=16379`。生产/程序化应用上下文的 vhost 使用 `RABBITMQ_VIRTUAL_HOST`；测试隔离可显式传 `-Dshort-link.stats.rabbit.virtual-host=<vhost>`，并核对具体测试 fixture 的 vhost 参数。
-- Maven：`C:/apache-maven-3.9.16/bin/mvn.cmd`，显式参数 `-Dmaven.repo.local=C:/Users/86198/.m2/repository`。默认缓存路径错误指向 C:/.m2。Git 元数据、Maven 缓存和 Docker 管道需要正常 sandbox escalation；此前均已按授权测试范围执行。
 - PowerShell 命令使用 pwsh。最终回复简体中文。
 
 辅助实施工作树归档；当前 d401 集成工作树保留。后续基于集成分支新建任务工作树即可。

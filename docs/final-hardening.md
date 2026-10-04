@@ -6,13 +6,15 @@ accepted_date: 2026-10-04
 
 # 阶段 8：限流、工程化与最终收尾设计
 
-用户已逐轮确认 Q1～Q23，并于 2026-10-04 通过 Q24 确认完整共识，本文状态为 accepted。本文描述后续实施目标，不代表限流、Compose、Actuator、OpenAPI 或 CI 已实现；本次只编辑设计文档，没有运行测试、创建执行任务或修改代码与部署配置。
+> **历史设计，已实施。以下正文保留设计确认时点的原始事实与目标；“尚未实现”“本次只编辑设计”等表述不代表当前状态，accepted 表示设计已接受，不是测试结果。
+
+用户已逐轮确认 Q1～Q23，并于 2026-10-04 通过 Q24 确认完整共识，本文状态为 accepted。
 
 决策摘要见 [ADR-0008](adr/0008-http-rate-limiting-and-final-hardening.md)，逐轮确认见 [讨论地图](../.scratch/final-hardening/map.md)。术语沿用 [CONTEXT.md](../CONTEXT.md)，现有实现说明见 [architecture.md](architecture.md)。
 
 ## 1. 最终版本与停止线
 
-目标是别人克隆仓库后能独立初始化并运行、能在 GitHub 看懂业务和证据、能写进 Java 后端实习简历、能完整解释设计取舍。验收环境为本地单实例 Spring Boot 与单节点 MySQL/Redis/RabbitMQ；不要求公网长期运营，不拆微服务。
+目标是别人克隆仓库后能独立初始化并运行、能在 GitHub 看懂业务和证据、能写进 Java 后端实习简历、能完整解释设计取舍。
 
 防护定位为基础防刷与资源保护：减少匿名批量创建、合法短码扫描和高频管理查询的资源压力。保留匿名创建，不新增注册登录、验证码、恶意网址识别，不承诺抵御大规模分布式攻击。共享出口 IP、轮换 IP、多客户端合力攻击均限制每 IP 策略的效果。
 
@@ -21,7 +23,6 @@ accepted_date: 2026-10-04
 | 安全配置收尾 | 管理秘密无默认值，采集默认关闭，演示密钥独立生成，配置与文档一致 |
 | Redis + Lua 分组令牌桶 | 并发正确、参数可配、明确 429 与按组故障策略 |
 | 跳转回源并发保护 | 实际数据库加载有每实例并发上限，拒绝不计访问 |
-| 全栈 Compose | 初次初始化、构建启动、重复启动和数据保存均可复现 |
 | 最小 Actuator 与指标 | 自身、核心就绪、依赖/功能状态分离，安全暴露 |
 | 安全日志与 API 文档 | 有定位线索，无敏感泄露，错误与统计契约完整 |
 | 分层测试与基础 CI | 自动准备隔离设施，既有回归和新增验收可复现 |
@@ -33,9 +34,9 @@ Prometheus/Grafana 不作为必交付。不新增 Spring Cloud、Kafka、Elastic
 
 当前已具备 MySQL 发号与短码编码、映射创建和跳转、状态管理、版本化 Redis 缓存与 Lua 协调、负缓存、TTL 抖动、实例内加载合并、匿名统计、RabbitMQ 有界异步发布/消费、eventId 幂等、分类有限重试/DLQ、安全依赖日志及丰富回归测试。
 
-当前没有 HTTP 限流、回源专用并发准入、Compose/Dockerfile、GitHub Actions、Actuator 或 OpenAPI 依赖。统计观察已有进程内 snapshot，不能说项目完全没有观测。核心池未显式设置容量和连接等待预算；Redis 无法确认 generation 时逐请求独立回源，不参加原有同码加载合并。
+统计观察已有进程内 snapshot，不能说项目完全没有观测。核心池未显式设置容量和连接等待预算；Redis 无法确认 generation 时逐请求独立回源，不参加原有同码加载合并。
 
-当前 application.yml 将管理令牌和访客 HMAC 设为同一个已提交默认值，并默认开启采集，与 README/ops 声明冲突。后续必须移除这些默认秘密、恢复已确认开关边界并同步文档，不能只改说明掩盖配置。现有测试混用预先准备的 MySQL/Redis/MQ 和 Testcontainers，需要明确自动供给入口。
+当前 application.yml 将管理令牌和访客 HMAC 设为同一个已提交默认值，并默认开启采集，与 README/ops 声明冲突。后续必须移除这些默认秘密、恢复已确认开关边界并同步文档，不能只改说明掩盖配置。
 
 ## 3. 接口、维度与起始额度
 
@@ -50,7 +51,7 @@ Prometheus/Grafana 不作为必交付。不新增 Spring Cloud、Kafka、Elastic
 
 参数全部可配置并校验合法性，是本地演示起点，不是已实测的安全容量。不同请求组的额度彼此独立。静态页面和健康探针不占用这些业务额度；本阶段不增加专门的未授权请求限流层，令牌错误保持低成本鉴权拒绝。
 
-当前只按连接对端 IP 识别公开请求，不信任客户端 Forwarded/X-Forwarded-For。实现与验收需核对地址规范化和 Docker 转发实际结果，不能用伪造请求头证明 IP 隔离。若环境把全部流量显示为一个对端，必须如实说明，不能声称已识别真实客户端。未来代理部署需重新明确可信代理与头清理规则。
+当前只按连接对端 IP 识别公开请求，不信任客户端 Forwarded/X-Forwarded-For。若环境把全部流量显示为一个对端，必须如实说明，不能声称已识别真实客户端。
 
 不按用户限流，因为没有账号体系；UV Cookie 可重置，不能当可靠防刷身份。不以短码作为主要限流维度：换码扫描可绕开，热门短码还会聚合正常流量。不把原始管理令牌放入 Redis Key，固定管理操作分组已满足当前共享秘密模型。
 
@@ -93,7 +94,7 @@ Lua 在同一次执行内完成读取、补充、判断、扣减和 TTL 更新�
 
 脚本参数化，使用 EVALSHA 并在 NOSCRIPT 时安全重载；脚本缓存丢失不等于需要关闭业务。网络扣减超时可能已经执行，不盲目再次扣减，按请求组 fail-open/fail-close 处理；应用不增加幂等扣费、持久化限流历史或补偿协议。
 
-演示 Redis 不持久化，重建后额度重置是可接受边界；清理或其他部署下的淘汰也可能重置额度。当前演示选择 noeviction，不主动通过淘汰限流桶缓解内存满。缓存重启仍遵守 [受控恢复说明](redis-recovery.md)，不能以额度可重置为理由复用未经检查的旧缓存快照。
+当前演示选择 noeviction，不主动通过淘汰限流桶缓解内存满。缓存重启仍遵守 [受控恢复说明](redis-recovery.md)，不能以额度可重置为理由复用未经检查的旧缓存快照。
 
 保持现有 Redis 连接/命令短超时起点 200ms，不增加自动熔断或故障冷却。新增检查和缓存访问都可能增加故障等待，需测量；一次命令超时和连接池等待预算均不是 HTTP 总截止。客户端离线排队/重连行为需在实现中验证，不能引入不确定扣减的无限重试。
 
@@ -108,25 +109,20 @@ Lua 在同一次执行内完成读取、补充、判断、扣减和 TTL 更新�
 | 核心 Hikari | max 8；连接获取等待 500ms |
 | 统计池 | 保留 max 4 与写/查询/清理准入 2/1/1 |
 | 跳转实际回源 | 每实例同时最多 4 |
-| Redis | maxmemory 128MiB；noeviction；容器内存 256MiB |
-| app | 容器内存 768MiB；Java 最大堆 384MiB |
-| MySQL、RabbitMQ | 容器内存各 1GiB |
 
-这些是演示预算起点，实施时测量和修正，不是经过验证的最低机器配置或总进程内存保证。堆以外还有线程栈/直接内存等，Redis maxmemory 也不是进程总内存；构建、测试隔离容器和 Docker 引擎还需要额外资源。核心回源上限不代表独占预留 4 个连接；两池仍共享 MySQL。
+这些是演示预算起点，实施时测量和修正，不是经过验证的最低机器配置或总进程内存保证。核心回源上限不代表独占预留 4 个连接；两池仍共享 MySQL。
 
-noeviction 满时相关写入/脚本可能报错，创建/管理限流关闭，跳转限流放行并按缓存/回源规则处理；不能声称 Redis PING 正常就表示全部功能可用。MQ 保留现有本地交接/未确认/pre-fetch/队列数量、字节、TTL、DLQ等预算，容器内存不是替代这些预算。
+noeviction 满时相关写入/脚本可能报错，创建/管理限流关闭，跳转限流放行并按缓存/回源规则处理；不能声称 Redis PING 正常就表示全部功能可用。
 
-## 8. Compose、初始化与秘密
+四个常驻服务为 app/mysql/redis/rabbitmq，通过内部网络服务名连接。app 是一个 Spring Boot 进程，其中发布和消费统计；不是独立消费微服务。
 
-四个常驻服务为 app/mysql/redis/rabbitmq，通过内部网络服务名连接。app 是一个 Spring Boot 进程，其中发布和消费统计；不是独立消费微服务。MySQL 和 RabbitMQ 命名卷保存业务数据及 broker 状态；Redis 演示无持久化。应用采用多阶段构建、固定镜像版本、非 root 运行，镜像构建上下文不包含实际秘密或本地工具缓存。
+仅向 localhost 发布应用、Actuator 管理及 RabbitMQ Management 端口。
 
-仅向 localhost 发布应用、Actuator 管理及 RabbitMQ Management 端口。MySQL/Redis/AMQP 默认不向宿主发布，调试另用明确 override/profile；容器内仍使用服务监听地址，不能把容器内应用绑定 localhost 导致无法通过端口映射访问。
+身份密钥跨重启保持，不每次随机重置 UV 身份。
 
-首次初始化生成被 Git 忽略的独立管理令牌/HMAC、DB/MQ 凭据，配置专用 DB 账号、RabbitMQ 项目账号/vhost并应用已有 policy；不把实际秘密放进仓库、镜像、日志或命令输出。基础配置管理秘密无默认值、采集关闭；Compose 显式开启采集并要求有效独立 HMAC，消费者默认开启。身份密钥跨重启保持，不每次随机重置 UV 身份。
+数据库 schema 与 MQ 初始化来源明确、可重复，不靠人工粘贴命令才能运行；MQ policy与声明顺序需要核验，不能在容量保护缺失时声称完整启动成功。初始化不得自动删除旧队列、清空积压或重建数据卷解决错误。账号或秘密修改后，已有卷的状态可能不随环境变量自动变化，文档区分首次初始化、普通重启、秘密轮换和明确的数据重置。
 
-一次初始化后 docker compose up --build 能启动全栈。数据库 schema 与 MQ 初始化来源明确、可重复，不靠人工粘贴命令才能运行；MQ policy与声明顺序需要核验，不能在容量保护缺失时声称完整启动成功。初始化不得自动删除旧队列、清空积压或重建数据卷解决错误。账号或秘密修改后，已有卷的状态可能不随环境变量自动变化，文档区分首次初始化、普通重启、秘密轮换和明确的数据重置。
-
-应用核心启动只等待 MySQL 健康，不等待 Redis/MQ 健康；broker 的后台声明/消费恢复保持原协议。完整演示验收等待全部组件并核验路由、policy 和消费。服务启动顺序不等于服务就绪，Compose healthcheck 不提供自动高可用或运行期恢复保证。
+应用核心启动只等待 MySQL 健康，不等待 Redis/MQ 健康；broker 的后台声明/消费恢复保持原协议。完整演示验收等待全部组件并核验路由、policy 和消费。
 
 ## 9. 健康与最小观测
 
@@ -136,9 +132,9 @@ noeviction 满时相关写入/脚本可能报错，创建/管理限流关闭，�
 | core readiness | 应用就绪且核心 MySQL 可用，不能把统计池聚合状态误纳入 |
 | 依赖/功能状态 | Redis、MQ、采集/消费意图及实际状态分别展示，只输出安全固定类别 |
 
-Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理会按限流策略 503。MQ 故障允许核心启动/跳转，统计可能漏记或积压。统计池或消费者人为暂停不等于核心死亡，探针不能擅自开启消费或改写运维意图。MySQL readiness 失败不强迫跳转业务删除仍可用的缓存结果，也不代表 Compose 自动停止所有 HTTP 请求。
+Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理会按限流策略 503。MQ 故障允许核心启动/跳转，统计可能漏记或积压。统计池或消费者人为暂停不等于核心死亡，探针不能擅自开启消费或改写运维意图。
 
-管理端口仅 health/info/metrics，info 仅安全应用/构建信息，不带环境或个人路径。主业务端口只提供无详情存活/就绪探针，验证主 HTTP 入口；管理详情无连接地址、秘密、SQL或原始异常。env/configprops/heapdump/动态日志修改等不开启，既有管理业务鉴权不会自动保护新增 Actuator，必须验证端口与暴露配置。当前按本地部署网络边界保护，公网部署另议。
+管理端口仅 health/info/metrics，info 仅安全应用/构建信息，不带环境或个人路径。主业务端口只提供无详情存活/就绪探针，验证主 HTTP 入口；管理详情无连接地址、秘密、SQL或原始异常。env/configprops/heapdump/动态日志修改等不开启，既有管理业务鉴权不会自动保护新增 Actuator，必须验证端口与暴露配置。
 
 必要指标为 HTTP 次数/耗时、限流获准/拒绝/依赖失败、回源在途/拒绝、缓存结果/失败、池活跃/等待、既有 MQ 发布/消费终局与统计丢弃/积压观察。应用复用现有 snapshot；broker ready/unacked 等继续由受限 Management/已有观察脚本核对，不假装应用已自动取得所有 broker 指标。
 
@@ -156,7 +152,7 @@ Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理�
 
 ## 11. 最终测试与 CI 验收矩阵
 
-无设施单元/MVC、真实隔离设施集成、全栈 Compose 冒烟分层。延续已有 Testcontainers；遗留外部设施测试可由独立测试 Compose 自动准备，不要求为形式统一重写全部测试。数据/端口/vhost与演示环境隔离，测试不操作个人数据库。CI 自动准备所需设施，缺 Docker/配置不能把必测项静默标记通过或跳过。
+数据/端口/vhost与演示环境隔离，测试不操作个人数据库。
 
 | 验收项 | 必须证明 |
 | --- | --- |
@@ -173,7 +169,6 @@ Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理�
 | 健康/指标 | MQ或Redis停机不误判核心死亡，核心MySQL故障被readiness反映，统计池不误纳核心，主探针和端口隔离正确 |
 | 日志隐私 | 用canary覆盖业务/Redis/JDBC/MQ错误；敏感输入不出现，安全类别和必要定位仍保留 |
 | 文档/页面 | OpenAPI契约准确、管理头和HEAD明确、UI令牌不持久、503解释不误导 |
-| Compose | 全新初始化、构建启动、有效policy/消费者、重复启动保留数据/积压、Redis重建/恢复、关闭及数据重置说明 |
 
 给出 Windows pwsh 与 Linux 命令入口、设施要求、预计测试类别和失败定位；GitHub Actions 执行必需回归/集成/冒烟并保存安全报告。测试证据列环境、提交/版本、结果、失败/错误/跳过数量，不追求机械100%覆盖率，不以“程序启动了”代替功能验收。
 
@@ -181,7 +176,7 @@ Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理�
 
 ## 12. 性能与演示
 
-不设置万级QPS目标。固定机器/容器版本/数据量/并发/限流配置/样本数，分别观察缓存命中、不同码miss、Redis故障、MQ故障。把获准业务吞吐、429、503与数据库查询量分开，不以快速拒绝制造吞吐提升。记录业务成功率、p50/p95及样本足够时p99、CPU/内存/连接与在途预算；不能从少量顺序GET宣称高并发容量或生产SLA。
+不设置万级QPS目标。固定机器版本/数据量/并发/限流配置/样本数，分别观察缓存命中、不同码miss、Redis故障、MQ故障。把获准业务吞吐、429、503与数据库查询量分开，不以快速拒绝制造吞吐提升。记录业务成功率、p50/p95及样本足够时p99、CPU/内存/连接与在途预算；不能从少量顺序GET宣称高并发容量或生产SLA。
 
 最短演示流程为初始化启动 → 创建并302 → 连续创建触发429 → 管理鉴权与状态切换 → 异步PV/UV查询 → 健康分组 → MQ停机仍跳转 → Redis停机创建拒绝/跳转回源及保护 → 按受控步骤恢复。故障演示使用隔离环境，正常数据/积压与明确重置分别说明。
 
@@ -192,51 +187,6 @@ Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理�
 README 首页顺序：项目目标/实际已实现范围 → 截图与技术栈 → 组件架构图 → 一次初始化与启动 → 最短演示/API文档 → 分层测试命令 → 故障与隐私边界 → 正式设计/运维/验证链接。详细历史ADR和调优讨论另页，不把个人工作区路径、密码或.scratch作为唯一公共证明入口。实施后将必要验收证据整理到正式docs，保留历史来源与测量条件。
 
 下图为目标架构，包含本阶段尚未实现的限流、回源准入与Actuator模块；不是当前代码现状图。
-
-```mermaid
-flowchart LR
-    browser[浏览器或API调用者]
-    ops[本机运维查看]
-    subgraph compose[本地 Docker Compose 内部网络]
-        subgraph app[app：一个 Spring Boot 进程]
-            http[HTTP与静态页面]
-            access[管理鉴权或短码格式校验]
-            limiter[按请求组令牌桶]
-            service[创建与状态用例]
-            redirect[跳转缓存与逐请求判定]
-            admission[实际回源并发准入]
-            buffer[正常GET事件与有界本地交接]
-            publisher[后台Producer]
-            consumer[Consumer与幂等持久化]
-            query[统计与明细查询]
-            health[分组健康与低基数指标]
-        end
-        redis[(Redis：限流状态与版本缓存)]
-        subgraph mysql[mysql：权威数据，命名卷]
-            mappings[(映射与发号)]
-            visits[(已记录访问事件)]
-        end
-        subgraph rabbit[rabbitmq：单节点，命名卷]
-            queue[业务Exchange与Queue]
-            dlq[DLX与诊断DLQ]
-        end
-    end
-    browser -->|本机应用端口| http
-    http --> access --> limiter
-    limiter -->|Lua判断与扣减| redis
-    limiter --> service --> mappings
-    service -->|提交后缓存协调| redis
-    limiter --> redirect
-    redirect -->|版本缓存| redis
-    redirect -->|miss或故障| admission --> mappings
-    redirect -->|正常GET决定，不等待统计网络或SQL| buffer
-    buffer --> publisher --> queue --> consumer --> visits
-    queue -->|分类重试终局等| dlq
-    limiter --> query --> visits
-    query -->|确认映射| mappings
-    ops -->|仅本机管理端口| health
-    ops -->|受限RabbitMQ Management| queue
-```
 
 健康和Redis故障/302响应的细节以正文为准；图中业务箭头不表示跨组件原子事务。302指向外部原始URL，服务不代理目标站点。DLQ为有限诊断样本，不是可靠补偿存储。
 
@@ -278,7 +228,7 @@ sequenceDiagram
     end
 ```
 
-简历主线：MySQL发号/置换Base62及冲突边界；版本化Redis缓存/负缓存/旧回填防护/加载合并；有界RabbitMQ异步统计/eventId幂等/分类重试DLQ；本阶段验收后的Redis Lua分组限流和回源保护。Compose/CI/API文档/Actuator证明完成度，避免将每个依赖写成独立亮点。
+简历主线：MySQL发号/置换Base62及冲突边界；版本化Redis缓存/负缓存/旧回填防护/加载合并；有界RabbitMQ异步统计/eventId幂等/分类重试DLQ；本阶段验收后的Redis Lua分组限流和回源保护。
 
 面试必须能解释：为何创建与跳转不同额度/故障策略；IP身份与热门短码取舍；三类算法；Lua并发原子性与超时不确定；Redis同时失去缓存和限流时的数据库压力；MQ本地接受/broker confirm/MySQL保存三个成功边界；429与业务前503、部分完成503；健康分组及日志隐私；测试如何证明而不是只断言相同响应。
 
@@ -286,9 +236,9 @@ sequenceDiagram
 
 ## 14. 后续实施顺序与设计验收
 
-建议未来授权后的顺序：先修配置/秘密与自动测试设施入口 → 实现分组限流和回源保护及其验收 → 完整Compose初始化/卷/预算 → 分组Actuator/安全日志/OpenAPI → 全套回归/冒烟/有限性能观察 → 同步实际README/架构图与正式证据。每步以真实行为和验收结果推进，不把新文档当实现证明。
+每步以真实行为和验收结果推进，不把新文档当实现证明。
 
-Q24 总体确认已完成，本次交付为 accepted 设计；代码仍未实现，没有创建开发任务、部署或修改生产配置。需要用户另行明确授权才能进入开发。
+需要用户另行明确授权才能进入开发。
 
 ## 参考
 
@@ -297,8 +247,6 @@ Q24 总体确认已完成，本次交付为 accepted 设计；代码仍未实现
 - [Lua 脚本原子执行与缓存](https://redis.io/docs/latest/develop/programmability/eval-intro/)
 - [Redis 内存与淘汰策略](https://redis.io/docs/latest/develop/reference/eviction/)
 - [429 与 Retry-After](https://www.rfc-editor.org/rfc/rfc6585.html#section-4)
-- [Compose 启动与健康检查](https://docs.docker.com/compose/how-tos/startup-order/)
 - [Spring Boot 3.5 Actuator](https://docs.spring.io/spring-boot/3.5/reference/actuator/endpoints.html)
 - [Hikari 配置](https://github.com/brettwooldridge/HikariCP#configuration-knobs-baby)
-- [Testcontainers](https://java.testcontainers.org/)
 - [springdoc](https://springdoc.org/)

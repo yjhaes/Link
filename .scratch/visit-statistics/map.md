@@ -1,13 +1,11 @@
-# 同步访问统计工作地图
-
 ## 已作决定
 
 - 2026-10-02：[任务 04](issues/04-query-visit-statistics.md) 已完成受令牌保护的 PV/UV 范围汇总与连续日趋势，固定上海日期窗口，统计池容量 1，汇总/趋势/版本使用同一只读 RR 快照；支持禁用与过期历史、明确繁忙/超时/数据库错误及超时计数。
-- 两项 GPT-6.1 Sol / high 独立审查共发现 3 项并全部修复，最终 Standards/Spec 均 0 项；完整 199 项真实 MySQL/Redis 与其他回归通过。见 [任务 04 审查](review-04.md)。
+- 两项 GPT-6.1 Sol / high 独立审查共发现 3 项并全部修复，最终 Standards/Spec 均 0 项；完整 199 项真实 MySQL/Redis 与其他回归通过。见 [任务 04 审查（Git 历史）](https://github.com/yjhaes/Link/blob/d889b26ef8a62e5499f56e315e0af6455821006c/.scratch/visit-statistics/review-04.md)。
 
 - 2026-10-01：[任务 03](issues/03-visit-failure-and-capacity.md) 完成故障内部观测、容量恢复与真实数据库超时验收。事件结果区分确认保存、重复、繁忙丢弃、明确失败与不确定；确认后清理失败不撤销保存确认。
 - Connector/J 的 DataSource Properties 必须使用字符串，真实测试证明旧整数 socketTimeout 未生效；已修正连接、socket 和会话时区属性。
-- 两项代码审查使用 GPT-6.1 Sol / high，复核后 Standards/Spec 剩余发现均为 0；完整 185 项测试通过。见 [审查记录](review-03.md)。
+- 两项代码审查使用 GPT-6.1 Sol / high，复核后 Standards/Spec 剩余发现均为 0；完整 185 项测试通过。见 [审查记录（Git 历史）](https://github.com/yjhaes/Link/blob/47192963d6b9783146e8d2885617c9cb5cbfc000/.scratch/visit-statistics/review-03.md)。
 - 阶段超时不是 HTTP 总墙钟截止时间，两池同用 MySQL 不构成硬件完全隔离；建连证据限于真实 Socket.connect 收到 500ms 参数。
 
 ## 待探索
@@ -15,6 +13,6 @@
 - 分页与清理继续由任务 05、06 承接，任务 04 不扩大交付范围。
 
 - 2026-10-02：[任务 05](issues/05-page-visit-logs.md) 已完成受保护的访问明细游标分页，复用查询窗口和共享容量，最小化字段与规范范围绑定游标；独立页面读取不承诺跨页固定快照。
-- 完整 206 项真实 MySQL/Redis 及其他回归通过；两项 GPT-6.1 Sol / high 审查最终均无剩余问题，见 [任务 05 审查](review-05.md)。分页已交付，调度清理继续由任务 06 承接。
+- 完整 206 项真实 MySQL/Redis 及其他回归通过；两项 GPT-6.1 Sol / high 审查最终均无剩余问题，见 [任务 05 审查（Git 历史）](https://github.com/yjhaes/Link/blob/49d0e53ce0314a4e628bf2491d140433e218db7a/.scratch/visit-statistics/review-05.md)。分页已交付，调度清理继续由任务 06 承接。
 
-- 2026-10-02：[任务 06](issues/06-retain-and-clean-visit-logs.md) 已完成停采历史保留、独立批次日志清理及启动/上海00:10/15分钟积压追赶；共享严格查询窗口，有界积压观测与阶段超时，不承诺物理30日硬期限。完整212项回归通过，两项GPT-6.1 Sol/high审查最终均0项；见[审查记录](review-06.md)。调度清理已交付。
+- 2026-10-02：[任务 06](issues/06-retain-and-clean-visit-logs.md) 已完成停采历史保留、独立批次日志清理及启动/上海00:10/15分钟积压追赶；共享严格查询窗口，有界积压观测与阶段超时，不承诺物理30日硬期限。完整212项回归通过，两项GPT-6.1 Sol/high审查最终均0项；见[审查记录（Git 历史）](https://github.com/yjhaes/Link/blob/07b610b8ebb1471e830db034c4aa1d7f21be4eb4/.scratch/visit-statistics/review-06.md)。调度清理已交付。

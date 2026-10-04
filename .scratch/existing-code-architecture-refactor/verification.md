@@ -12,7 +12,7 @@
 
 ## 测试证据
 
-使用 Java 17 / Maven 3.9.16；工作树内 `.tools/maven-repository` 作为 Maven 缓存。受限沙箱阻止 Java 读取依赖 JAR 和 Docker 管道，在自动批准的沙箱外执行测试；没有修改依赖或跳过场景。
+使用 Java 17 / Maven 3.9.16；工作树内 `.tools/maven-repository` 作为 Maven 缓存。
 
 | 阶段／套件 | 测试数 | 结果 |
 | --- | ---: | --- |
@@ -25,7 +25,6 @@
 | ShortLinkUseCasesTest | 26 | 全部通过 |
 | PermutedShortCodeEncoderTest | 3 | 全部通过 |
 | ShortLinkApiTest | 26 | 真实本地 MySQL，全部通过 |
-| RedisRedirectIntegrationTest | 36 | Docker MySQL 8.4／Redis 7.2，全部通过 |
 | 最终完整测试集 | 115 | 0 失败、0 错误、0 跳过 |
 
 完整测试命令：

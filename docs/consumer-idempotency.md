@@ -7,6 +7,8 @@ accepted_date: 2026-10-03
 
 2026-10-03 通过 grill-with-docs 完成 Q1～Q10 逐轮确认。基于已经完成的 RabbitMQ 异步访问统计，保留现有实现，明确消息重复处理与统计入账的边界，并确认两类新增测试计划。本阶段设计已接受；两类新增测试已于 2026-10-04 实施，实际运行结果与故障注入边界见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)。
 
+本文保留幂等决策和业务边界；当前消费启停、重试配置和积压处置见 [统计运维](visit-statistics-operations.md)，死信排查与人工重放步骤见 [运维说明](../ops/README.md)。
+
 本设计延续 [ADR-0007](adr/0007-rabbitmq-visit-statistics.md) 和[阶段 6 设计](async-visit-statistics.md)，不替代既有业务契约，也不新增重复的 ADR。领域术语继续采用根目录 [CONTEXT.md](../CONTEXT.md) 的 single-context 布局。
 
 ## 业务契约

@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: 01 — 创建并访问永久短链接
 
-# 05: 处理短码碰撞与写入失败
-
 ## What to build
 
 匿名创建者遇到偶然的短码重复时，系统自行尝试新候选值；若无法创建或数据库发生其他错误，调用者获得明确而不泄露内部信息的失败响应。
@@ -15,8 +13,6 @@ Blocked by: 01 — 创建并访问永久短链接
 - [x] 四次候选都发生短码冲突时，返回 `500 SHORT_CODE_GENERATION_FAILED`，不产生新映射。
 - [x] 其他数据库写入错误不按碰撞重试，返回不暴露 SQL 或内部异常文本的 `500 INTERNAL_ERROR`；失败响应包含 `Cache-Control: no-store`。
 - [x] 使用可控制的候选短码测试重试次数及失败分支，并使用真实 MySQL 验证短码主键约束；受影响测试通过。
-
-## Comments
 
 ## Answer
 

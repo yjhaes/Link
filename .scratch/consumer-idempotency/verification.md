@@ -4,12 +4,11 @@
 
 ## 本次环境与执行
 
-2026-10-04，Java 17、Maven 3.9.16，复用隔离测试容器 MySQL 8.4（13306）、Redis 7.2（16379）、RabbitMQ 3.13-management（AMQP 15672、管理 15673）。MySQL 使用 short_link_test 数据库，消费验收使用 link-consumer-test vhost，其他生命周期测试使用自己的隔离 vhost。
+2026-10-04，Java 17、Maven 3.9.16，复用隔离测试设施 MySQL 8.4（13306）、Redis 7.2（16379）、RabbitMQ 3.13-management（AMQP 15672、管理 15673）。MySQL 使用 short_link_test 数据库，消费验收使用 link-consumer-test vhost，其他生命周期测试使用自己的隔离 vhost。
 
 - 新增两类用例初次运行：2 项通过，失败、错误、跳过均 0。
 - 相关回归首次运行：71 项中 70 项通过、1 项失败。VisitStatsQueryApiTest 要求默认关闭采集，本次未设置 SHORT_LINK_STATS_ENABLED，采用生产默认开启；没有生产代码缺陷证据。
 - 设置 SHORT_LINK_STATS_ENABLED=false 后重跑相关回归：71 项通过，失败、错误、跳过均 0。显式开启采集的测试配置仍生效。
-- 最终完整测试：263 项通过，失败、错误、跳过均 0，耗时 4 分 06 秒，完成于 2026-10-04 00:14（Asia/Shanghai）。该轮包含审查后增强的 ACK 断言，以及 Testcontainers 启动的独立真实 MySQL/Redis 回归。
 
 相关回归范围：VisitConsumerIntegrationTest、VisitStatisticsApiTest、VisitStatsQueryApiTest、VisitLogsApiTest、VisitCollectionLifecycleTest、AsyncVisitRoundtripTest、VisitConsumerTest、VisitLogCleanupTest、VisitTimeoutTest。覆盖既有 ACK 间隙重投、非事件约束错误、保存后清理异常、独立新访问、超窗重放、重试跨午夜、查询及明细。
 

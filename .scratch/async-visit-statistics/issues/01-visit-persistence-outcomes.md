@@ -21,7 +21,6 @@ Blocked by: None
 
 - 2026-10-02：用户已确认8张任务的粒度、交付范围和直接阻塞关系。本轮仅发布任务，尚未认领或开始实施；父规格内容和状态保持不变。
 
-
 ## Answer
 
 - 实现 `VisitPersistence.persist` 的 SAVED / DUPLICATE 确认边界，失败通过 `VisitPersistenceException.Failure` 明确区分 BUSY / TRANSIENT / PERMANENT / UNCERTAIN。异常只保留固定类别，不保留驱动文本或 cause。

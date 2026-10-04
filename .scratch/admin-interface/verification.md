@@ -1,5 +1,3 @@
-# 管理工作台验收记录
-
 ## 已完成检查
 
 - `node --check src/main/resources/static/admin.js` 通过。

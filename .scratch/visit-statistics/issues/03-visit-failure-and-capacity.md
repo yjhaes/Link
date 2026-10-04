@@ -37,4 +37,4 @@ Blocked by: 02
 
 最终验证：完整 Maven 测试 185 项全部通过，0 失败、0 错误、0 跳过，包含真实 MySQL 与 Redis 回归。先前同为 1 秒的 socket/语句/行锁预算造成一项类别断言竞争，已在行锁测试中隔离竞争预算并通过完整回归；生产默认值保持规格规定。
 
-Standards 初审无硬性违例、2 项可选建议，采用阶段枚举和合并异常分支后复核全部关闭；Spec 初审及复核均无发现。两个维度最终剩余发现均为 0，见 .scratch/visit-statistics/review-03.md。仅完成任务 03，查询与清理仍由后续任务负责。
+Standards 初审无硬性违例、2 项可选建议，采用阶段枚举和合并异常分支后复核全部关闭；Spec 初审及复核均无发现。两个维度最终剩余发现均为 0，见 [审查记录（Git 历史）](https://github.com/yjhaes/Link/blob/47192963d6b9783146e8d2885617c9cb5cbfc000/.scratch/visit-statistics/review-03.md)。仅完成任务 03，查询与清理仍由后续任务负责。

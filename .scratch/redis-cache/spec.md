@@ -1,7 +1,5 @@
 Status: ready-for-agent
 
-# 阶段 3：Redis 跳转缓存
-
 ## Problem Statement
 
 当前每次访问短链接都按短码查询 MySQL。访问者会重复访问同一映射，而映射的原始 URL 和过期时间在创建后不修改；希望在不改变现有跳转和错误语义的前提下减少重复数据库读取。
@@ -20,7 +18,7 @@ Status: ready-for-agent
 
 ## Verification
 
-服务层测试须证明 hit 不查 MySQL、miss 查 MySQL 并仅回填有效映射、Redis 故障时降级。少量集成测试用 Docker/Testcontainers 中的真实 MySQL 和 Redis 验证 Key、Value、TTL、失效与 HTTP 响应。测试应区分缓存命中与仅仅两次都返回相同的 `302`。
+服务层测试须证明 hit 不查 MySQL、miss 查 MySQL 并仅回填有效映射、Redis 故障时降级。测试应区分缓存命中与仅仅两次都返回相同的 `302`。
 
 ## Comments
 

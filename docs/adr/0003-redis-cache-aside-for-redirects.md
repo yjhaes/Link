@@ -35,7 +35,4 @@ status: accepted
 ## 验证与面试说明
 
 - 服务层测试验证：miss 查 MySQL 且仅对可跳转映射回填；hit 不查 MySQL；缓存命中在到期边界返回 `410`；Redis 读写失败时回退或继续返回 MySQL 结果；禁用提交后尝试删 Key，删除失败不撤销已提交的数据库变更。
-- 使用 Docker/Testcontainers 的真实 MySQL 与 Redis 做少量集成测试，核对 Key 大小写、Value 序列化、实际 TTL、首次 miss 与后续 hit、过期和禁用失效。证明 hit 应观察 MySQL 查询次数或受控持久层调用，不能只断言两次响应都为 `302`。测试之间清理 Redis Key 与数据库数据；现有直接 SQL 切换 `enabled` 的测试不能单独证明应用会删除缓存。
 - 面试重点：为何选按需加载的 Cache Aside；为何 Value 仅含跳转所需字段而业务过期仍逐次检查；TTL 如何同时限制缓存寿命与旧值窗口；为何数据库提交后删缓存、为何仍有并发回填竞态；Redis 故障如何降级，以及如何用真实 Redis 与 MySQL 证明 hit/miss。有限 TTL 不能被描述为强一致保证。
-
-参考：[Redis Cache Aside](https://redis.io/docs/latest/develop/use-cases/cache-aside/)、[Redis `SET` 与过期选项](https://redis.io/docs/latest/commands/set/)、[Testcontainers JUnit 5 Quickstart](https://java.testcontainers.org/quickstart/junit_5_quickstart/)。

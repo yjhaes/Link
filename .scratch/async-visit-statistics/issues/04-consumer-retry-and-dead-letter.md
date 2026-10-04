@@ -23,8 +23,6 @@ Blocked by: 02
 
 - 2026-10-02：用户已确认8张任务的粒度、交付范围和直接阻塞关系。本轮仅发布任务，尚未认领或开始实施；父规格内容和状态保持不变。
 
-
-
 ## Answer
 
 - 实现独立同步 `VisitConsumer`：解码一次、保留冻结事件，沿受控 cause 分类，每轮最多首次加两次重试，等待 200 ms/500 ms；仅 SAVED / DUPLICATE 正常返回，未知/null 结果、永久错误和耗尽均抛无敏感 cause 的 AmqpRejectAndDontRequeueException。AUTO、batch size 1、禁止默认 requeue 保持明确。

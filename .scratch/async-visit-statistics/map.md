@@ -37,7 +37,6 @@
 | 同步与异步边界 | 核心校验、Cookie、最小化及冻结；发布和日志持久化如何隔离 | Q4 已确认 |
 | 产生和发布时点 | 每次有效 GET 产生独立事件，何时交给 Producer；不放入共享缓存加载 | Q4 已确认 |
 | 消息契约 | 继承已有事件和隐私边界；必选、可空和禁止字段、编码和 schema 版本 | Q6/Q9/Q13 已确认 |
-| 最小部署和拓扑 | 同应用独立消费者是否足够；Exchange、Queue、Routing Key、持久性 | Q5/Q12 已确认 |
 | Producer 失败 | 发送异常、confirm/return、未确认有界管理、MQ 不可用 | Q7/Q13 已确认 |
 | Consumer ACK | 保存结果反馈、ACK、重复及未知提交 | Q8 已确认 |
 | 启动和采集开关 | 后台声明/启动、MQ不可用核心仍启动、关闭采集继续消费历史 | Q10 已确认 |
@@ -65,7 +64,6 @@
 
 ## 第二轮补充事实
 
-- 项目 Spring Boot 3.5.16 托管 Spring AMQP 3.2.12，应使用 3.2 文档及转换器，不为本阶段升级到 AMQP 4.x。
 - direct 为 binding key 精确匹配，一个 key 本身可以绑定多个队列；当前设计只绑定一个业务统计队列。队列中的多个消费者是竞争消费。
 - durable 队列与持久消息分别约束队列元数据和消息恢复；classic 在 RabbitMQ 4.x 不复制，不能把单节点方案描述为高可用。
 - Spring AMQP 3.2 支持独立 publisher connection，默认未启用。无需为了分离连接手工重建全部 Boot 自动配置，后续实施需明确定制并验证。
@@ -126,7 +124,6 @@
 - [RabbitMQ DLX](https://www.rabbitmq.com/docs/dlx)：死信不是无限重试服务，默认转移不等于保证不丢；其可靠性边界须如实说明。
 - [RabbitMQ queue limits](https://www.rabbitmq.com/docs/maxlength)：可以限制队列长度/字节并明确溢出策略。
 - [Spring AMQP 恢复与重试](https://docs.spring.io/spring-amqp/reference/amqp/resilience-recovering-from-errors-and-broker-failures.html)：消费者重试和连接恢复是不同机制，不能用无限立即 requeue 代替错误处理。
-- [Spring Boot 3.5 托管依赖](https://docs.spring.io/spring-boot/3.5/appendix/dependency-versions/coordinates.html)、[Spring AMQP 3.2 连接管理](https://docs.spring.io/spring-amqp/reference/3.2/amqp/connections.html)、[Template](https://docs.spring.io/spring-amqp/reference/3.2/amqp/template.html)：版本对应、连接分离、confirm/return和发送调用的边界。
 - [RabbitMQ Exchanges](https://www.rabbitmq.com/docs/exchanges)、[Queues](https://www.rabbitmq.com/docs/queues)、[Classic Queues](https://www.rabbitmq.com/docs/classic-queues)：精确路由、队列和消息持久性、classic非复制边界。
 - [3.2.12 容器配置文档源](https://raw.githubusercontent.com/spring-projects/spring-amqp/v3.2.12/src/reference/antora/modules/ROOT/pages/amqp/containerAttributes.adoc)、[异常处理文档源](https://raw.githubusercontent.com/spring-projects/spring-amqp/v3.2.12/src/reference/antora/modules/ROOT/pages/amqp/exception-handling.adoc)：AUTO/NONE、autoStartup、missingQueuesFatal与转换异常在listener前发生的边界。
 
@@ -153,10 +150,8 @@
 - 2026-10-02：已合入 [04 消费重试与死信](issues/04-consumer-retry-and-dead-letter.md)、[05 迟到事件与窗口](issues/05-late-visits-and-retention-window.md)、[06 独立采集/消费生命周期](issues/06-collection-and-consumer-lifecycle.md)。06 合并提交 4a3f4c5，针对性10项测试通过。
 - 用户最新要求为06完成后暂停；已停止执行，07、08及最终双轴审查留待续接。[续接记录](resume.md)保存测试环境、已有证据和GPT-6.1 Sol/high审查要求。
 
-- 2026-10-02：用户回复继续，恢复07及后续实施/整体验收/最终审查；已启动此前保留的隔离测试容器。
+- 2026-10-02：用户回复继续，恢复07及后续实施/整体验收/最终审查；已启动此前保留的隔离测试设施。
 
 - 2026-10-02：[07 积压观测与资源预算](issues/07-backlog-observability-and-budgets.md)已完成；分层事件/发布/DB尝试和消费延迟速率、固定投影broker观察、同一主policy完整配额/TTL及真实缩小broker/持续DB故障暂停恢复验证。21项针对性测试通过，正值延迟断言再验证8项通过。预算/运维解释保留best-effort、独立TTL和非水位边界；08全量回归/同环境测量与双轴审查尚未执行。
-
-- 08整体验收完成：两轮完整Maven各259项全部通过（无跳过），原同步/异步jar公平样本与补充处理延迟见[验证记录](verification.md)。部署/运维/能力文档同步；最终双轴审查仍待执行。
 
 - 2026-10-02：07、08及最终审查修正全部合入。完整回归两轮各259项通过；GPT-6.1 Sol/high独立Standards与Spec审查分别为2项P3维护性建议、0项发现，建议已全部修正并以51项针对性回归验证。代码合并9b33501，父规格和八张任务全部resolved。详见[验证](verification.md)与[审查](code-review.md)。

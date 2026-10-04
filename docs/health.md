@@ -1,40 +1,45 @@
-# 分组健康与本地管理端口
+# 本地健康检查
 
-Actuator 使用当前 Spring Boot 3.5.16 的 starter，没有升级技术栈或新增监控服务。基础运行的管理服务绑定127.0.0.1:8081；Compose容器内管理绑定0.0.0.0:8081并且**仅向宿主127.0.0.1发布**。应用8080仍负责业务与两个无详情探针。
+应用默认使用两个端口：8080 提供页面和业务 API，127.0.0.1:8081 提供只读健康、信息和指标。管理端口不使用业务 `X-Internal-Token` 鉴权，只供本机访问。
 
-| 入口 | 主端口8080 | 管理端口8081 | 含义 |
-| --- | --- | --- | --- |
-| `/livez` | status唯一字段 | 无此路由 | 自身LivenessState，不访问DB/Redis/MQ |
-| `/readyz` | status唯一字段 | 无此路由 | ReadinessState + 显式核心MySQL dataSource |
-| `/actuator/health/liveness` | 404 | status唯一字段 | 与主/livez同组 |
-| `/actuator/health/readiness` | 404 | status唯一字段 | 与主/readyz同组 |
-| `/actuator/health/dependencies` | 404 | 固定类别详情 | Redis、MQ被动连接观察、独立统计池、统计意图/实际 |
-| `/actuator/health` | 404 | 安全固定状态详情 | 聚合所有组成员，可能因可选依赖DOWN而503 |
-| `/actuator/info` | 404 | 安全构建信息 | 仅artifact/group/name/version，无环境、git、主机/系统、启动时间或秘密 |
-| `/actuator/metrics`及单项 | 404 | 基础度量 | 既有HTTP次数/耗时与独立池，业务自定义观察已实现，见观测清单 |
+## 先看三个地址
 
-所有健康异常仅返回`unavailable`等固定类别；不加入Throwable、异常类/消息、SQL、连接地址、账号/秘密或访客数据。DB自动聚合健康、默认Redis/Rabbit/disk等指示器全部关闭，以免将统计池错误纳入核心或泄露默认详情。显式限定核心`dataSource`、统计`statsDataSource`是装配选择，健康响应不展示这些bean名/数据库元数据。
+| 地址 | 回答的问题 |
+| --- | --- |
+| `http://localhost:8080/livez` | 应用自身是否处于存活状态？不检查外部设施 |
+| `http://localhost:8080/readyz` | 应用是否就绪，核心 MySQL 是否可用？ |
+| `http://localhost:8081/actuator/health/dependencies` | Redis、MQ、统计连接池及采集/消费状态如何？ |
 
-管理端口仅允许health/info/metrics read-only端点，默认端点access none且max-permitted read-only；关闭JMX暴露和发现链接。env/configprops/heapdump/loggers/shutdown/mappings等不创建/不暴露。这里没有Spring Security，也不会继承业务 `X-Internal-Token` 鉴权；管理端口不要求该头，这是明确的本机网络边界。不要把业务令牌当作Actuator保护。另行改变监听地址/宿主发布或公网部署时需要重新设计访问边界。
+`/livez` 和 `/readyz` 只返回状态。查看具体依赖问题用第三个地址。
 
-## 故障状态与运行意图
+## 如何理解结果
 
-- Redis或MQ不可用：main/livez和core/readyz仍UP；依赖组展示DOWN。Redis故障时核心就绪不保证创建/管理可用，它们仍按限流fail-close独立503；跳转fail-open仍受实际回源并发保护。MQ故障仍保持best-effort统计，不能从核心UP推断PV已记录。
-- 核心MySQL不可用：readiness503，liveness仍UP。恢复连接后探针重新核验；healthcheck不负责重启应用、恢复数据或提供高可用。
-- 独立统计池失败：statisticsDatabase DOWN、dependencies503，核心组不受影响；即使同一个MySQL，两个池仍分别观察，不能把统计故障聚合为核心池故障。
-- statistics详情包含collectionIntent/collectionActual、handoffActual、publisherActual，以及consumerIntent/consumerActual。配置意图和实际状态分列：关闭采集不关闭历史消费，配置消费者disabled和实际stopped不会被探针改成enabled/running；配置enabled但人工停止时显示enabled/stopped，不自动覆盖人工暂停。publisherActual的not-recovering并不保证broker接收或MySQL保存。
-- mqDependency是已有发布/消费连接的**被动**onCreate/onClose及isOpen观察，分别报告connected/unavailable；任一已有连接仍开放时MQ组件UP。它不建立探针连接、不启停消费者，不确认policy/route/ready/unacked或端到端消费。连接断开及恢复按现有生命周期/心跳可延迟可见；这些broker数据仍通过受限Management/实际冒烟观察。
+| 情况 | 核心就绪状态 | 实际影响 |
+| --- | --- | --- |
+| Redis 不可用 | 可能仍 UP | 创建和管理可能返回 503；跳转降级查 MySQL，并受回源并发限制 |
+| MQ 不可用 | 可能仍 UP | 正常跳转继续，统计可能漏记 |
+| 核心 MySQL 不可用 | readiness 返回 503 | 核心业务无法保证可用；liveness 仍可 UP |
+| 统计连接池不可用 | 核心组不受影响 | 统计处理或查询异常，依赖组返回 503 |
+| 应用尚未就绪或正在关闭 | readiness 不可用 | 暂不接受正常流量 |
 
-`ReadinessState.REFUSING_TRAFFIC`（包括启动未完成/关闭）使核心readiness不可服务；外部依赖不改变自身liveness。探针只观察，没有控制消费意图的操作入口。
+**UP 不等于所有功能都正常，也不等于 PV 已入账。** 探针只报告状态，不修复数据、不重启应用、不改变消费开关。
 
-## Compose探针与验证
+采集与消费详情同时显示配置意图和实际状态。例如消费者配置开启，但被手动停止时，会显示 enabled/stopped；检查健康不会把它重新启动。
 
-镜像将仅用JRE标准库的 `CoreReadinessProbe` 单独编译到 `/app/probe`，使用短连接/读取等待，读取容器内**主8080的/readyz**并要求200和精确`{"status":"UP"}`。不依赖镜像里不存在的curl，不从独立8081存活反推业务端口存活。该辅助JVM最大堆32MiB，运行时额外开销包含在应用容器预算内；探针预算不是业务HTTP总时限。
+MQ 状态只观察已有连接，没有确认队列策略、路由或消息是否落库。连接变化可能延迟显示；队列积压另用 [观察脚本](../ops/README.md)。
 
-`ops/compose/smoke.ps1` / `ops/compose/smoke.sh` 使用独立秘密、随机localhost业务/管理/MQ Management端口和唯一临时卷，实跑以下矩阵：健康精确无详情、危险端点404/无旧令牌依赖、安全info/基础HTTP池指标、暂停消费意图不被探针修改、Redis/MQ实时故障和再次启动核心仍UP、MySQL实时故障readiness503/livenessUP/容器unhealthy，恢复后readinessUP。报告仍在target/compose-smoke；不保存展开配置或容器环境。
+## 其他只读入口
 
-真实Spring双HTTP服务器测试 `HealthManagementHttpTest` 使用受控JDBC/Redis/AMQP公共边界补验仅统计池故障、原始异常canary、配置enabled/人工stop的差异和AvailabilityChangeEvent关闭意图。已有MQ启动/关闭和HTTP限流装配回归继续运行。测试详情见07验收记录。
+- `/actuator/health`：所有组的汇总状态，可因非核心依赖故障返回 503。
+- `/actuator/info`：基本构建信息。
+- `/actuator/metrics`：指标列表；具体含义见 [观测说明](observability.md)。
 
-HTTP基础指标使用Spring MVC模板route或固定未知/拒绝类别，不用原始URL/IP/短码等标签；JDBC指标name=dataSource与stats（Boot自动去除statsDataSource的后缀），Hikari分别观察核心与visit-statistics池。没有自动取得broker队列ready/unacked。08新增的安全日志、完整最小指标与语义见 [观测清单](observability.md)；这里没有Prometheus/Grafana/动态日志操作。
+管理端口也提供 `/actuator/health/liveness` 和 `/actuator/health/readiness`，与业务端口的两个探针对应。业务端口不提供 Actuator 接口。
 
-API依据：[Spring Boot 3.5.16 Actuator端点与健康分组](https://docs.spring.io/spring-boot/3.5/reference/actuator/endpoints.html)、[管理服务端口](https://docs.spring.io/spring-boot/3.5/reference/actuator/monitoring.html)。
+## 实现与验证参考
+
+健康错误只显示固定类别，不返回异常正文、SQL、连接地址或秘密。env、configprops、heapdump、loggers、shutdown、mappings 等端点不开放，JMX 暴露也关闭。
+
+核心池与统计池分别观察；默认数据库、Redis、Rabbit 等聚合指示器关闭，避免统计故障混入核心就绪判定。HTTP 指标使用路由模板或固定类别，不用短码、IP 或原始 URL 作为标签。
+
+`HealthManagementHttpTest` 验证双端口、统计池故障、错误信息保护、消费意图及关闭状态。此页说明既有行为，本轮文档调整没有重新运行这些测试。

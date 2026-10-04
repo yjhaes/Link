@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: 04, 05
 
-# 09：业务OpenAPI与页面错误契约
-
 ## Parent
 
 [阶段 8 实现规格](../spec.md)

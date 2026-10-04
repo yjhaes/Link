@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: 03
 
-# 04：跳转限流与实际回源并发保护
-
 ## Parent
 
 [阶段 8 实现规格](../spec.md)

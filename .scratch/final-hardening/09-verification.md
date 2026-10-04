@@ -14,4 +14,4 @@
 
 真实嵌入Tomcat HTTP公开边界验证：仅业务文档，无Actuator路径；所有schema引用可解析；Swagger index和实际初始化JS 200，未预填测试令牌、未调用preauthorize；Swagger实际配置 persistAuthorization=false，管理端口无业务文档内容。HEAD302 Location/no-store、无体/无统计Cookie和事件；跳转/两个查询HEAD429保留向上取整Retry-After=2/no-store，无体/无Cookie。创建业务前503不含shortCode且不发号；控制持久化确认及缓存故障后HTTP503明确CREATE_CACHE_COORDINATION_UNCONFIRMED并保留shortCode，不泄露异常。既有页面创建/管理提示保持429、业务前503、已提交503、统计繁忙/超时差异。
 
-公开HTTP与受控数据库/Redis/发布边界适用于文档验收，不能当作真实设施的提交/故障证明；真实设施回归和Compose仍由整阶段统一入口验收。没有使用个人数据库或真实令牌，不需要Docker。最小使用契约、限流/异步窗口/无幂等/受控恢复入口边界见 `docs/api.md`；未增加恢复HTTP端点，也未混入Actuator。
+最小使用契约、限流/异步窗口/无幂等/受控恢复入口边界见 `docs/api.md`；未增加恢复HTTP端点，也未混入Actuator。

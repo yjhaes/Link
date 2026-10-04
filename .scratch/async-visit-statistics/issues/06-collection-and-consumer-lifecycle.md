@@ -22,8 +22,6 @@ Blocked by: 03, 04
 
 - 2026-10-02：用户已确认8张任务的粒度、交付范围和直接阻塞关系。本轮仅发布任务，尚未认领或开始实施；父规格内容和状态保持不变。
 
-
-
 ## Answer
 
 - 独立 `SHORT_LINK_STATS_CONSUMER_ENABLED` / `short-link.stats.rabbit.consumer-enabled` 默认开启消费；停采只影响新事件与 Cookie。修改后重启的暂停、修复及恢复步骤见 `docs/visit-statistics-operations.md`，没有新增 HTTP 管理接口。

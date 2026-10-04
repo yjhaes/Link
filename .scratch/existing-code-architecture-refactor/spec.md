@@ -1,7 +1,5 @@
 Status: ready-for-agent
 
-# 现有短链接代码职责重构
-
 ## Problem Statement
 
 项目已经实现短链接创建、MySQL 持久化、短码生成、跳转、Redis 版本化缓存、实例内请求合并和缓存协调恢复。Maven 目录、Spring Boot 根包位置以及 HTTP、业务编排、持久化的基本分工合理，当前没有依据要求推倒目录骨架或立即改成多模块。
@@ -61,8 +59,6 @@ Status: ready-for-agent
 37. 作为项目讲解者，我希望文档准确说明重构后的职责和失败恢复流程，以便能解释每个 module 提供的 depth、locality 和 leverage。
 38. 作为项目维护者，我希望未来统计、消息和限流明确在本次范围外，以便当前重构保持可审阅和可验证。
 
-## Implementation Decisions
-
 ### 结构与职责
 
 - 保留单 Maven module、当前应用根包及 HTTP、业务编排、缓存、持久化、短码功能包。启动类继续位于根包；不增加仅用于未来功能的目录。
@@ -119,7 +115,6 @@ Status: ready-for-agent
 - 补充现有创建和跳转用例入口测试、发号与缓存 seam 测试，以及真实 MySQL／Redis adapter 集成测试。只在 HTTP 难以稳定控制并发或故障顺序时下降到既有内部 seam，不为这次重构增加测试专用公开 interface。
 - 好测试关注行为与已承诺的资源语义：缓存命中不查 SQL、正常一轮同码同版本 miss 合并为一次 SQL 都是有效验收目标。类名、构造器数量、私有方法、纯转发调用链和任意行数上限不是验收目标。
 - 沿用 `ShortLinkApiTest` 的 HTTP 契约场景，`ShortLinkServiceTest` 的创建、冲突与恢复场景，`RedirectLoadCoalescingTest` 的受控并发场景，`PermutedShortCodeEncoderTest` 的固定规则验收，以及 `RedisRedirectCacheTest` 与 `RedisRedirectIntegrationTest` 的配置和真实协议验收。测试装配随职责变化迁移，不为了保留旧类名增加兼容 façade。
-- 实施前记录基线，实施后先运行已有无需外部数据库与缓存的四组测试；真实 MySQL 与 Docker 环境可用时运行完整 HTTP 和 Redis 集成验收。该规格发布时不运行或宣称这些测试已经通过。
 - 创建验收覆盖永久/限时输入与错误范围、相同原始 URL 的独立映射、固定短码规则、仅主键冲突重试一次、其他唯一约束不重试，以及发号空洞。
 - 用真实事务验证创建已确认提交后才协调缓存；保留调用者事务回滚不会撤销已提交创建的场景，以及未确认保存不报告 503 部分完成的场景。直接 new 出业务对象的测试不能替代 Spring 事务代理验收。
 - 协调验收覆盖 503 带已保存短码、Redis 已执行但确认丢失、重复恢复、恢复不增加发号或映射、恢复不覆盖后续禁用状态，以及创建/重新启用完成后的新请求隔离旧拒绝结果。
@@ -134,7 +129,6 @@ Status: ready-for-agent
 
 - 实现访问统计、PV/UV、RabbitMQ 发布或消费、消息去重、死信、outbox、创建请求幂等、限流、熔断或数据库回源预算。
 - 为上述未来功能创建空包、空 Maven module、预留配置或提前定义消息契约。
-- 拆成多个 Maven module、独立部署进程或微服务，引入 Spring Modulith 或其他架构框架。
 - 改变短码生成机制、字符表、参数、主键、大小写语义、ID 提交规则或增加生产数据清理。
 - 改变 Redis v2 格式、版本协调算法、一致性保证范围或等待超时行为；引入跨实例回源锁、长期本地缓存、Bloom Filter、自动预热或自动故障切换。
 - 数据库表结构或索引改动、Flyway/Liquibase 迁移、数据库初始化方式调整。

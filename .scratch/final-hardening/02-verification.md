@@ -2,8 +2,6 @@
 
 日期：2026-10-04（Asia/Shanghai）。实现分支 `codex/hardening-02` 从 integration `b8aae4a` 开始，随后同步任务01集成提交 `0c3b5aa`，未使用历史263项作为当前证明。
 
-运行宿主Windows；PowerShell7、Python3.14、Corretto JDK17.0.17、Docker Engine29.8.1、Maven Wrapper。独立Compose使用 `mysql:8.4`、`redis:7.2-alpine`、`rabbitmq:3.13-management`；既有RedisRedirectIntegrationTest继续使用自己的Testcontainers MySQL/Redis。
-
 | 运行 | 入口 / 内容 | tests | failures | errors | skipped | 退出 |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
 | RED | AsyncVisitRoundtrip新增HTTP往返，独立不可连接MySQL地址 | 1 | 0 | 1 | 0 | 1 |
@@ -12,7 +10,6 @@
 | 同轮 | integration-consumer | 13 | 0 | 0 | 0 | 0 |
 | 同轮 | integration-lifecycle | 9 | 0 | 0 | 0 | 0 |
 | afacfed07f32 | 最新入口unit补验 | 112 | 0 | 0 | 0 | 0 |
-| 92be409c1126 | 清空子进程PATH的缺Docker负例；明确preflight错误 | 未开始 | — | — | — | 1 |
 
 完整本轮Java 268项通过，覆盖全部发现的既有顶层测试类及新增HTTP往返；零失败、错误、跳过。新增往返在真实数据库与broker中从POST创建开始，检查302 Location，随后以管理HTTP查询最终PV1/UV1；没有将设施健康视为业务通过。
 

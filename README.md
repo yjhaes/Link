@@ -1,5 +1,7 @@
 # Short Link
 
+[项目文档导航](docs/README.md)：运行与使用、架构与设计、测试与证据及历史材料。
+
 面向 Java 后端实习展示的单应用短链接服务：匿名创建永久/限时短链接，302 跳转，内部启禁用与最近 30 个上海统计日的 PV、UV 和访问明细。MySQL 保存权威数据，Redis 加速并限流，RabbitMQ 承接有界、best-effort 异步统计。
 
 ![实际公开创建页面](docs/images/home.png)
@@ -36,33 +38,22 @@ prefetch / 有限重试]
 映射 / 已记录访问日志]
     MQ --> DLQ[有界DLQ
 无自动回放]
-    DB --- V1[MySQL命名卷]
-    MQ --- V2[RabbitMQ命名卷]
     REDIS[Redis
 非持久 / noeviction]
 ```
 
-数据库、Redis 和 AMQP 默认不向宿主发布；管理端口没有业务令牌鉴权，依靠 localhost 边界。详细职责与两个关键时序见 [架构说明](docs/architecture.md)。
+管理端口没有业务令牌鉴权，依靠 localhost 边界。详细职责与两个关键时序见 [架构说明](docs/architecture.md)。
 
 ## 第一次运行
 
-需要 Docker Engine、Compose 2.24.4+、联网构建和足够内存；宿主无需 JDK/Maven。仓库根目录执行：
-
-```powershell
-pwsh -NoProfile -File ops/init-local-secrets.ps1
-docker compose --env-file .env.local up --build --detach --wait --wait-timeout 240
-```
-
-Linux 将初始化命令替换为 `sh ops/init-local-secrets.sh`，Compose 命令相同。初始化生成五个独立秘密且重复执行不改变它们；不要提交 `.env.local`。基础采集默认关闭，Compose 明确开启采集，消费者默认开启。`--wait` 只证明核心就绪；统计仍须实际验证。[完整运行、卷、轮换与受控恢复](docs/compose.md)。
+准备 Java 17，以及独立配置的 MySQL、Redis 和 RabbitMQ。按 [本地配置与启动说明](docs/local-secrets.md)生成秘密、配置设施账号、导入环境变量并运行应用。页面默认位于 <http://localhost:8080/>。
 
 ## 最短演示
 
 1. 打开 <http://localhost:8080/>，创建 `https://example.com/demo`；用 `curl.exe -I http://localhost:8080/s/<返回短码>`（Linux 用 `curl`）观察 302、Location、no-store，HEAD 不产生统计。
 2. 浏览器打开生成的短链接两次，再进入 `/admin.html`，手动输入本地配置中的管理令牌；轮询统计，已记录事件为 PV=2、同一 Cookie 的 UV=1。统计异步可见，不保证立即完成。不要在截图或分享中展示秘密。
 3. 管理页禁用后访问得到403，启用后恢复302；快速连续创建会遇到429及 Retry-After，等待不保证下次获准。
-4. 查看 <http://localhost:8080/readyz> 与 <http://localhost:8081/actuator/health/dependencies>。完整 MQ/Redis 故障、创建拒绝和受控恢复演示由 [可重复观察入口](docs/performance-and-failures.md)在独立项目中执行。
-
-普通停止：`docker compose --env-file .env.local stop`；同一项目、秘密与卷再次启动保留映射、日志和 broker 积压。`down --volumes` 永久删除本项目数据，仅用于明确重置。
+4. 查看 <http://localhost:8080/readyz> 与 <http://localhost:8081/actuator/health/dependencies>。完整 MQ/Redis 故障、创建拒绝和受控恢复演示由 [可重复观察入口](docs/performance-and-failures.md)说明历史故障行为。
 
 ## API、测试与证据
 
@@ -70,15 +61,14 @@ Linux 将初始化命令替换为 `sh ops/init-local-secrets.sh`，Compose 命�
 
 ![实际本地Swagger页面](docs/images/swagger.png)
 
-截图来自独立本地演示项目；Swagger 中的 2763 是拍摄时分配的隔离端口，按上述正常启动使用 8080。公开页面未填写管理令牌。[实际展示验收与清理](docs/evidence/readme-demo-2026-10-04.json)。
+截图来自独立本地演示项目；Swagger 中的 2763 是拍摄时分配的隔离端口，本地默认配置使用 8080。公开页面未填写管理令牌。
 
 ```powershell
-# Java/页面回归、真实隔离设施、全栈Compose冒烟及安全报告
-pwsh -NoProfile -File ops/ci/run.ps1
-# 只跑无设施层：pwsh -NoProfile -File ops/tests/run.ps1 unit
+# 无设施 Java/页面回归
+pwsh -NoProfile -File ops/tests/run.ps1 unit
 ```
 
-Linux 等价入口 `sh ops/ci/run.sh`。测试需 JDK17、Python3.10+、Node18+；完整验证还需 Docker。缺设施、失败、错误或必测跳过均不通过。[分层测试](docs/testing.md) · [CI与报告](docs/ci.md) · [正式验证总入口](docs/verification.md) · [四条简历素材](docs/portfolio.md)。
+Linux 等价入口 `sh ops/tests/run.sh unit`。测试需 JDK17、Python3.10+、Node18+。[测试说明](docs/testing.md) · [CI与报告](docs/ci.md) · [正式验证总入口](docs/verification.md) · [四条简历素材](docs/portfolio.md)。
 
 ## 故障与边界
 

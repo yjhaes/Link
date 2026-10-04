@@ -1,38 +1,85 @@
-# 异步访问统计：停采、暂停消费与关闭
+# 访问统计：本地调试与故障排查
 
-采集和消费是两个独立的部署配置。新采集默认关闭；消费者默认开启，即使停采也处理队列中的历史消息。修改后重启应用生效，没有动态管理 HTTP 接口。
+先确认应用已经按 [本地启动说明](local-secrets.md)运行。统计是异步的：跳转返回 302 后，PV/UV 可能稍后才出现；统计故障允许漏记，不影响正常跳转。
 
-| 环境变量 | 对应属性 | 效果 |
+## 选择要做的操作
+
+| 目的 | 采集新访问 | 消费队列消息 |
 | --- | --- | --- |
-| `SHORT_LINK_STATS_ENABLED` | `short-link.stats.enabled` | `false` 不产生新事件或统计 Cookie；历史查询、消费和日志清理继续 |
-| `SHORT_LINK_STATS_CONSUMER_ENABLED` | `short-link.stats.rabbit.consumer-enabled` | `false` 不启动消费者；发布、队列保存及历史查询、清理保持独立 |
+| 正常统计 | 开启 | 开启 |
+| 不再记录新访问，继续处理已有消息 | 关闭 | 开启 |
+| 数据库故障，暂时不处理消息 | 按需要关闭 | 关闭 |
 
-用 PowerShell 7 从仓库目录运行。以下命令假设已构建 `target/short-link-0.0.1-SNAPSHOT.jar`，保留当前部署的数据库、Redis、RabbitMQ、HMAC 和管理令牌配置。前台进程用 `Ctrl+C` 发起正常关闭，然后在同一终端执行对应启动命令；服务部署应把相同变量写入其启动环境，再用现有服务管理器重启。
+基础配置默认关闭采集、开启消费。本地秘密初始化生成的配置会同时开启两者。关闭采集后，历史查询和日志清理继续运行。
 
-暂停消费（故障期间仍然采集是否可接受，由维护者根据积压预算决定）：
+## 停采、暂停和恢复
 
-```powershell
-# pwsh -NoProfile
-$env:SHORT_LINK_STATS_CONSUMER_ENABLED = 'false'
-java -jar target/short-link-0.0.1-SNAPSHOT.jar
-```
+以下命令在仓库根目录的 PowerShell 7 中执行。保留当前数据库、Redis、RabbitMQ 和秘密配置。
 
-关闭新采集，同时继续处理历史消息：
+每次修改前，先用 `Ctrl+C` 停止当前前台应用；修改环境变量后重新启动。没有动态修改这些开关的 HTTP 接口。
 
 ```powershell
+# 停止新采集，继续处理队列中的消息
 $env:SHORT_LINK_STATS_ENABLED = 'false'
 $env:SHORT_LINK_STATS_CONSUMER_ENABLED = 'true'
-java -jar target/short-link-0.0.1-SNAPSHOT.jar
+.\mvnw.cmd spring-boot:run
 ```
-
-恢复消费（保留当前采集选择）：
 
 ```powershell
-$env:SHORT_LINK_STATS_CONSUMER_ENABLED = 'true'
-java -jar target/short-link-0.0.1-SNAPSHOT.jar
+# 暂停消费；保持当前采集设置
+$env:SHORT_LINK_STATS_CONSUMER_ENABLED = 'false'
+.\mvnw.cmd spring-boot:run
 ```
 
-持续 DB 故障时先观察受控消费失败类别、处理速率、业务 ready/unacked 和 DLQ 数量，核验统计池与数据库，再暂停消费并修复故障。暂停需要正常关闭并重启；当前及预取事件并非瞬间撤回，暂停生效前仍可能重试耗尽、死信、TTL 或容量淘汰。业务队列和 DLQ 也有驻留与容量预算，不是可靠补偿存储。恢复后可先核验少量历史记录写入和积压回落；人工重放保持原 ID/发生时间且遵守窗口，不自动回流 DLQ。
+```powershell
+# 恢复消费；保持当前采集设置
+$env:SHORT_LINK_STATS_CONSUMER_ENABLED = 'true'
+.\mvnw.cmd spring-boot:run
+```
+
+要重新采集，设置 `$env:SHORT_LINK_STATS_ENABLED = 'true'` 后重启。采集需要有效的 HMAC 密钥和版本，见 [本地配置](local-secrets.md)。
+
+暂停消费不会撤回已经处理或预取的消息。继续采集会增加积压；队列满、消息过期或重试耗尽仍可能丢弃消息。自动连接恢复不会取消手动暂停。
+
+## 统计没有增加时怎么查
+
+1. 确认访问的是正常 GET 跳转。HEAD、被拒绝的请求和停采期间的访问不计入统计。
+2. 查看 [健康状态](health.md)：确认 MySQL、Redis、MQ 和统计连接池的状态。
+3. 运行 [只读队列观察脚本](../ops/README.md)，对照下表判断。
+4. 如果数据库持续报错，暂停消费，必要时也停采；修复后恢复消费，检查积压是否下降，以及少量新访问能否查询到。
+
+| 观察项 | 意思 | 排查方向 |
+| --- | --- | --- |
+| `ready` 持续增加 | 消息等待处理 | 消费者是否运行、数据库是否可用 |
+| `unacked` 长时间不下降 | 消息已交给消费者，但尚未确认 | 数据库耗时、锁等待、连接池占用 |
+| `consumers` 为 0 | 没有消费者 | 消费开关、MQ 连接、账号及队列声明 |
+| DLQ 有消息 | 消息进入死信队列 | 格式错误、重试耗尽或消息过期 |
+| `memoryAlarm` / `diskAlarm` | broker 资源不足 | 检查本地 RabbitMQ 状态 |
+
+管理页面和观察数据可能有延迟；速率为 `null` 表示没有数据，不能当作 0。健康 UP、发布确认和 HTTP 302 都不能证明访问日志已经保存。
+
+## 关闭应用和死信处理
+
+正常关闭用 `Ctrl+C`。应用只等待有限时间，不保证退出前保存所有统计：本地未发送事件可能丢失，未确认消息可能已经发送，未 ACK 消息可能重投。相同 eventId 由数据库唯一键防止重复入账。
+
+DLQ 是有容量和保留期限的排查样本，没有自动回放。先修复原因，再决定是否人工重放；具体限制见 [死信排查](../ops/README.md)。停采期间不会补采。
+
+## 参数和实现细节
+
+日常调试通常不需要修改线程、连接池或队列预算。需要解释原理或分析资源问题时，再查看下面的参考。
+
+<details>
+<summary>开关对应的配置项</summary>
+
+| 环境变量 | 配置项 |
+| --- | --- |
+| `SHORT_LINK_STATS_ENABLED` | `short-link.stats.enabled` |
+| `SHORT_LINK_STATS_CONSUMER_ENABLED` | `short-link.stats.rabbit.consumer-enabled` |
+
+</details>
+
+<details>
+<summary>启动、恢复、关停与测试配置的实现边界</summary>
 
 后台声明和消费者启动发生在核心 `ApplicationReadyEvent` 后的单一后台 worker。启动网络失败按固定间隔重试；配置暂停始终不启动 listener，发布恢复只重建发布连接，不覆盖暂停。监听器已启动后的连接故障由其恢复逻辑处理；手动停止的监听器不因发布恢复被启动。认证、声明属性冲突应修正配置或拓扑，不能删除重建已有积压队列。
 
@@ -41,6 +88,11 @@ java -jar target/short-link-0.0.1-SNAPSHOT.jar
 Recorder 的共同等待预算为 2 秒，Spring 每个关闭阶段等待起点也是 2 秒；它们不是整个进程或所有销毁方法的硬截止。卡在 TCP/JDBC 或依赖关闭锁的单一 worker 可能需要依赖解除后才退出；不会因超时创建替代 worker、连接工厂或恢复任务。进程内未发事件允许丢失，unknown 不能改称未送达，也不重发或同步回退 MySQL。正常解除依赖后线程和连接释放；异常阶段不能承诺所有后台线程立即消失。
 
 测试 profile 默认暂停消费者，避免保留的查询测试上下文或不同 Clock 消费其他测试的事件。真正的 MQ HTTP 测试显式开启消费并关闭其上下文；集成测试须使用独立数据库/vhost。测试默认暂停不影响生产默认开启。
+
+</details>
+
+<details>
+<summary>资源预算、队列策略及内部指标参考</summary>
 
 ## 积压观察与资源起点
 
@@ -73,8 +125,6 @@ $credential = Get-Credential
 
 观察脚本只读取两条固定队列及 broker nodes，输出 ready、unacked、consumers、brokerAckPerSecond 和 memoryAlarm/diskAlarm。management 的数据有采样延迟；缺失速率为 null，不能当 0。资源告警必须与网络/DB/消费情况合看；不要在生产人为制造资源告警。脚本错误只保留固定类别，不显示管理 API response 或凭据。没有新增监控平台或公开运维 HTTP 接口。
 
-应用内观测保留在 bean 的只读 `snapshot()`，可在已有内部调试/诊断环境读取，不为读取新增公网接口：
-
 - `AsyncVisitRecorder`：`eventOutcomes` 是本地接受/满/过期/限流/编码失败/停机损失；`publishOutcomes` 包括实际 send 尝试、confirm accepted、return、nack、unknown、send-failed 和恢复类别。`outcomes` 保留原兼容视图，不能与两个分层 map 再相加。`pending/unconfirmed/recovering` 描述本进程发布资源；`publishDurationNanos` 是关联尝试终局观察累计耗时，包含未知观察期，不是网络发送总截止。
 - `VisitConsumer`：`deliveries` 是收到消息的处理轮次，重投会增加；`persistenceAttempts` 是每轮实际调用 DB 用例的次数，重试不会当新访问。固定终局有 SAVED/DUPLICATE/EXPIRED/INVALID/PERMANENT/EXHAUSTED/INTERRUPTED；ATTEMPT_FAILED 单独计算失败尝试。`processingNanos` 包含同步重试等待，`inFlight` 是当前同步处理数；`completedPerSecond` 是自此 bean 创建以来的已终结消息轮次均速，包含失败/拒绝，不冒充成功保存速率。
 - `VisitWriteObservations`：DB 保存/重复/准入丢弃/失败/不确定、固定错误类别、尝试累计耗时及 Hikari active/idle/total/waiting。与 Consumer 尝试和 Publisher ACK 分开解释。未初始化池时池数为 0，并非 DB 健康证明。
@@ -88,3 +138,5 @@ $credential = Get-Credential
 ## 资源所有权
 
 应用 MQ ready/close/destroy 统一归 `stats.messaging.VisitMqRuntime`；受信任上下文应通过它执行终止，不再调用 recorder.close 终止消费。AsyncVisitRecorder 只负责发布和发布恢复；消费关闭、CCF 非网络 stop 与销毁保护保留在 messaging adapter。核心 dataSource 归 configuration，statsDataSource 归 stats.config；采集、消费、查询和清理开关与本说明一致。
+
+</details>
