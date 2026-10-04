@@ -97,11 +97,11 @@ class Evidence:
         finally:
             connection.close()
 
-    def metric(self, name, **tags):
+    def metric(self, meter_name, **tags):
         query = urllib.parse.urlencode([('tag', key + ':' + value) for key, value in tags.items()])
-        status, _, data = self.http('GET', '/actuator/metrics/' + name + ('?' + query if query else ''), operations=True)
+        status, _, data = self.http('GET', '/actuator/metrics/' + meter_name + ('?' + query if query else ''), operations=True)
         if status != 200:
-            raise RuntimeError('Missing metric ' + name)
+            raise RuntimeError('Missing metric ' + meter_name)
         return next(item['value'] for item in data['measurements'] if item['statistic'] in ('VALUE', 'COUNT'))
 
     def sql(self, text, label):
