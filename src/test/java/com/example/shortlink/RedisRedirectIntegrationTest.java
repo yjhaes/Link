@@ -162,6 +162,12 @@ class RedisRedirectIntegrationTest {
     void clearTestData() {
         org.mockito.Mockito.when(rateLimiter.admitCreate(anyString()))
                 .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
+        org.mockito.Mockito.when(rateLimiter.admitRedirect(anyString()))
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
+        org.mockito.Mockito.when(rateLimiter.admitManagementWrite())
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
+        org.mockito.Mockito.when(rateLimiter.admitManagementQuery())
+                .thenReturn(com.example.shortlink.ratelimit.RateLimiter.Decision.allowed());
         jdbcTemplate.update("DELETE FROM short_link");
         jdbcTemplate.update("DELETE FROM short_code_issuance");
         redisTemplate.execute((RedisCallback<Void>) connection -> {

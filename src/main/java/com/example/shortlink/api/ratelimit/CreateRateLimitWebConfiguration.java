@@ -21,5 +21,6 @@ public class CreateRateLimitWebConfiguration implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new CreateRateLimitInterceptor(limiter))
                 .addPathPatterns("/api/links");
+        registry.addInterceptor(new RedirectRateLimitInterceptor(limiter)).addPathPatterns("/s/{code}");
     }
 }
