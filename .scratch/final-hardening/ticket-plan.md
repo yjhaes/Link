@@ -261,7 +261,7 @@ flowchart TD
 | [06：全栈Compose运行、持久卷和资源边界](issues/06-compose-runtime.md) | 01 | resolved |
 | [07：分组健康检查与安全管理端口](issues/07-health-and-management-exposure.md) | 06 | resolved |
 | [08：请求与异步结果的安全日志和最小指标](issues/08-safe-logs-and-metrics.md) | 04、05、07 | resolved |
-| [09：业务OpenAPI与页面错误契约](issues/09-api-docs-and-error-ui.md) | 04、05 | ready-for-agent |
+| [09：业务OpenAPI与页面错误契约](issues/09-api-docs-and-error-ui.md) | 04、05 | resolved |
 | [10：CI自动回归与全栈最终冒烟](issues/10-ci-and-final-verification.md) | 02、08、09 | ready-for-agent |
 | [11：有限性能观察与故障演示证据](issues/11-performance-and-failure-evidence.md) | 02、08 | ready-for-agent |
 | [12：GitHub首页、架构图与简历收尾](issues/12-readme-and-portfolio-finish.md) | 10、11 | ready-for-agent |
