@@ -75,9 +75,9 @@ destroy，核心 ready 后后台声明拓扑并按消费意图启动 listener，
 通过专用池和容量 1 的准入，在同一只读 REPEATABLE READ 快照中读取映射、汇总、趋势与身份版本。
 明细按发生时刻和行 ID 倒序，游标绑定短码和日期范围；查询失败不会伪造零访问。
 `stats.retention` 保留每批独立提交、轮次预算、启动/每日/积压追赶，停采不停止历史消费、查询或清理。
-详见 [采集说明](visit-collection.md)、[异步设计](async-visit-statistics.md)、[查询说明](visit-statistics-query.md)。
+详见 [采集说明](visit-collection.md)、[异步设计](async-visit-statistics.md)、[查询说明](../入门与使用/visit-statistics-query.md)。
 
-`ShortLinkStateService` 承担状态维护用例。入口挂起调用者事务，在独立事务中通过 Mapper 的行锁读取当前映射，获取锁后检查有效期和重复目标，再仅更新 enabled；独立事务确认提交后才轮换缓存版本。缓存同步失败在当前请求内最多尝试三次，等待 50/100ms，耗尽或等待中断报告专用部分完成错误；时间等待通过包级构造器的可控依赖进行测试。该用例复用现有 Mapper、Clock 和 RedirectCache，不新增通用仓储或后台任务。详见 [ADR-0005](adr/0005-enabled-state-api.md)。
+`ShortLinkStateService` 承担状态维护用例。入口挂起调用者事务，在独立事务中通过 Mapper 的行锁读取当前映射，获取锁后检查有效期和重复目标，再仅更新 enabled；独立事务确认提交后才轮换缓存版本。缓存同步失败在当前请求内最多尝试三次，等待 50/100ms，耗尽或等待中断报告专用部分完成错误；时间等待通过包级构造器的可控依赖进行测试。该用例复用现有 Mapper、Clock 和 RedirectCache，不新增通用仓储或后台任务。详见 [ADR-0005](../adr/0005-enabled-state-api.md)。
 
 `ShortLinkCreationService` 承担完整创建用例：URL 与有效时长校验、发号编码、短码冲突重试、提交后的缓存协调和内部协调恢复。`RedirectService` 承担完整跳转用例：短码格式校验、缓存回退、跳转拒绝判定、版本条件回填、实例内加载合并与逐请求到期复查。`api` 直接调用对应服务，把结果或错误转换为 HTTP 响应；没有保留纯转发的旧 façade，请求 DTO 不作为数据库记录使用。
 
@@ -107,9 +107,9 @@ Redis 使用 `shortlink:redirect:v2:` 命名空间，结果与版本占位都有
 
 每个 `RedirectService` 实例按“短码＋缓存版本”共享正在进行的数据库加载，成功或失败后清理任务。不同短码或不同版本可以并行；版本无法确认时独立回源，不加入旧任务。等待共享任务的预算默认 200ms，超时后重读一次缓存，仍未命中则独立查询，不取消其他请求正在使用的任务。各请求在使用共享结果时再次检查业务到期时间。该机制允许多个实例各回源一次，也允许超时后的额外查询，不是全局互斥或 HTTP 总耗时保证。
 
-创建、维护和恢复协调仍遵守数据库提交后轮换缓存版本的协议；即时可见依赖所有实例使用同一协议、同一 Redis 主实例且已确认更新未丢失。重启、切换或恢复旧快照时须按 [Redis 受控恢复说明](redis-recovery.md) 清理旧结果与版本。具体规则和一致性范围见 [ADR-0002](adr/0002-permuted-auto-id-base62.md)、[ADR-0003](adr/0003-redis-cache-aside-for-redirects.md) 与 [ADR-0004](adr/0004-negative-cache-for-redirects.md)。
+创建、维护和恢复协调仍遵守数据库提交后轮换缓存版本的协议；即时可见依赖所有实例使用同一协议、同一 Redis 主实例且已确认更新未丢失。重启、切换或恢复旧快照时须按 [Redis 受控恢复说明](../故障排查/redis-recovery.md) 清理旧结果与版本。具体规则和一致性范围见 [ADR-0002](../adr/0002-permuted-auto-id-base62.md)、[ADR-0003](../adr/0003-redis-cache-aside-for-redirects.md) 与 [ADR-0004](../adr/0004-negative-cache-for-redirects.md)。
 
-测试目录与生产包对应。HTTP 和 MySQL/Redis 集成测试位于测试根包，覆盖接口可见行为；`service` 测试覆盖创建、恢复协调和并发加载，`shortcode` 测试覆盖固定编码向量及长度边界，`cache` 测试覆盖 TTL 和缓存开关。`RedirectCachePropertiesTest` 验证配置绑定及启动失败；`RedisRedirectCacheTest` 与实现保持同包，以使用包级可见的可控随机源构造器。运行方式见 [README](../README.md)。
+测试目录与生产包对应。HTTP 和 MySQL/Redis 集成测试位于测试根包，覆盖接口可见行为；`service` 测试覆盖创建、恢复协调和并发加载，`shortcode` 测试覆盖固定编码向量及长度边界，`cache` 测试覆盖 TTL 和缓存开关。`RedirectCachePropertiesTest` 验证配置绑定及启动失败；`RedisRedirectCacheTest` 与实现保持同包，以使用包级可见的可控随机源构造器。运行方式见 [README](../../README.md)。
 
 ## 统计依赖与验收导航
 
@@ -123,7 +123,7 @@ Redis 使用 `shortlink:redirect:v2:` 命名空间，结果与版本占位都有
 VisitMqRuntime 或真实 Spring context，手工装配也注册 runtime。核心配置测试额外验证只有主池时的
 JdbcTemplate、事务和 Hikari 绑定；真实设施测试继续验证 Mapper/发号、SQL 初始化、消费者重投与去重。
 
-实施结果与各类验证见 [架构优化验收](../.scratch/architecture-optimization/verification.md)。
+实施结果与各类验证见 [架构优化验收](../../.scratch/architecture-optimization/verification.md)。
 单模块内职责调整不改变 schema、缓存格式、消息版本、HTTP 或配置键，不承诺性能和可靠性提升。
 需要回退时按提交依赖逆序回退，保留框架销毁保护，不通过调大等待或跳过设施测试规避失败。
 
@@ -137,7 +137,7 @@ JdbcTemplate、事务和 Hikari 绑定；真实设施测试继续验证 Mapper/�
 
 ## 最终工程职责与关键时序
 
-`ratelimit`封装四请求组共享的Redis Lua令牌桶；`api`拦截器在发号/业务前执行，管理鉴权更早。`RedirectService`实际SQL由每实例并发许可保护，缓存命中与共享等待不占许可。`observability`提供安全健康、固定类别指标与请求上下文；`logging`约束控制台业务/Redis/JDBC/AMQP/HTTP框架危险日志。业务OpenAPI由`api.docs.BusinessOpenApiConfiguration`装配，不包含管理端口Actuator。完整运行边界见[首页架构图](../README.md)、[API](api.md)、[健康](health.md)和[观测清单](observability.md)。
+`ratelimit`封装四请求组共享的Redis Lua令牌桶；`api`拦截器在发号/业务前执行，管理鉴权更早。`RedirectService`实际SQL由每实例并发许可保护，缓存命中与共享等待不占许可。`observability`提供安全健康、固定类别指标与请求上下文；`logging`约束控制台业务/Redis/JDBC/AMQP/HTTP框架危险日志。业务OpenAPI由`api.docs.BusinessOpenApiConfiguration`装配，不包含管理端口Actuator。完整运行边界见[首页架构图](../../README.md)、[API](../入门与使用/api.md)、[健康](../故障排查/health.md)和[观测清单](../故障排查/observability.md)。
 
 ```mermaid
 sequenceDiagram
@@ -177,4 +177,4 @@ sequenceDiagram
     end
 ```
 
-状态维护的请求内协调最多三次；创建不通过重POST恢复。普通数据库失败/提交未确认不能宣称已保存；业务前`RATE_LIMIT_UNAVAILABLE`和`REDIRECT_LOAD_BUSY`不属于上述已提交503。[完整恢复规则](redis-recovery.md)仍适用。
+状态维护的请求内协调最多三次；创建不通过重POST恢复。普通数据库失败/提交未确认不能宣称已保存；业务前`RATE_LIMIT_UNAVAILABLE`和`REDIRECT_LOAD_BUSY`不属于上述已提交503。[完整恢复规则](../故障排查/redis-recovery.md)仍适用。

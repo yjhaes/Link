@@ -6,7 +6,7 @@ accepted_date: 2026-10-04
 
 # 阶段 8：按请求组限流与可复现工程化收尾
 
-本 ADR 记录 `/grill-with-docs` 讨论。用户已确认 Q1～Q23，并于 2026-10-04 通过 Q24 确认完整共识，状态为 accepted；这不代表已实现或获得开发授权。完整方案见 [最终设计](../final-hardening.md)，逐轮讨论见 [阶段 8 地图](../../.scratch/final-hardening/map.md)。
+本 ADR 记录 `/grill-with-docs` 讨论。用户已确认 Q1～Q23，并于 2026-10-04 通过 Q24 确认完整共识，状态为 accepted；这不代表已实现或获得开发授权。完整方案见 [最终设计](../历史与维护/final-hardening.md)，逐轮讨论见 [阶段 8 地图](../../.scratch/final-hardening/map.md)。
 
 ## 已确认的目标与范围
 

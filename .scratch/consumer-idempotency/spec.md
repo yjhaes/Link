@@ -134,7 +134,7 @@ Status: resolved
 
 - 规格于 2026-10-03 根据阶段 7 Q1～Q10 共识发布到本地 Markdown 任务跟踪目录，状态为 ready-for-agent。发布规格不表示已经认领、实施或验收，不自动创建执行拆分任务。
 - 当前阅读的仓库提交为 4a92828；阶段 7 设计与术语文档为本会话已完成的文档变更，不能据此推断新增测试已经实现。
-- 业务契约依据 [阶段 7 设计](../../docs/consumer-idempotency.md)、[阶段 6 设计](../../docs/async-visit-statistics.md)、[ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md) 和 [领域术语](../../CONTEXT.md)。本规格不推翻既有 ADR，不新增重复决策记录。
+- 业务契约依据 [阶段 7 设计](../../docs/架构与原理/consumer-idempotency.md)、[阶段 6 设计](../../docs/架构与原理/async-visit-statistics.md)、[ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md) 和 [领域术语](../../CONTEXT.md)。本规格不推翻既有 ADR，不新增重复决策记录。
 - 本轮没有运行实现测试。已有通过记录属于此前阶段 6 验收；两类新增测试的最终结果需在实际实施后记录。
 - 实习面试重点是用当前代码和真实测试解释稳定事件身份、唯一键、提交未知、ACK 间隙、每轮重试与三十日窗口，不依靠新增技术组件扩大项目描述。
 

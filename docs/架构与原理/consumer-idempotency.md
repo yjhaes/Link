@@ -5,11 +5,11 @@ accepted_date: 2026-10-03
 
 # 阶段 7：RabbitMQ 消息重复消费与消费者幂等
 
-2026-10-03 通过 grill-with-docs 完成 Q1～Q10 逐轮确认。基于已经完成的 RabbitMQ 异步访问统计，保留现有实现，明确消息重复处理与统计入账的边界，并确认两类新增测试计划。本阶段设计已接受；两类新增测试已于 2026-10-04 实施，实际运行结果与故障注入边界见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)。
+2026-10-03 通过 grill-with-docs 完成 Q1～Q10 逐轮确认。基于已经完成的 RabbitMQ 异步访问统计，保留现有实现，明确消息重复处理与统计入账的边界，并确认两类新增测试计划。本阶段设计已接受；两类新增测试已于 2026-10-04 实施，实际运行结果与故障注入边界见[阶段 7 验收记录](../../.scratch/consumer-idempotency/verification.md)。
 
-本文保留幂等决策和业务边界；当前消费启停、重试配置和积压处置见 [统计运维](visit-statistics-operations.md)，死信排查与人工重放步骤见 [运维说明](../ops/README.md)。
+本文保留幂等决策和业务边界；当前消费启停、重试配置和积压处置见 [统计运维](../故障排查/visit-statistics-operations.md)，死信排查与人工重放步骤见 [运维说明](../../ops/README.md)。
 
-本设计延续 [ADR-0007](adr/0007-rabbitmq-visit-statistics.md) 和[阶段 6 设计](async-visit-statistics.md)，不替代既有业务契约，也不新增重复的 ADR。领域术语继续采用根目录 [CONTEXT.md](../CONTEXT.md) 的 single-context 布局。
+本设计延续 [ADR-0007](../adr/0007-rabbitmq-visit-statistics.md) 和[阶段 6 设计](async-visit-statistics.md)，不替代既有业务契约，也不新增重复的 ADR。领域术语继续采用根目录 [CONTEXT.md](../../CONTEXT.md) 的 single-context 布局。
 
 ## 业务契约
 
@@ -110,19 +110,19 @@ PV 使用范围内日志 COUNT(*)，UV 使用整个范围的 `(visitor_key_versi
 
 ## 现有测试证据
 
-设计确认时仅阅读源码与历史验收记录，没有重新运行测试。下表说明既有覆盖；本次实施的复验结果见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)，不将历史记录视为本轮通过证据。
+设计确认时仅阅读源码与历史验收记录，没有重新运行测试。下表说明既有覆盖；本次实施的复验结果见[阶段 7 验收记录](../../.scratch/consumer-idempotency/verification.md)，不将历史记录视为本轮通过证据。
 
 | 已有场景 | 源码与测试方法 |
 | --- | --- |
-| 真实 MySQL 提交后关闭消费连接，观察 redelivery、SAVED/DUPLICATE 各一次及日志一行 | [VisitConsumerIntegrationTest](../src/test/java/com/example/shortlink/VisitConsumerIntegrationTest.java)，`committedInsertSurvivesConsumerConnectionLossBeforeAckAndRedeliveryStaysSingleRow` |
-| ACK 前终止运行时，恢复消费者后判重 | [VisitCollectionLifecycleTest](../src/test/java/com/example/shortlink/VisitCollectionLifecycleTest.java)，`terminalShutdownRequeuesUnackedCommittedEventAndResumeDeduplicatesIt` |
-| 真实执行 INSERT 后模拟确认丢失，同 ID 再次写入判重；已确认写入后关闭异常仍为 SAVED | [VisitStatisticsApiTest](../src/test/java/com/example/shortlink/VisitStatisticsApiTest.java)，`persistenceExposesLostConfirmationButPreservesConfirmedSaveAfterCleanupFailure` |
-| 两次 GET 经真实 broker/MySQL，两个 eventId、同一访客身份 | [AsyncVisitRoundtripTest](../src/test/java/com/example/shortlink/AsyncVisitRoundtripTest.java)，`repeatedGetsUseNewEventsAndSameCookieIdentityThroughRealBrokerAndDatabase` |
-| 冻结事件重试、每轮三次、永久错误拒绝、保存及重复正常返回 | [VisitConsumerTest](../src/test/java/com/example/shortlink/stats/messaging/VisitConsumerTest.java) |
-| 数据库失败耗尽进 DLQ、非事件约束不能当成功、清理后重放、跨午夜重新检查窗口 | [VisitConsumerIntegrationTest](../src/test/java/com/example/shortlink/VisitConsumerIntegrationTest.java) |
-| 范围 UV 去重和严格查询窗口 | [VisitStatsQueryApiTest](../src/test/java/com/example/shortlink/VisitStatsQueryApiTest.java) |
+| 真实 MySQL 提交后关闭消费连接，观察 redelivery、SAVED/DUPLICATE 各一次及日志一行 | [VisitConsumerIntegrationTest](../../src/test/java/com/example/shortlink/VisitConsumerIntegrationTest.java)，`committedInsertSurvivesConsumerConnectionLossBeforeAckAndRedeliveryStaysSingleRow` |
+| ACK 前终止运行时，恢复消费者后判重 | [VisitCollectionLifecycleTest](../../src/test/java/com/example/shortlink/VisitCollectionLifecycleTest.java)，`terminalShutdownRequeuesUnackedCommittedEventAndResumeDeduplicatesIt` |
+| 真实执行 INSERT 后模拟确认丢失，同 ID 再次写入判重；已确认写入后关闭异常仍为 SAVED | [VisitStatisticsApiTest](../../src/test/java/com/example/shortlink/VisitStatisticsApiTest.java)，`persistenceExposesLostConfirmationButPreservesConfirmedSaveAfterCleanupFailure` |
+| 两次 GET 经真实 broker/MySQL，两个 eventId、同一访客身份 | [AsyncVisitRoundtripTest](../../src/test/java/com/example/shortlink/AsyncVisitRoundtripTest.java)，`repeatedGetsUseNewEventsAndSameCookieIdentityThroughRealBrokerAndDatabase` |
+| 冻结事件重试、每轮三次、永久错误拒绝、保存及重复正常返回 | [VisitConsumerTest](../../src/test/java/com/example/shortlink/stats/messaging/VisitConsumerTest.java) |
+| 数据库失败耗尽进 DLQ、非事件约束不能当成功、清理后重放、跨午夜重新检查窗口 | [VisitConsumerIntegrationTest](../../src/test/java/com/example/shortlink/VisitConsumerIntegrationTest.java) |
+| 范围 UV 去重和严格查询窗口 | [VisitStatsQueryApiTest](../../src/test/java/com/example/shortlink/VisitStatsQueryApiTest.java) |
 
-历史全量和后续维护性重构验证见[阶段 6 验收证据](../.scratch/async-visit-statistics/verification.md)，不能描述为本次重新验证。
+历史全量和后续维护性重构验证见[阶段 6 验收证据](../../.scratch/async-visit-statistics/verification.md)，不能描述为本次重新验证。
 
 ## 已实施的新增测试
 
@@ -133,7 +133,7 @@ PV 使用范围内日志 COUNT(*)，UV 使用整个范围的 `(visitor_key_versi
 
 第二类当前已有持久层未知结果和消费者分类重试的分层覆盖，新增目标是合并完整链路证据。采用隔离的真实 MySQL/RabbitMQ、受控故障注入与有界最终等待，不以 mock 冒充真实提交或 ACK。
 
-用户随后调用 implement 并指定[任务 01](../.scratch/consumer-idempotency/issues/01-verify-consumer-idempotency.md)，授权实施。两个用例位于 VisitConsumerIntegrationTest；实际证据见[阶段 7 验收记录](../.scratch/consumer-idempotency/verification.md)，与上方历史测试证据分开记录。
+用户随后调用 implement 并指定[任务 01](../../.scratch/consumer-idempotency/issues/01-verify-consumer-idempotency.md)，授权实施。两个用例位于 VisitConsumerIntegrationTest；实际证据见[阶段 7 验收记录](../../.scratch/consumer-idempotency/verification.md)，与上方历史测试证据分开记录。
 
 ## 面试表达与完成边界
 

@@ -195,7 +195,7 @@ Status: resolved
 
 ## Further Notes
 
-- 规格发布依据[已接受的最终设计](../../docs/final-hardening.md)和[ADR-0008](../../docs/adr/0008-http-rate-limiting-and-final-hardening.md)，Q1～Q24确认过程见[讨论地图](map.md)。没有重新采访或改变已接受选择。
+- 规格发布依据[已接受的最终设计](../../docs/历史与维护/final-hardening.md)和[ADR-0008](../../docs/adr/0008-http-rate-limiting-and-final-hardening.md)，Q1～Q24确认过程见[讨论地图](map.md)。没有重新采访或改变已接受选择。
 - ADR-0008增补既有缓存阶段暂不实现限流的范围，保留版本协议与受控恢复；内部状态和统计ADR的鉴权、部分完成、已记录事件及best-effort边界保持。规格状态ready-for-agent不是实现状态resolved。
 - 历史验收记录263项通过仅属于此前运行；旧HTTP性能观察为本机并发1、30次预热加300次顺序GET。新增限流改变请求路径，后续要重新测量并明确条件，本轮未运行测试。
 - 新503错误码、兼容库/镜像精确补丁版本、常规配置布局由后续实施固定并验收，不改变已确认语义；测试层级与主要HTTP验收边界已经在Q20/Q24确认，无需重复确认。
@@ -210,4 +210,4 @@ Status: resolved
 
 有限观察source `c7c8395adfbd2bfe0d6eef22915ba96c5e816aa3`：47项真实断言、四场景各240 HEAD、实际映射SELECT0/240/0/240；不宣称稳定p99或容量。12纯文档截图另有26项实际演示及53本地链接检查通过，未冒称重跑全量。
 
-完整能力、机器/样本/源版本、故障语义及公开安全JSON/截图见 [正式验证入口](../../docs/verification.md)、[README](../../README.md)和[集成记录](09-12-verification.md)。新版本不复用历史263项或旧55%均值下降结论。
+完整能力、机器/样本/源版本、故障语义及公开安全JSON/截图见 [正式验证入口](../../docs/测试与验证/verification.md)、[README](../../README.md)和[集成记录](09-12-verification.md)。新版本不复用历史263项或旧55%均值下降结论。

@@ -5,10 +5,10 @@
 ## 已合并与版本边界
 
 - [09 API文档与页面错误契约](09-verification.md)：springdoc2.8.17/Boot3.5.16，146项Java+2项页面测试通过，其后增强2项真实HTTP测试通过。
-- [11 有限测量与故障链](../../docs/performance-and-failures.md)：正式源码`c7c8395adfbd2bfe0d6eef22915ba96c5e816aa3`，run`09e444c16b63`、source_dirty=false，47项真实断言与2项Python验收通过。四场景各240个HEAD全部302，实际映射SELECT0/240/0/240。大SET OOM与临时紧缩阈值的小写故障分开，恢复默认128MiB；不复用旧55%下降、稳定p99或容量承诺。
+- [11 有限测量与故障链](../../docs/测试与验证/performance-and-failures.md)：正式源码`c7c8395adfbd2bfe0d6eef22915ba96c5e816aa3`，run`09e444c16b63`、source_dirty=false，47项真实断言与2项Python验收通过。四场景各240个HEAD全部302，实际映射SELECT0/240/0/240。大SET OOM与临时紧缩阈值的小写故障分开，恢复默认128MiB；不复用旧55%下降、稳定p99或容量承诺。
 - [12 首页与正式展示](12-verification.md)：26项实际冷启动HTTP/运行检查通过，8份UTF-8文档与53个本地链接无断链，两张真实公开截图目视检查，旧/新项目与秘密均清理。截图来源635ffef且sourceDirty=true，仅文档修改；应用源码与完整CI的c4b47a3一致。
 
-正式公共入口将由12的docs/verification.md承接；本地工作路径不是唯一证据。
+正式公共入口将由12的docs/测试与验证/verification.md承接；本地工作路径不是唯一证据。
 
 ## 双轴审查
 
@@ -16,4 +16,4 @@
 
 ## 最终交付
 
-01～12均resolved，父规格已关闭，完整交付位于codex/final-hardening-09-12。正式入口为 [README](../../README.md)、[验证证据](../../docs/verification.md)、[简历素材](../../docs/portfolio.md)。临时工作树归档前，必要安全原始报告已保留主工作树target；公开JSON/截图随Git提交。
+01～12均resolved，父规格已关闭，完整交付位于codex/final-hardening-09-12。正式入口为 [README](../../README.md)、[验证证据](../../docs/测试与验证/verification.md)、[简历素材](../../docs/面试准备/portfolio.md)。临时工作树归档前，必要安全原始报告已保留主工作树target；公开JSON/截图随Git提交。

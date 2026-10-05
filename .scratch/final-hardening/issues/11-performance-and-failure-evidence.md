@@ -39,4 +39,4 @@ Blocked by: 02, 08
 - 四路径各240 HEAD，全302，实际映射Query/Execute计数0/240/0/240；SQL、采样在途、CPU/内存和核心/统计连接独立记录，默认120次短突发61成功/59拒绝，不冒充持续QPS；只给经验p50/p95，不给稳定p99/SLA。
 - 真实锁住四个MySQL查询，第五GET独立503且无SQL/Cookie，eventaccepted3→3，释放后许可恢复。128MiB/noeviction真实大SET OOM与临时紧缩cap的小Lua写拒绝分开说明，后者创建503且ID/映射数不变，回源302；两次均先停writer、重建空Redis并恢复128MiB。
 - 实际创建、302、429、401、启禁用403/302、异步PV2/UV1、分组健康、MQ故障跳转、Redis故障拒绝/等待与受控恢复全链完成；不复用旧并发1或55%下降结论，不新增监控/自动DLQ重放。
-- 正式说明：[有限性能与故障证据](../../../docs/performance-and-failures.md)；安全原始摘要（原记录已移除）。分类样本和脱敏日志在`target/observations/09e444c16b63/`，由集成阶段保留后再归档工作树。
+- 正式说明：[有限性能与故障证据](../../../docs/测试与验证/performance-and-failures.md)；安全原始摘要（原记录已移除）。分类样本和脱敏日志在`target/observations/09e444c16b63/`，由集成阶段保留后再归档工作树。

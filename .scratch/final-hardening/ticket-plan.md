@@ -226,4 +226,4 @@
 
 2026-10-04 执行更新：用户追加授权04～08，五项均已实现并独立验收。09～12仍未开始，父规格未整体resolved。
 
-2026-10-04 最终完成：09～12已合入codex/final-hardening-09-12。01～12全部resolved，父规格关闭。详见 [正式验证](../../docs/verification.md)与 [09～12集成记录](09-12-verification.md)。
+2026-10-04 最终完成：09～12已合入codex/final-hardening-09-12。01～12全部resolved，父规格关闭。详见 [正式验证](../../docs/测试与验证/verification.md)与 [09～12集成记录](09-12-verification.md)。

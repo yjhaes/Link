@@ -1,6 +1,6 @@
 # Link 项目架构优化完整方案
 
-> **历史方案，已实施。** 当前目录和职责见 [实际架构](architecture.md)，实施与验收见 [架构优化验证](../.scratch/architecture-optimization/verification.md)，后续完整版本验收见 [正式验证](verification.md)。以下正文保留 2026-10-03 设计时点的原始内容；“尚未实施”、文件数量及迁移路径均对应当时基线，不代表当前状态。
+> **历史方案，已实施。** 当前目录和职责见 [实际架构](../架构与原理/architecture.md)，实施与验收见 [架构优化验证](../../.scratch/architecture-optimization/verification.md)，后续完整版本验收见 [正式验证](../测试与验证/verification.md)。以下正文保留 2026-10-03 设计时点的原始内容；“尚未实施”、文件数量及迁移路径均对应当时基线，不代表当前状态。
 
 日期：2026-10-03  
 评估基线：`e9dd03d4980f624c4d0f04cf97b815ae8f3124aa`  
@@ -442,7 +442,7 @@ git status --short
 
 ### 11.1 文档更新
 
-实施后更新 `docs/architecture.md` 的目录、实际依赖、异步现状、资源所有权和测试导航；同步 `README.md`、访问采集/异步统计/查询/运维说明中的类名与职责。`ops` 的拓扑和策略值不变，仅在涉及说明路径时更新导航。
+实施后更新 `docs/架构与原理/architecture.md` 的目录、实际依赖、异步现状、资源所有权和测试导航；同步 `README.md`、访问采集/异步统计/查询/运维说明中的类名与职责。`ops` 的拓扑和策略值不变，仅在涉及说明路径时更新导航。
 
 CONTEXT.md 继续是唯一领域术语来源。VisitMqRuntime、CoreDataSourceConfiguration 等是技术实现名，无需新增领域术语。既有 ADR 保留历史记录；本方案没有重新讨论其中已接受的业务取舍。可在实施完成后为实际组织决策补 ADR，不能把未实施计划标记为已验证事实。
 

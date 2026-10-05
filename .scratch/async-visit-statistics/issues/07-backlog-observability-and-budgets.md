@@ -32,5 +32,5 @@ Blocked by: 06
 - 最终针对性合跑 `VisitConsumerTest,VisitPublisherFailureTest,VisitBacklogIntegrationTest,VisitCollectionLifecycleTest`：21项，0失败/错误/跳过（8+5+5+3）。随后只提高处理延迟断言为固定正差1123ms，重跑 Consumer 8项全通过；没有行为变化。3项既有06生命周期回归用于验证新 Consumer bean接线，保留Clock窗口检查与受控CCF/Listener关闭、依赖日志保护。
 - 5项新真实RabbitMQ/MySQL测试：同一主policy所有参数生效；缩小条数和body两种上限均nack且DLQ空；主队列150ms过期死信reason=expired，DLQ1500ms独立驻留并drop-head保留最后消息；持久化闩锁时实际consumers=1/unacked=10/ready=3，放行后13行；真实DB锁持续故障2轮/6次尝试/2次耗尽和DLQ，人工停止后消息留队，故障/停采仍302无统计Cookie，解除故障恢复后保存且失败样本不自动回流。
 - 隔离资源：short_link_lifecycle_test / link-lifecycle-test，AMQP15672、management15673、MySQL13306、Redis16379；每例停止consumer、清理测试消息/数据并恢复标准policy。未生产制造资源告警。
-- [运维说明](../../../docs/visit-statistics-operations.md)记录所有本地/channel/关联/线程/统计池预算及多实例核验；ready/body不含全部unacked/存储开销、两个独立TTL可能近48h、本地年龄/处理延迟不是broker最旧年龄或水位。所有起点不是已验证吞吐/SLA。无历史补采、自动DLQ回流或无限补偿。
+- [运维说明](../../../docs/故障排查/visit-statistics-operations.md)记录所有本地/channel/关联/线程/统计池预算及多实例核验；ready/body不含全部unacked/存储开销、两个独立TTL可能近48h、本地年龄/处理延迟不是broker最旧年龄或水位。所有起点不是已验证吞吐/SLA。无历史补采、自动DLQ回流或无限补偿。
 - 原始Maven日志移动到忽略目录 `.tools/07-verification/`，不提交；永久验收证据为本Answer和测试源码。仅本片完成，08测量/全量/最终审查仍待执行。

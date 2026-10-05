@@ -8,7 +8,7 @@
 - 02：Windows pwsh 与 Linux sh/Python 隔离测试入口，自动供给 MySQL/Redis/RabbitMQ、项目账号/vhost/policy，失败/错误/跳过与缺设施明确失败；真实创建→302→异步 PV/UV 查询。
 - 03：匿名创建 Redis TIME/Lua 令牌桶、请求体解析前准入、429/Retry-After/no-store、业务前独立 503、页面提示，以及原子竞争、TTL、脚本恢复、断连/丢响应不重放验证。
 
-实际使用入口见 [秘密初始化](../../docs/local-secrets.md)、[隔离测试](../../docs/testing.md)、[创建限流](../../docs/create-rate-limiting.md)。
+实际使用入口见 [秘密初始化](../../docs/入门与使用/local-secrets.md)、[隔离测试](../../docs/测试与验证/testing.md)、[创建限流](../../docs/架构与原理/create-rate-limiting.md)。
 
 ## 集成回归：修复前完整版本
 

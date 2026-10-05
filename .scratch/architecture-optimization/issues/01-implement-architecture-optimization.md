@@ -7,7 +7,7 @@ Type: task
 
 **Spec:** [短链接与异步访问统计架构优化规格](../spec.md)
 
-**Design:** [完整架构优化方案](../../../docs/architecture-optimization-plan.md)
+**Design:** [完整架构优化方案](../../../docs/历史与维护/architecture-optimization-plan.md)
 
 ## Acceptance criteria
 

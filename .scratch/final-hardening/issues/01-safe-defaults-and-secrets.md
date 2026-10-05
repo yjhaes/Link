@@ -33,6 +33,6 @@ None（无前置依赖；执行需用户另行授权）。
 ## Answer
 
 - 基础 YAML 管理/HMAC 默认为空，采集默认 false、消费者 true。DB/MQ 使用项目账号名与空默认密码；程序化 Rabbit 属性也去除了 guest 回退。显式启用采集须满足已有有效 HMAC/版本校验，新增启动校验拒绝与管理令牌完全相同的 HMAC。统计配置诊断字符串隐藏秘密。
-- 文档 `docs/local-secrets.md` 与 README/ops README 同步默认值、显式导入环境变量、项目账号供给、稳定 UV、显式轮换/密钥版本和数据重置边界。
+- 文档 `docs/入门与使用/local-secrets.md` 与 README/ops README 同步默认值、显式导入环境变量、项目账号供给、稳定 UV、显式轮换/密钥版本和数据重置边界。
 - TDD 证据：真实 packaged YAML 装配测试初次因已提交默认管理秘密失败；启用采集复用管理秘密测试因未拒绝失败；HMAC 诊断输出测试因 record 默认 toString 泄露测试 canary 失败；程序化 Rabbit 配置测试因 guest 默认失败。各切片修复后通过。
 - 验收：`mvn -q '-Dtest=SafeDefaultsConfigurationTest,StatsConfigurationTest,InternalManagementConfigurationTest,InternalManagementApiTest,InternalManagementDisabledApiTest,VisitCollectionFailureTest,VisitMessageCodecTest,VisitMqRuntimeTest,VisitPublisherFailureTest,VisitMqShutdownTest' test`：32 项、0 failures、0 errors、0 skipped。覆盖缺省/非法/显式开启配置、管理 404/401 先于业务、公开业务不要求令牌、统计失败隔离及消费生命周期相关回归。

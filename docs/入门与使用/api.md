@@ -2,7 +2,7 @@
 
 业务页面 `/`、管理页面 `/admin.html`，交互文档 `/swagger-ui/index.html`，真实 JSON 契约 `/v3/api-docs`（均应用端口，默认 `http://localhost:8080`）。Swagger UI 的 Authorize 手动输入本地 `X-Internal-Token`，没有预填值，`persistAuthorization=false`；仅当前页面内存保留，刷新/关闭后重新输入，不将秘密写入仓库、URL或浏览器存储。浏览器自身的密码管理/扩展不属于此应用控制。
 
-Boot 保持 **3.5.16 / Java 17**；文档依赖固定 **springdoc-openapi-starter-webmvc-ui 2.8.17**。官方 [兼容矩阵](https://springdoc.org/v2/#what-is-the-compatibility-matrix-of-springdoc-openapi-with-spring-boot) 将 Boot 3.5.x 对应到 springdoc 2.8.x，补丁来源为 [2.8.17 release](https://github.com/springdoc/springdoc-openapi/releases/tag/v2.8.17)；实际双端口 HTTP 测试验证此组合。Actuator 不混入业务文档，独立管理端口只供本机 health/info/metrics，详见 [健康边界](health.md)。
+Boot 保持 **3.5.16 / Java 17**；文档依赖固定 **springdoc-openapi-starter-webmvc-ui 2.8.17**。官方 [兼容矩阵](https://springdoc.org/v2/#what-is-the-compatibility-matrix-of-springdoc-openapi-with-spring-boot) 将 Boot 3.5.x 对应到 springdoc 2.8.x，补丁来源为 [2.8.17 release](https://github.com/springdoc/springdoc-openapi/releases/tag/v2.8.17)；实际双端口 HTTP 测试验证此组合。Actuator 不混入业务文档，独立管理端口只供本机 health/info/metrics，详见 [健康边界](../故障排查/health.md)。
 
 ## 请求与成功响应
 
@@ -42,7 +42,7 @@ Boot 保持 **3.5.16 / Java 17**；文档依赖固定 **springdoc-openapi-starte
 
 默认令牌桶：每连接对端IP创建容量3/每6秒补1，跳转GET/HEAD跨短码共用容量60/每秒补10；已鉴权固定共享管理写/查询各5/每秒补1，两统计接口共用查询桶。忽略用户Forwarded/X-Forwarded-For；桶允许突发，不是严格滚动窗口上限。获准后业务失败不退还令牌。Redis限流故障跳转fail-open，但实际MySQL回源仍受每实例4并发保护；创建/管理fail-close。
 
-受控恢复见 [Redis恢复](redis-recovery.md)。内部 `recoverCacheCoordination(shortCode)` 是受信任维护代码入口，**不是公开HTTP API**，只重试协调、不新增映射或重复改状态。PUT已提交后的同步尝试最多3次、等待50/100ms，耗尽没有后台持续补偿。Redis超时可能已执行；主实例/快照丢失确认写入时先隔离全部写入者、清理完整版本缓存命名空间、核验MySQL状态再恢复，不删一个key或重试业务代替。
+受控恢复见 [Redis恢复](../故障排查/redis-recovery.md)。内部 `recoverCacheCoordination(shortCode)` 是受信任维护代码入口，**不是公开HTTP API**，只重试协调、不新增映射或重复改状态。PUT已提交后的同步尝试最多3次、等待50/100ms，耗尽没有后台持续补偿。Redis超时可能已执行；主实例/快照丢失确认写入时先隔离全部写入者、清理完整版本缓存命名空间、核验MySQL状态再恢复，不删一个key或重试业务代替。
 
 ## 验收入口
 

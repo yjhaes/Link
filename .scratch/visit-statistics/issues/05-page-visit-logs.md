@@ -31,7 +31,7 @@ Blocked by: 04
 - 明细仅返回 UTC occurredAt、脱敏网段、已清理限长 UA 及来源 host；缺失元数据为 null。没有访客摘要、Cookie、密钥、完整 IP/Referer 或目标 URL。
 - 默认 20、最大 100，严格校验参数；数据库按 occurred_at/id 倒序取 limit+1，无 OFFSET 或总页数。真实 MySQL EXPLAIN 使用 idx_visit_page 倒序扫描，无 filesort。
 - 规范版本 1 游标绑定短码、最终日期范围和末尾排序位置，严格结构校验；与鉴权分离，原游标行删除后仍按位置继续。窗口移动超窗返回 400。
-- 续页应传首页返回的 from/to；跨页不提供固定快照，新写、迟到及清理可改变后续数据。API 编解码与数据库位置分离，见 [查询说明](../../../docs/visit-statistics-query.md)。
+- 续页应传首页返回的 from/to；跨页不提供固定快照，新写、迟到及清理可改变后续数据。API 编解码与数据库位置分离，见 [查询说明](../../../docs/入门与使用/visit-statistics-query.md)。
 - 首个 HTTP/真实 MySQL 测试先因未实现接口返回 404 失败，实现后通过。验证大小写、同毫秒排序、页大小、hasMore、空元数据、最小化、游标删除、并发新写/清理及超窗，真实 SQL 超时验证覆盖两类查询。
 - 最终完整 Maven 回归 206 项通过，0 失败、0 错误、0 跳过；含真实 MySQL 8.4、Redis 与原有状态/跳转回归。日志 target/task05-final-full.log 为本地生成，不提交。
 - 两项 GPT-6.1 Sol / high 审查：Standards 首次 1 项可选建议已修复，Spec 首次 0 项；最终两轴剩余问题均为 0，见 [审查记录（Git 历史）](https://github.com/yjhaes/Link/blob/49d0e53ce0314a4e628bf2491d140433e218db7a/.scratch/visit-statistics/review-05.md)。本轮未增加任务 06 调度清理。

@@ -94,7 +94,7 @@
 
 ## Q24：完整共识复核（已确认）
 
-- 完整设计见 [阶段 8 最终设计](../../docs/final-hardening.md)，包括目标架构与两个边界时序图、接口/资源参数、故障/日志/统计语义、测试矩阵、展示与面试说明。
+- 完整设计见 [阶段 8 最终设计](../../docs/历史与维护/final-hardening.md)，包括目标架构与两个边界时序图、接口/资源参数、故障/日志/统计语义、测试矩阵、展示与面试说明。
 - 用户回答“确认”，确认该文档与 Q1～Q23 的选择形成完整共识；设计状态已标为 accepted，没有启动开发或发布执行任务。
 - 独立 503 的具体错误码、兼容库/镜像的精确补丁版本和常规配置文件布局属于后续实现细节；必须遵守已确认语义并验收，不构成开放的范围分支。
 
@@ -106,7 +106,7 @@
 - 核心池当前未显式配置 Hikari maximumPoolSize/连接等待预算；跳转实际加载直接调用 Mapper，没有单独回源并发准入。
 - Redis 故障无法取得 generation 时不使用实例内同码任务合并，逐请求独立回源；现有缓存没有故障冷却，连接及命令超时各为 200ms，这些不是 HTTP 总耗时上限。
 - 已完成 [ADR-0008](../../docs/adr/0008-http-rate-limiting-and-final-hardening.md)，逐轮记录决定，Q24确认后状态为 accepted。
-- 正式完整设计为 [docs/final-hardening.md](../../docs/final-hardening.md)，Q24确认后状态为 accepted。CONTEXT.md 已有“作出跳转决定前拒绝及HEAD不计PV”的口径，不增加令牌桶等通用技术术语。
+- 正式完整设计为 [docs/历史与维护/final-hardening.md](../../docs/历史与维护/final-hardening.md)，Q24确认后状态为 accepted。CONTEXT.md 已有“作出跳转决定前拒绝及HEAD不计PV”的口径，不增加令牌桶等通用技术术语。
 - 历史幂等验收记录2026-10-04有263项通过、失败/错误/跳过均0；本轮没有重新运行。历史HTTP性能数据并发1、30次预热+300顺序GET，只作同条件小样本证据，新增限流后需重新测量。
 
 ## 规格发布
@@ -124,7 +124,7 @@
 
 ## 参考材料
 
-- [项目架构](../../docs/architecture.md)
+- [项目架构](../../docs/架构与原理/architecture.md)
 - [Redis 决策与故障边界](../../docs/adr/0004-negative-cache-for-redirects.md)
 - [内部状态接口](../../docs/adr/0005-enabled-state-api.md)
 - [异步统计边界](../../docs/adr/0007-rabbitmq-visit-statistics.md)

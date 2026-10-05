@@ -139,7 +139,7 @@ DLQ保管最终拒绝及主队列TTL到期的消息供排查，不自动消费�
 
 人工处理先修正故障，限制选取范围，检查事件仍在30日窗口；重放保留eventId和冻结业务数据，不为重新入账修改时间/统计日。不会在本阶段编写自动重放工具。若使用人工读取后重新发布，确认新路由被broker接受后再移除原DLQ记录；未知确认不能声称完成，可能重复仍由唯一键保护。
 
-系统性 DB 故障时，有限重试不会自动止损。当前已实现独立消费者启用配置，人工暂停、恢复和必要时停采的步骤及预取/淘汰边界见 [统计运维](visit-statistics-operations.md)。后台恢复尊重人工暂停意图；不新增自动断路器、分布式协调或公开运维 HTTP 接口。
+系统性 DB 故障时，有限重试不会自动止损。当前已实现独立消费者启用配置，人工暂停、恢复和必要时停采的步骤及预取/淘汰边界见 [统计运维](../故障排查/visit-statistics-operations.md)。后台恢复尊重人工暂停意图；不新增自动断路器、分布式协调或公开运维 HTTP 接口。
 
 ## 容量、TTL和积压
 
@@ -241,7 +241,7 @@ MQ声明/监听器启动在核心已启动后后台执行，MQ不可用时核心
 
 ## 文档关系与完成边界
 
-方案决策见[ADR-0007](adr/0007-rabbitmq-visit-statistics.md)，逐轮确认见[讨论地图](../.scratch/async-visit-statistics/map.md)。沿用[ADR-0006](adr/0006-synchronous-visit-statistics.md)的业务口径，以当前异步实现替代其中的同步采集边界；当前实现事实见[访问采集说明](visit-collection.md)与[查询说明](visit-statistics-query.md)。不把历史ADR的设计日期当当前代码状态。
+方案决策见[ADR-0007](../adr/0007-rabbitmq-visit-statistics.md)，逐轮确认见[讨论地图](../../.scratch/async-visit-statistics/map.md)。沿用[ADR-0006](../adr/0006-synchronous-visit-statistics.md)的业务口径，以当前异步实现替代其中的同步采集边界；当前实现事实见[访问采集说明](visit-collection.md)与[查询说明](../入门与使用/visit-statistics-query.md)。不把历史ADR的设计日期当当前代码状态。
 
 2026-10-03 已确认[阶段 7：消费者幂等](consumer-idempotency.md)。保留本阶段的事件唯一键、同步消费与 AUTO 确认、有限重试和窗口规则，不增加 Redis 幂等双写或额外显式写事务；阶段 7 两类新增异常测试仍为待实现计划，不计入本阶段历史验收结果。
 

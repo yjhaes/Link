@@ -1,17 +1,19 @@
 # 本地开发辅助脚本
 
-本目录用于本地配置和 RabbitMQ 调试。应用启动见 [本地配置](../docs/local-secrets.md)，停采与消费启停见 [统计排查](../docs/visit-statistics-operations.md)。
+本目录保留已有本地配置和 RabbitMQ 调试工具。日常使用本地 YAML 和 IDEA 运行，首次步骤见 [本机配置指南](../docs/入门与使用/local-secrets.md)。
+
+新用户首次只需用下面的策略脚本设置项目队列规则，正常再次启动无需重复。积压观察、暂停消费和死信排查在遇到统计故障时使用，见 [统计排查](../docs/故障排查/visit-statistics-operations.md)。
 
 ## 脚本用途
 
 | 脚本 | 用途 | 是否修改状态 |
 | --- | --- | --- |
-| `init-local-secrets.ps1` / `.sh` | 生成本地配置，已有文件保留 | 写入配置文件，不创建设施账号 |
+| `init-local-secrets.ps1` / `.sh` | 旧 dotenv 方式生成配置，IDEA/YAML 方式无需运行 | 写入配置文件，不创建设施账号 |
 | `test-local-secrets.ps1` | 检查秘密初始化行为 | 运行配置检查 |
 | `get-visit-broker-observation.ps1` | 查看队列积压、消费者和资源告警 | 只读 |
 | `set-visit-consumer-policies.ps1` | 设置业务队列和 DLQ 的容量、TTL 与死信策略 | 修改两条精确匹配的 policy，不删队列或消息 |
 
-测试入口见 [测试说明](../docs/testing.md)。
+测试入口见 [测试说明](../docs/测试与验证/testing.md)。
 
 ## 查看 RabbitMQ 队列
 
@@ -22,11 +24,11 @@ $credential = Get-Credential
 ./ops/get-visit-broker-observation.ps1 -ManagementUrl 'http://localhost:15672' -VirtualHost 'short_link' -Credential $credential
 ```
 
-输出项如何判断，见 [统计排查](../docs/visit-statistics-operations.md)。脚本不打印凭据或管理接口的原始错误正文。
+输出项如何判断，见 [统计排查](../docs/故障排查/visit-statistics-operations.md)。脚本不打印凭据或管理接口的原始错误正文。
 
-## 设置队列策略
+## 首次设置队列策略
 
-已有 RabbitMQ 账号、vhost 和所需管理权限后执行：
+已有 RabbitMQ 账号、vhost 和所需管理权限后，在项目根目录的 PowerShell 7 中执行；凭据使用可设置策略的管理账号。此操作通常只需一次，新建 vhost 时再设置：
 
 ```powershell
 $credential = Get-Credential
@@ -45,4 +47,4 @@ $credential = Get-Credential
 
 确认新路由已被 broker 接受后再移除原 DLQ 消息；确认未知时不能认定已完成。最终检查数据库统计，而不是只看发布确认。同 ID 已记录事件不会重复入账；超过 30 个统计日窗口的合法事件会被丢弃，未来日期会被拒绝。不能更换 ID 或时间绕过校验。
 
-详细原理见 [异步设计](../docs/async-visit-statistics.md)、[消费者幂等](../docs/consumer-idempotency.md)；日志和指标说明见 [观测说明](../docs/observability.md)。
+详细原理见 [异步设计](../docs/架构与原理/async-visit-statistics.md)、[消费者幂等](../docs/架构与原理/consumer-idempotency.md)；日志和指标说明见 [观测说明](../docs/故障排查/observability.md)。

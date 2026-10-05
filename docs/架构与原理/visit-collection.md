@@ -66,7 +66,7 @@ Connector/J 的 DataSource Properties 使用字符串值，包括 connectTimeout
 也不证明 HTTP 总墙钟上限。mock 故障仅验证分类与降级语义。
 统计池占满期间核心创建、发号和状态提交仍使用核心池；两池共享 MySQL，不能据此宣称硬件完全隔离。
 统计查询和明细接口使用 `SHORT_LINK_INTERNAL_TOKEN` 保护（至少 32 个字符），见
-[统计查询说明](visit-statistics-query.md)。管理令牌与访客 HMAC 密钥分别配置。
+[统计查询说明](../入门与使用/visit-statistics-query.md)。管理令牌与访客 HMAC 密钥分别配置。
 
 启动完成后及每天上海时间 00:10 清理窗口外访问日志。查询严格限制包含当天的
 最近 30 个上海统计日；物理删除是尽力维护，故障与积压期间可能延迟，不能宣称物理 30 日硬期限。

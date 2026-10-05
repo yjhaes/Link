@@ -255,7 +255,7 @@ MySQL访问日志继续作为PV/UV查询依据，保留匿名Cookie身份、上�
 
 - 本规格依据已确认五轮Q1～Q15直接合成；测试接缝和完整共识已经接受，无需重复访谈。发布状态为ready-for-agent，只表示规格可交实施，不表示已认领、实现或验证。
 - 本地代码基线为323fb63，仍是同步统计；具备窄提交接缝、专用池、受控降级、事件唯一键、查询及清理基础，没有AMQP依赖或配置。原同步记录器的void吞异常边界是异步消费者必须改造的关键点。
-- 已接受[ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)明确替代[ADR-0006](../../docs/adr/0006-synchronous-visit-statistics.md)的后续请求内同步采集目标，其他业务口径继续有效。完整解释见[异步设计](../../docs/async-visit-statistics.md)，确认记录见[讨论地图](map.md)，术语见[领域上下文](../../CONTEXT.md)。
+- 已接受[ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)明确替代[ADR-0006](../../docs/adr/0006-synchronous-visit-statistics.md)的后续请求内同步采集目标，其他业务口径继续有效。完整解释见[异步设计](../../docs/架构与原理/async-visit-statistics.md)，确认记录见[讨论地图](map.md)，术语见[领域上下文](../../CONTEXT.md)。
 - 仅发布这一份完整规格，不拆实施任务，也不因为ready-for-agent状态自动开始实施。原设计记录中的“不创建实施任务”继续适用于拆分和执行；本次显式调用to-spec授权发布规格。
 - 30日业务窗口不等于24小时队列TTL，DLQ再入队会重新计自己的驻留；经典死信是排查手段，不是可靠补偿。3次是本轮处理次数；5秒是观察/待发预算，不是整个publish的硬截止。
 - 可靠访问记账若成为新业务要求，须重新讨论可靠事件产生、持久补偿及核心写入代价，不能仅加confirm/DLQ后沿用当前说法。
@@ -269,4 +269,4 @@ MySQL访问日志继续作为PV/UV查询依据，保留匿名Cookie身份、上�
 
 无并行测试的新会话正常依赖样本：30预热+300顺序cache hit，同步/异步HTTP均值7.016/3.126ms，最终均330PV/1UV；异步查询追加可见等待741ms。独立补充样本冻结至保存平均431.718ms，明确不与查询等待或jar组事件延迟混同。只有开发环境小样本观察，不承诺生产吞吐、稳定p99、SLA或可靠记账。
 
-完整方法和边界见 [验证记录](verification.md)、[独立审查与修正](code-review.md)、[运维说明](../../docs/visit-statistics-operations.md)。MySQL仍是统计权威，故障漏记、异步可见、单节点/classic和有界关闭边界保持；未引入outbox、集群、自动重放、同步回退或复杂补偿。
+完整方法和边界见 [验证记录](verification.md)、[独立审查与修正](code-review.md)、[运维说明](../../docs/故障排查/visit-statistics-operations.md)。MySQL仍是统计权威，故障漏记、异步可见、单节点/classic和有界关闭边界保持；未引入outbox、集群、自动重放、同步回退或复杂补偿。

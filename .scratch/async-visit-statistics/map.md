@@ -21,9 +21,9 @@
 - 当前基线 HEAD 为 `323fb63`；Java 17、Spring Boot 3.5.16，目前无 RabbitMQ/AMQP 依赖或配置。此次没有运行实现测试，测试信息来自只读核验。
 - 既有 HTTP/MySQL 测试覆盖统计容量、实际 JDBC 超时、确认丢失、逐请求事件、跨午夜冻结、唯一键重放、关闭采集后继续查询/清理；引入 MQ 后应复用这些回归约束。
 - 当前查询一致性快照不等于消息全部消费完成；`generatedAt` 不是消费水位，`collectionEnabled` 不是 MQ 健康状态。
-- `docs/visit-statistics-query.md` 原末句“任务 06 的调度清理仍未实现”已陈旧：当前 `VisitCleanupSchedule` 和 `VisitCleanupLifecycleTest` 已存在。完成设计时已修正这句说明，没有修改实现或历史ADR。
+- `docs/入门与使用/visit-statistics-query.md` 原末句“任务 06 的调度清理仍未实现”已陈旧：当前 `VisitCleanupSchedule` 和 `VisitCleanupLifecycleTest` 已存在。完成设计时已修正这句说明，没有修改实现或历史ADR。
 
-事实来源：[采集说明](../../docs/visit-collection.md)、[查询说明](../../docs/visit-statistics-query.md)、当前代码；正式方案需区分既有能力与拟新增能力。
+事实来源：[采集说明](../../docs/架构与原理/visit-collection.md)、[查询说明](../../docs/入门与使用/visit-statistics-query.md)、当前代码；正式方案需区分既有能力与拟新增能力。
 
 关键代码位置：`ShortLinkController.java:64`、`RedirectService.java:137`、`VisitCollection.java:36`、`MySqlVisitRecorder.java:30`、`VisitRecorder.java:3`、`StatsDataSourceConfiguration.java:23`、`VisitLogCleanup.java:55`。当前统计仅追加日志，不维护额外计数；消费者必须保留既有唯一键去重，不能因阶段 7 将专门讨论幂等，就在阶段 6 假设消息不会重复。
 
@@ -111,7 +111,7 @@
 
 ## 最后一轮已确认
 
-用户再次回复“全部按推荐”，确认Q14/Q15。完整技术方案、测试与实施分级见 [异步访问统计设计](../../docs/async-visit-statistics.md)，已标记accepted；设计树所有分支已确认，不开启实现或创建实施任务。
+用户再次回复“全部按推荐”，确认Q14/Q15。完整技术方案、测试与实施分级见 [异步访问统计设计](../../docs/架构与原理/async-visit-statistics.md)，已标记accepted；设计树所有分支已确认，不开启实现或创建实施任务。
 
 - Q14：以HTTP响应、真实RabbitMQ路由/确认与MySQL日志为主要验收边界，复用已有口径/隐私/查询/清理/Redis回归；验证HTTP不等待发布、满缓冲与MQ启动/运行故障仍跳转、confirm/return/unknown竞态及仅重建发布连接、消费失败不误ACK、有限重试和DLQ、DB提交后ACK前崩溃的去重、迟到/跨日/超窗重放、容量/TTL/prefetch、关闭采集继续消费以及有界关停。异步结果用可控时钟/闩锁和有界最终等待，不依赖长sleep或实现私有方法；少量真实故障证明背压和超时阶段，其余故障可用用例边界替身。做同条件的同步基线/异步版本延迟和漏记/处理延迟对比，不为比较而保留生产双路径，不宣称固定SLA。本次只确认测试设计，不编写/执行测试。
 - Q15：已确认方案的事件冻结与最小化、有界交接/发布恢复、最小durable拓扑/持久消息、confirm与returns、消费结果反馈/AUTO ACK、既有唯一键、有限分类重试/单DLQ、容量TTL/过期处理、后台启动/有界关停、基础观测和人工暂停运维为必须实现；受控重放工具、批量落库、测量后的有限并发优化、自动暂停/探测恢复和更完整指标接入为可以实现且不纳入当前验收；outbox/本地消息表、MQ/分布式事务、quorum集群、多级延迟重试、跨重启累计投递限制/永久去重和端到端恰好一次边界只需要理解。面试以实际问题和取舍、三个成功边界、AUTO/NONE、提交与ACK间隙、eventId与客户端新访问、背压/积压、冻结时间/隐私和为何不做outbox为重点。停止在设计文档，不写代码，不创建实施任务。
@@ -130,7 +130,7 @@
 ## 已确认决策
 
 - Q1～Q15已确认，见五轮记录，没有未定设计分支。
-- [ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)及[完整设计](../../docs/async-visit-statistics.md)已接受；根CONTEXT.md补充“已记录访问事件”定义，区分事件发生和成为统计依据。
+- [ADR-0007](../../docs/adr/0007-rabbitmq-visit-statistics.md)及[完整设计](../../docs/架构与原理/async-visit-statistics.md)已接受；根CONTEXT.md补充“已记录访问事件”定义，区分事件发生和成为统计依据。
 - ADR-0006的统计业务口径继续有效，后续实施以ADR-0007替换请求内同步采集边界。当前代码仍同步，本次仅完成设计，无实施任务或代码改动。
 - 用户随后显式调用`to-spec`，已将已确认设计合成为[完整实施规格](spec.md)，按本地任务跟踪约定标记`Status: ready-for-agent`。只发布规格，不拆子任务、不认领或执行实施；测试接缝沿用Q14已确认的HTTP/真实MQ/MySQL及现有统计提交边界。
 

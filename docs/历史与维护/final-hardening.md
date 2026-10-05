@@ -10,7 +10,7 @@ accepted_date: 2026-10-04
 
 用户已逐轮确认 Q1～Q23，并于 2026-10-04 通过 Q24 确认完整共识，本文状态为 accepted。
 
-决策摘要见 [ADR-0008](adr/0008-http-rate-limiting-and-final-hardening.md)，逐轮确认见 [讨论地图](../.scratch/final-hardening/map.md)。术语沿用 [CONTEXT.md](../CONTEXT.md)，现有实现说明见 [architecture.md](architecture.md)。
+决策摘要见 [ADR-0008](../adr/0008-http-rate-limiting-and-final-hardening.md)，逐轮确认见 [讨论地图](../../.scratch/final-hardening/map.md)。术语沿用 [CONTEXT.md](../../CONTEXT.md)，现有实现说明见 [architecture.md](../架构与原理/architecture.md)。
 
 ## 1. 最终版本与停止线
 
@@ -94,7 +94,7 @@ Lua 在同一次执行内完成读取、补充、判断、扣减和 TTL 更新�
 
 脚本参数化，使用 EVALSHA 并在 NOSCRIPT 时安全重载；脚本缓存丢失不等于需要关闭业务。网络扣减超时可能已经执行，不盲目再次扣减，按请求组 fail-open/fail-close 处理；应用不增加幂等扣费、持久化限流历史或补偿协议。
 
-当前演示选择 noeviction，不主动通过淘汰限流桶缓解内存满。缓存重启仍遵守 [受控恢复说明](redis-recovery.md)，不能以额度可重置为理由复用未经检查的旧缓存快照。
+当前演示选择 noeviction，不主动通过淘汰限流桶缓解内存满。缓存重启仍遵守 [受控恢复说明](../故障排查/redis-recovery.md)，不能以额度可重置为理由复用未经检查的旧缓存快照。
 
 保持现有 Redis 连接/命令短超时起点 200ms，不增加自动熔断或故障冷却。新增检查和缓存访问都可能增加故障等待，需测量；一次命令超时和连接池等待预算均不是 HTTP 总截止。客户端离线排队/重连行为需在实现中验证，不能引入不确定扣减的无限重试。
 
@@ -180,7 +180,7 @@ Redis 故障不阻断 core readiness，因为跳转仍能回源；创建/管理�
 
 最短演示流程为初始化启动 → 创建并302 → 连续创建触发429 → 管理鉴权与状态切换 → 异步PV/UV查询 → 健康分组 → MQ停机仍跳转 → Redis停机创建拒绝/跳转回源及保护 → 按受控步骤恢复。故障演示使用隔离环境，正常数据/积压与明确重置分别说明。
 
-历史事实：已有 [消费幂等验证](../.scratch/consumer-idempotency/verification.md) 记录2026-10-04的263项通过、失败/错误/跳过均0，约4分06秒；这是历史执行记录，本轮未重新验证。已有 [异步统计验证](../.scratch/async-visit-statistics/verification.md) 在本机Java17、loopback、单节点MySQL8.4/Redis7.2、并发1、30预热+300顺序GET下观察HTTP均值7.016ms→3.126ms、p95 8.486ms→3.928ms；只能描述本地同条件小样本。新增限流改变路径成本，后续需重新测量；不能复用旧数字当新版本性能。
+历史事实：已有 [消费幂等验证](../../.scratch/consumer-idempotency/verification.md) 记录2026-10-04的263项通过、失败/错误/跳过均0，约4分06秒；这是历史执行记录，本轮未重新验证。已有 [异步统计验证](../../.scratch/async-visit-statistics/verification.md) 在本机Java17、loopback、单节点MySQL8.4/Redis7.2、并发1、30预热+300顺序GET下观察HTTP均值7.016ms→3.126ms、p95 8.486ms→3.928ms；只能描述本地同条件小样本。新增限流改变路径成本，后续需重新测量；不能复用旧数字当新版本性能。
 
 ## 13. README、架构图与简历
 

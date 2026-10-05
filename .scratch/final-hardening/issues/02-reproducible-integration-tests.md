@@ -32,7 +32,7 @@ None（无前置依赖；执行需用户另行授权）。
 
 ## Answer
 
-- 2026-10-04：在独立分支实现 `ops/tests/run.py`，Windows `run.ps1`、Linux原生 `run.sh` 两个入口；unit/integration/all明确分层。README入口与 `docs/testing.md` 记录依赖、隔离、失败定位和清理。
+- 2026-10-04：在独立分支实现 `ops/tests/run.py`，Windows `run.ps1`、Linux原生 `run.sh` 两个入口；unit/integration/all明确分层。README入口与 `docs/测试与验证/testing.md` 记录依赖、隔离、失败定位和清理。
 - test profile显式关闭默认采集，配公开测试管理/HMAC及Rabbit凭据；真实采集类自行显式开启。直接Rabbit测试工厂使用本轮项目账号。测试入口清除继承的应用连接/秘密及JVM启动覆盖，随机密码从保存的日志/XML脱敏。
 - 新增 `AsyncVisitRoundtripTest.createdLinkRedirectsAndBecomesVisibleThroughStatsApi` 从公共POST创建→GET302→管理HTTP异步stats PV=1/UV=1，真实MySQL/Redis/RabbitMQ运行；RED为隔离不可连接地址的1error，GREEN为真实设施的3项往返/缓冲/身份测试。
 - 合并任务01后，正式Windows `pwsh` wrapper `all` 本轮报告 `target/regression/e906bf1f3203/`：unit112，integration-main134，integration-consumer13，integration-lifecycle9，共268项，failures/errors/skipped均0。额外最新版unit报告 `afacfed07f32/`：112项，0/0/0。覆盖现有创建/跳转、缓存、管理、MQ幂等/故障、统计查询/清理与生命周期；不是历史263项证明。

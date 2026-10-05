@@ -31,7 +31,7 @@ Blocked by: 01, 02
 - 交付受统一令牌保护的统计 GET/隐式 HEAD，先鉴权、全部结果 no-store；上海日期参数严格校验，默认 7 日、最大包含今天的 30 日，UTC 左闭右开。
 - 统计池内普通只读 REPEATABLE READ 快照读取存在性、范围 PV/整体去重 UV、逐日趋势与身份版本。禁用/过期仍可查，大小写及同 URL 的不同映射独立统计。
 - 查询容量 1、立即繁忙拒绝、明确语句/socket/池获取超时与普通数据库错误分别响应，不重试或伪造零值；成功和失败均释放容量。增加无身份标签的进程内查询超时计数。
-- 响应包含完整范围、时区、匿名 Cookie/best-effort 口径、采集开关、版本、生成时间及连续日趋势。多版本身份拆分、零值和停采局限见 [查询说明](../../../docs/visit-statistics-query.md)。
+- 响应包含完整范围、时区、匿名 Cookie/best-effort 口径、采集开关、版本、生成时间及连续日趋势。多版本身份拆分、零值和停采局限见 [查询说明](../../../docs/入门与使用/visit-statistics-query.md)。
 - HTTP 和真实 MySQL 验证默认/窗口边界、UTC 转换、跨日去重、大小写、禁用/过期、鉴权及 HEAD。闩锁控制汇总与后续读取间插入/删除并更新映射，验证同一响应快照一致且不锁映射；后续请求观察最新数据。
 - 完整 Maven 回归 199 项通过，0 失败/错误/跳过；包含真实 MySQL 8.4、Redis 缓存与状态协调回归。日志 `target/task04-final-full.log`（本地生成，不纳入 Git）。本次创建的临时 MySQL 容器已清理。
 - 两项独立审查首次发现 Standards 2 项、Spec 1 项，全部修复并复审为 0 项；见 [审查记录（Git 历史）](https://github.com/yjhaes/Link/blob/d889b26ef8a62e5499f56e315e0af6455821006c/.scratch/visit-statistics/review-04.md)。未实现任务 05 明细分页或任务 06 调度清理。

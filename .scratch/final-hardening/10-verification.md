@@ -24,7 +24,7 @@ Java合计317，每个分组missingClasses与unexpectedClasses均为空；不是
 
 公共报告收集CLI先失败（入口尚不存在），实现后验证仅白名单文本产物被复制，中断遗留.env密码被替换，env/inspect/config/ports/image不上传。最终统一入口实际包含这2项及11的2项便宜报告正确性检查。
 
-五个官方Actions以完整SHA固定，contents:read、checkout不保留凭据，正确性入口普通成功/失败均always上传明确安全目录。官方actionlint **v1.7.12** 实检`.github/workflows/correctness.yml` exit0、诊断为空。版本来源与取消/超时的清理限制见[CI说明](../../docs/ci.md)。
+五个官方Actions以完整SHA固定，contents:read、checkout不保留凭据，正确性入口普通成功/失败均always上传明确安全目录。官方actionlint **v1.7.12** 实检`.github/workflows/correctness.yml` exit0、诊断为空。版本来源与取消/超时的清理限制见[CI说明](../../docs/测试与验证/ci.md)。
 
 Linux共享同一Python业务脚本，并通过仓库`.gitattributes`保持shell脚本LF，但不把脚本提供等同实际宿主运行。
 

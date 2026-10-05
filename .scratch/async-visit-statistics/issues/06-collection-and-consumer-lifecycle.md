@@ -24,7 +24,7 @@ Blocked by: 03, 04
 
 ## Answer
 
-- 独立 `SHORT_LINK_STATS_CONSUMER_ENABLED` / `short-link.stats.rabbit.consumer-enabled` 默认开启消费；停采只影响新事件与 Cookie。修改后重启的暂停、修复及恢复步骤见 `docs/visit-statistics-operations.md`，没有新增 HTTP 管理接口。
+- 独立 `SHORT_LINK_STATS_CONSUMER_ENABLED` / `short-link.stats.rabbit.consumer-enabled` 默认开启消费；停采只影响新事件与 Cookie。修改后重启的暂停、修复及恢复步骤见 `docs/故障排查/visit-statistics-operations.md`，没有新增 HTTP 管理接口。
 - 保留核心 ready 后后台声明/启动与重试，配置暂停不被 startup 或发布恢复覆盖。声明错误受控观测且不删除队列。
 - 发现 Spring CCF `SmartLifecycle.stop()` 会同步调用 `resetConnection()`；新增受控 CCF lifecycle stop，避免框架绕过显式异步关闭 owner。consumer listener terminal close、factory destroy 由单一 daemon worker 执行；重复 DisposableBean destroy 被标记为外部管理。发布仍由单一 cleanup worker 独占清理，最后异步 destroy；不会在 observer/HTTP/caller 同步 reset。
 - Recorder 关闭原子停止 admission，标记本地丢失及未确认 unknown，回收每个许可一次，停止启动重试/观察并使用共同 2 秒等待预算。consumer worker、framework executor 与 listener executor 有限；Spring 每阶段预算 2 秒不代表整个进程硬截止。
