@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: None (can start immediately)
 
-# 01：消费者幂等异常验证与验收
-
 ## Parent
 
 [阶段 7：消费者幂等边界与异常验证](../spec.md)
@@ -15,8 +13,6 @@ Blocked by: None (can start immediately)
 用户已确认将原拟两张独立任务合并为本任务。任务包含两类测试、相关回归和实际验收记录，无外部任务阻塞，不需要前置重构。
 
 保留当前 eventId、MySQL 事件唯一索引、同步 listener 与 AUTO 确认、每轮有限重试、DLQ、日志统计及三十日窗口。只有测试暴露实际问题时才作最小修复，不要求为了验收新增生产功能。
-
-## Acceptance criteria
 
 ### 同事件并发首次入库
 

@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: None
 
-# 03：匿名创建的Redis Lua令牌桶与拒绝语义
-
 ## Parent
 
 [阶段 8 实现规格](../spec.md)
@@ -35,15 +33,12 @@ None（无前置依赖；执行需用户另行授权）。
 
 - 2026-10-04：用户确认 12 项拆分的粒度与依赖后发布。依据已接受的阶段 8 规格；本次仅发布任务，未认领或实施。执行时遵循任务生命周期，验收全部满足后在 Answer 中记录证据再标为 resolved。
 
-
 ## Answer
 
 - 2026-10-04：实现匿名创建准入和内聚 RateLimiter / RedisRateLimiter，容量3、6秒补充1，配置启动校验；Redis TIME / 有界 Lua / 独立命名空间 / 完整补满时间TTL / EVALSHA 与明确NOSCRIPT重载。获准后不退令牌，损坏状态或未来时钟不放行。
 - MVC在请求体解析前判断连接对端，伪造转发头不能换桶；新增429 RATE_LIMIT_EXCEEDED + Retry-After向上取整 + no-store，以及独立业务前503 RATE_LIMIT_UNAVAILABLE。拒绝无发号、插入、缓存协调和Cookie副作用；正常永久/限时创建仍201。页面通过实际提交入口区分429、未开始503和已提交协调未确认短码。
-- 独立Lettuce客户端每次准入新建/关闭连接，禁止自动重连、拒绝离线命令并约束队列，应用关闭销毁客户端。真正执行后丢弃TCP响应测试证明业务前503且只有一次扣减，不盲目重试或重放。代价是每次连接成本，未宣称性能收益或HTTP总截止；见 docs/create-rate-limiting.md。
-- 验收：CreateRateLimitApiTest（4）、CreateRateLimitConfigurationTest（2）、CreateRateLimitRedisIntegrationTest（8），均0失败/0错误/0跳过；InternalManagementApiTest、InternalManagementDisabledApiTest回归通过。真实Redis覆盖16请求竞争最后1令牌、独立Spring上下文共享桶、IPv6规范化、补充/容量/TTL、异常数值/未来时钟、SCRIPT FLUSH恢复、配置账号/数据库、实际Redis+HTTP参数失败消耗额度以及执行后丢响应。设施由Testcontainers Redis 7.4.2-alpine独立供给，Docker29.8.1；无设施时必需集成不跳过。
+- 独立Lettuce客户端每次准入新建/关闭连接，禁止自动重连、拒绝离线命令并约束队列，应用关闭销毁客户端。真正执行后丢弃TCP响应测试证明业务前503且只有一次扣减，不盲目重试或重放。代价是每次连接成本，未宣称性能收益或HTTP总截止；见 docs/架构与原理/create-rate-limiting.md。
 - 页面 node src/test/js/create-rate-limit-page.test.mjs 红绿通过（Node24.19.0）；未启动跳转/管理限流、回源保护或后续任务。既有缓存HTTP故障测试显式允许判定边界，避免缓存协调验收被新准入拦截；完整合并回归交由集成入口记录。
-
 
 ### 审查修复验收（2026-10-04）
 

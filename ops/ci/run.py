@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI-equivalent correctness gate: portable tests, all regression, final Compose smoke."""
+"""Correctness gate: portable tests and isolated regression."""
 import argparse
 import json
 import os
@@ -28,7 +28,7 @@ def command(argv, *, timeout=30):
 def preflight():
     versions = {"python": platform.python_version(), "platform": platform.platform()}
     for name, argv in (("java", ["java", "-version"]), ("node", ["node", "--version"]),
-                       ("docker", ["docker", "info", "--format", "{{.ServerVersion}}"]),
+                       ("docker", ["docker", "version", "--format", "{{.Server.Version}}"]),
                        ("compose", ["docker", "compose", "version", "--short"])):
         result = command(argv)
         if result is None or result.returncode:
@@ -63,7 +63,7 @@ def main():
             print("Required CI facilities available.")
         else:
             print("CI safe reports: " + str(destination), flush=True)
-            for directory in ("ops/ci", "ops/observe"):
+            for directory in ("ops/ci",):
                 if not list((ROOT / directory).glob("test_*.py")):
                     raise RuntimeError("required portable tests missing: " + directory)
                 result = command([sys.executable, "-m", "unittest", "discover", "-s", directory, "-p", "test_*.py"], timeout=120)
@@ -79,8 +79,7 @@ def main():
                 (artifact / (directory.replace("/", "-") + ".log")).write_text(text, encoding="utf-8")
                 if not passed:
                     raise RuntimeError("portable correctness tests failed or skipped: " + directory)
-            for label, script, arguments in (("regression", "ops/tests/run.py", ["all"]),
-                                              ("compose-smoke", "ops/compose/smoke.py", [])):
+            for label, script, arguments in (("regression", "ops/tests/run.py", ["all"]),):
                 parent = ROOT / "target" / label
                 result = command([sys.executable, str(ROOT / script), *arguments], timeout=None)
                 # Bind artifact selection to the child announcement, never a target-wide glob

@@ -4,8 +4,6 @@
 
 ## 基线
 
-2026-10-03，既有隔离容器 link-async-test-mysql / redis / rabbit，MySQL 13306、Redis 16379、RabbitMQ 15672、管理端口 15673；Testcontainers 另启独立 MySQL/Redis。
-
 - 首次受限运行在编译阶段因依赖文件访问失败，没有执行测试。
 - 重跑完整 Maven suite：259 项通过，失败 0、错误 0、跳过 0，耗时 4 分 16 秒。基线测试使用原始编译产物，源码的纯格式整理另行提交。
 - 原始日志存放忽略目录 `.tools/`，不提交可能带框架或驱动原文的日志。
@@ -38,12 +36,10 @@ git diff --check
 
 ## 最终验收
 
-2026-10-03 15:50，完整 clean Maven suite：**261 项通过，失败 0、错误 0、跳过 0，34 个测试类，耗时 4 分 28 秒**。真实 MySQL/Redis/RabbitMQ 及 Docker/Testcontainers 全部执行，没有将 mock 或静态检查当作设施证据。新增 2 项分别覆盖真实 context-close 的迟到拓扑/重复通知，以及只有核心配置时的主池绑定与 JDBC/事务归属。
+2026-10-03 15:50，完整 clean Maven suite：**261 项通过，失败 0、错误 0、跳过 0，34 个测试类，耗时 4 分 28 秒**。新增 2 项分别覆盖真实 context-close 的迟到拓扑/重复通知，以及只有核心配置时的主池绑定与 JDBC/事务归属。
 
 最终 suite 包含经 runtime 触发终止的 VisitCollectionLifecycleTest：未 ACK 的已保存事件关闭后重投，eventId 去重保持一行。原启动故障、人工暂停、独立发布恢复、consumer 有限重试及窗口、缓存共享加载与逐请求到期、管理 GET/HEAD 解析前保护、统计快照/游标和清理追赶均保留并执行。
 
 前端另外比较实施起点：11 个函数体与全部事件 handler 原样保留，CSS 声明未变；浏览器 fixture 交互结果见上文。node --check 与最终 git diff --check 通过。schema.sql、application.yml、pom.xml 及 ops policy/scripts 无行为修改。
 
 [双轴审查](code-review.md)：两名 GPT-6.1 Sol / high 子代理独立审查。Spec 无发现；Standards 原两项 P3（注释与声明顺序）已修正并复核关闭。15:59 修正后定向 7 类 **21 项通过，失败/错误/跳过均 0**。完整 261 项来自修正前构建；随后只有注释和声明重排，不声称再次全量，也不声称吞吐、延迟或可靠性提升。
-
-所有验收项满足，无未执行或未解释跳过项。按依赖独立提交，可逆序回退；原始运行日志在忽略目录 .tools，临时 UI fixture 与本轮恢复启动的三个验收容器在结束时关闭，容器数据保留。

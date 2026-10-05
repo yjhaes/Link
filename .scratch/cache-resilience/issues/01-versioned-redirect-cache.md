@@ -23,5 +23,4 @@ Blocked by: None
 
 - 跳转缓存已迁移到 `v2` 版本协议，原子初始化有限期占位，并以 UUID generation 条件回填、轮换或删除；缓存条目丢失或没有有限 TTL 时会使用新 generation。
 - 保留仅可跳转快照的业务路径和现有 HTTP 行为；占位和拒绝结果只表达协议状态，未接入后续任务的 404 缓存或创建部分完成响应。
-- 完整 Maven 测试集通过：61 项、0 失败；真实 Redis/MySQL Testcontainers 验证包含占位、版本轮换、丢失条目后的旧回填拒绝，以及有效 hit 的 SQL 次数。
 - Standards Review 与 Spec Review 均无最终发现。

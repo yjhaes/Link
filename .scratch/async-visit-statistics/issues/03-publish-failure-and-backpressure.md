@@ -23,8 +23,6 @@ Blocked by: 02
 
 - 2026-10-02：用户已确认8张任务的粒度、交付范围和直接阻塞关系。本轮仅发布任务，尚未认领或开始实施；父规格内容和状态保持不变。
 
-
-
 ## Answer
 
 发布部分实现完成：correlation采用每尝试独立ID（payload事件ID不变）；单调5秒待发及confirm观察，最多32关联状态；return结算后仍保留框架跟踪直到ACK/超时，迟到ACK/nack不覆写结果或重复释放。独立observer和单cleanup发布恢复，gate仅在reset实际返回且旧sender退出后打开；不自动重投。publisher CCF与consumer CCF物理分离，恢复只调用publisher。Spring销毁登记为外部管理，避免DisposableBean同步reset，框架executor为2 daemon线程、32任务有界队列。
@@ -32,6 +30,5 @@ Blocked by: 02
 2026-10-02：Maven `VisitPublisherFailureTest,VisitPublisherBrokerTest,AsyncVisitRoundtripTest` 全部8测试通过（0失败/错误）。覆盖真实RabbitMQ路由、return+ACK、错误exchange/nack、2轮TCP黑洞confirm unknown和后续新事件、独立consumer连接身份保持；受控sender/cleanup闩锁、迟到ACK/nack、return无ACK回收、重复event独立correlation；真实HTTP在send阻塞/满缓冲时仍302，真实MySQL原口径最终落库。
 
 边界：TCP黑洞证明确认丢失与连接清理，不证明内核阻塞写被中断，也不承诺整个publish的5秒硬截止。受控闩锁证明observer不依赖sender以及cleanup卡住时不创建替代worker。启动不可用→恢复已通过新增真实TCP拒绝代理+HTTP/MySQL测试：核心启动并302；故障事件无DB行，恢复后后台同一startup worker完成声明/listener启动，新GET仅新增一行、不补采历史。静态非法配置保持明确配置错误；声明/认证失败不删除已有队列，后台仅受控类别报告并重试，任务06继续完善人工暂停/关停。
-
 
 补充验收：AsyncVisitStartupRecoveryTest,VisitPublisherFailureTest,VisitPublisherBrokerTest,AsyncVisitRoundtripTest 合计9测试通过。后台声明启动固定1个daemon worker、500ms重试间隔；原Rabbit驱动DefaultExceptionHandler仅覆盖日志输出为固定category且保持ERROR级别，保留原错误处理语义。

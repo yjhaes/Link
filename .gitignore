@@ -15,5 +15,8 @@ docs/阶段文档.md
 .env*
 !.env.example
 
+# Personal IDEA configuration; the example is safe to commit.
+/config/application-local.yml
+
 # Generated Python test/tool bytecode
 __pycache__/

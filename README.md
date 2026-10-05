@@ -1,89 +1,55 @@
 # Short Link
 
-面向 Java 后端实习展示的单应用短链接服务：匿名创建永久/限时短链接，302 跳转，内部启禁用与最近 30 个上海统计日的 PV、UV 和访问明细。MySQL 保存权威数据，Redis 加速并限流，RabbitMQ 承接有界、best-effort 异步统计。
+面向 Java 后端实习展示的单应用短链接服务：匿名创建永久/限时短链接、302 跳转、内部启禁用，以及最近 30 个上海统计日的 PV、UV 和访问明细。
+
+Java 17 · Spring Boot 3.5.16 · MyBatis-Plus 3.5.17 · MySQL 8.4.4 · Redis 7.4.2 · RabbitMQ 3.13.7 · springdoc OpenAPI。页面由同一 Spring Boot 应用提供，无独立前端构建。
 
 ![实际公开创建页面](docs/images/home.png)
 
-Java 17 · Spring Boot 3.5.16 · MyBatis-Plus 3.5.17 · MySQL 8.4.4 · Redis 7.4.2 · RabbitMQ 3.13.7 · springdoc OpenAPI。页面由同一 Spring Boot 应用提供，无独立前端构建。
+## 第一次运行
+
+1. 在本机准备 MySQL、Redis、RabbitMQ，在 IDEA 中以 Maven 项目打开仓库，选择 JDK 17。
+2. 将 [YAML 模板](config/application-local.example.yml)复制为 `config/application-local.yml`，填入本机连接信息和独立的管理令牌、访客 HMAC。首次数据库账号和 MQ 配置按[本机配置指南](docs/入门与使用/local-secrets.md)准备。
+3. IDEA 运行 `LinkApplication.main`，工作目录设为项目根目录，程序参数填 `--spring.profiles.active=local`。
+4. 打开 <http://localhost:8080/>。
+
+配置直接写入本地 YAML，无需导入环境变量。以后只需启动三个本机服务，再点击 IDEA 的运行按钮；账号和队列策略不需要每次重配。
+
+## 最短演示
+
+1. 在首页创建 `https://example.com/demo`，浏览器打开生成的短链接两次，观察跳转。
+2. 打开 <http://localhost:8080/admin.html>，输入本地 YAML 的 `short-link.internal-token`，查询该短码的统计。等待异步记录完成后，通常可观察到 PV=2、同一 Cookie 的 UV=1。
+3. 在管理页禁用后访问得到 403，启用后恢复跳转。快速连续创建会遇到 429，按 Retry-After 等待后再试，等待不保证下次获准。
+
+需要检查响应头时，运行 `curl.exe -I http://localhost:8080/s/<返回短码>`，可观察 302、Location 和 no-store；HEAD 请求不产生统计。PV 统计已记录事件，UV 表示匿名浏览器身份。
 
 ## 实际架构
 
 ```mermaid
 flowchart LR
-    U[本机浏览器 / API 客户端] -->|localhost:8080| HTTP
-    O[本机观察] -->|localhost:8081| ACT
-    O -->|localhost:15672| MQ
-    subgraph APP[单个 Spring Boot 应用进程]
-      HTTP[创建 / 跳转 / 管理查询]
-      ACT[health / info / metrics]
-      LOAD[版本缓存 + 同码加载合并
-实际回源并发最多4]
-      HAND[GET访问事件
-本地交接256 / 未确认32]
-      PUB[后台发布 confirm / return]
-      CON[同步消费者
-prefetch / 有限重试]
-      HTTP --> LOAD
-      HTTP --> HAND --> PUB
-    end
-    HTTP -->|发号 / 映射事务 / 统计查询| DB
-    LOAD -->|权威回源| DB
-    LOAD <-->|版本与有限TTL结果| REDIS
-    HTTP <-->|分组Lua令牌桶| REDIS
-    PUB --> MQ[单节点RabbitMQ
-有界业务队列]
-    MQ --> CON -->|eventId唯一键| DB[MySQL
-映射 / 已记录访问日志]
-    MQ --> DLQ[有界DLQ
-无自动回放]
-    DB --- V1[MySQL命名卷]
-    MQ --- V2[RabbitMQ命名卷]
-    REDIS[Redis
-非持久 / noeviction]
+    U[浏览器 / API 客户端] --> APP[单个 Spring Boot 应用\n创建 / 跳转 / 管理 / 统计]
+    APP -->|权威映射与访问日志| DB[MySQL]
+    APP <-->|跳转缓存与限流| R[Redis]
+    APP -->|异步访问事件| MQ[RabbitMQ]
+    MQ -->|同应用消费者写入日志| APP
 ```
 
-数据库、Redis 和 AMQP 默认不向宿主发布；管理端口没有业务令牌鉴权，依靠 localhost 边界。详细职责与两个关键时序见 [架构说明](docs/architecture.md)。
+缓存、消费幂等、故障隔离和关键时序见[当前架构](docs/架构与原理/architecture.md)。本项目用于本地单实例学习与展示；统计为 best-effort，故障或退出允许漏记。
 
-## 第一次运行
+## API 与测试
 
-需要 Docker Engine、Compose 2.24.4+、联网构建和足够内存；宿主无需 JDK/Maven。仓库根目录执行：
+[本地 Swagger UI](http://localhost:8080/swagger-ui/index.html) · [API 契约](docs/入门与使用/api.md) · [测试说明](docs/测试与验证/testing.md) · [验收证据](docs/测试与验证/verification.md)。
+
+![实际本地 Swagger 页面](docs/images/swagger.png)
+
+截图中的 2763 是拍摄时使用的隔离端口，本地默认端口为 8080。以下无设施 Java/页面回归需要 JDK 17、Python 3.10+、Node.js 18+，不是日常启动的前置步骤：
 
 ```powershell
-pwsh -NoProfile -File ops/init-local-secrets.ps1
-docker compose --env-file .env.local up --build --detach --wait --wait-timeout 240
+pwsh -NoProfile -File ops/tests/run.ps1 unit
 ```
 
-Linux 将初始化命令替换为 `sh ops/init-local-secrets.sh`，Compose 命令相同。初始化生成五个独立秘密且重复执行不改变它们；不要提交 `.env.local`。基础采集默认关闭，Compose 明确开启采集，消费者默认开启。`--wait` 只证明核心就绪；统计仍须实际验证。[完整运行、卷、轮换与受控恢复](docs/compose.md)。
+Linux 使用 `sh ops/tests/run.sh unit`。
 
-## 最短演示
+## 接下来读什么
 
-1. 打开 <http://localhost:8080/>，创建 `https://example.com/demo`；用 `curl.exe -I http://localhost:8080/s/<返回短码>`（Linux 用 `curl`）观察 302、Location、no-store，HEAD 不产生统计。
-2. 浏览器打开生成的短链接两次，再进入 `/admin.html`，手动输入本地配置中的管理令牌；轮询统计，已记录事件为 PV=2、同一 Cookie 的 UV=1。统计异步可见，不保证立即完成。不要在截图或分享中展示秘密。
-3. 管理页禁用后访问得到403，启用后恢复302；快速连续创建会遇到429及 Retry-After，等待不保证下次获准。
-4. 查看 <http://localhost:8080/readyz> 与 <http://localhost:8081/actuator/health/dependencies>。完整 MQ/Redis 故障、创建拒绝和受控恢复演示由 [可重复观察入口](docs/performance-and-failures.md)在独立项目中执行。
-
-普通停止：`docker compose --env-file .env.local stop`；同一项目、秘密与卷再次启动保留映射、日志和 broker 积压。`down --volumes` 永久删除本项目数据，仅用于明确重置。
-
-## API、测试与证据
-
-[本地 Swagger UI](http://localhost:8080/swagger-ui/index.html) / [API契约与错误处理](docs/api.md)：管理头、HEAD、429、各类503及创建重试边界。UI 不预填或持久保存令牌。
-
-![实际本地Swagger页面](docs/images/swagger.png)
-
-截图来自独立本地演示项目；Swagger 中的 2763 是拍摄时分配的隔离端口，按上述正常启动使用 8080。公开页面未填写管理令牌。[实际展示验收与清理](docs/evidence/readme-demo-2026-10-04.json)。
-
-```powershell
-# Java/页面回归、真实隔离设施、全栈Compose冒烟及安全报告
-pwsh -NoProfile -File ops/ci/run.ps1
-# 只跑无设施层：pwsh -NoProfile -File ops/tests/run.ps1 unit
-```
-
-Linux 等价入口 `sh ops/ci/run.sh`。测试需 JDK17、Python3.10+、Node18+；完整验证还需 Docker。缺设施、失败、错误或必测跳过均不通过。[分层测试](docs/testing.md) · [CI与报告](docs/ci.md) · [正式验证总入口](docs/verification.md) · [四条简历素材](docs/portfolio.md)。
-
-## 故障与边界
-
-Redis 故障时创建/管理在业务开始前拒绝，跳转限流放行但实际回源仍受每实例4并发保护。MySQL 已提交而缓存协调未确认的503是另一种结果：保留短码，仅恢复协调；重复POST可能新增映射。即时可见依赖同一Redis主实例及确认写入未丢失，恢复旧快照需受控清理。
-
-MQ 故障不阻塞核心跳转；本地交接满、发布不确定或退出允许漏记，无同步回退、outbox或端到端恰好一次。PV仅计已记录事件，UV是匿名浏览器身份而非真实人数。日志保护与低基数指标见 [观测说明](docs/observability.md)，故障分组见 [健康说明](docs/health.md)。
-
-这是本地单实例工程项目，不宣称生产抗DDoS、高可用、无条件性能提升或生产SLA。交付停止线：不增加账号、网关、微服务、事务消息、Bloom Filter、自动DLQ回放或完整监控平台。
+[文档导航](docs/README.md)区分运行演示、面试原理和故障排查。准备面试从[面试阅读导航](docs/面试准备/README.md)进入，先练项目介绍，再选择数据库、缓存、MQ、限流与并发专题；启动失败先查[常见启动问题](docs/入门与使用/local-secrets.md#常见启动问题)。Redis 恢复、积压观察和死信排查在对应故障发生时再阅读。

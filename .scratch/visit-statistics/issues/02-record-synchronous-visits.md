@@ -35,7 +35,7 @@ Blocked by: None (can start immediately)
 
 新增大小写敏感日志表及事件去重、聚合/分页/清理索引。核心池为主 DataSource，继续负责 Mapper/JDBC/事务/初始化；统计池最多 4 连接、minimumIdle=0、懒启动，写入容量 2，所有超时按已确认起点配置，不增加启动网络预检。
 
-Cookie 使用规范 128 位随机值，固定 30 天不续期，合法单值复用、多值/非法值重建；HTTPS 配置设置 Secure。HMAC 按用途、版本和短码隔离；日志只保留摘要、IP 网段、限长 UA 和 Referer host。部署配置及 Cookie/UV 偏差见 docs/visit-collection.md。
+Cookie 使用规范 128 位随机值，固定 30 天不续期，合法单值复用、多值/非法值重建；HTTPS 配置设置 Secure。HMAC 按用途、版本和短码隔离；日志只保留摘要、IP 网段、限长 UA 和 Referer host。
 
 验证：完整 Maven 测试 157 项全部通过，0 失败、0 跳过，包含真实 MySQL、Redis、核心事务回归，以及 HTTP/Cookie、缓存 hit/miss、共享加载逐请求时刻、跨午夜、确认丢失、内部重放、行锁超时及容量恢复。未新增统计查询端点。
 

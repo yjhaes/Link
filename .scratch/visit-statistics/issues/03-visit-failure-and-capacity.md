@@ -33,8 +33,8 @@ Blocked by: 02
 
 真实超时验证发现旧整数/布尔 DataSource Properties 未被当前 Connector/J 采用，socket 超时实际为 0；已改为字符串，修复 connectTimeout、socketTimeout 与 forceConnectionTimeZoneToSession。MySQL 8.4 验证独立语句取消、默认 socket 读超时、会话行锁等待、连接池获取预算、KILL 失效连接恢复；测试专用 TCP 转发器丢弃已建立连接的回复，验证校验预算。建连测试观察真实 Socket.connect 的 500ms 参数，不宣称覆盖所有 OS/DNS 故障。mock 仅证明语义。阶段超时不是 HTTP 总墙钟截止时间。
 
-占满统计专用连接期间，核心创建、发号及启用/禁用事务仍正常，验证核心连接归属；不声称共享 MySQL 硬件完全隔离。详细观测定义及限制见 docs/visit-collection.md。
+占满统计专用连接期间，核心创建、发号及启用/禁用事务仍正常，验证核心连接归属；不声称共享 MySQL 硬件完全隔离。详细观测定义及限制见 docs/架构与原理/visit-collection.md。
 
 最终验证：完整 Maven 测试 185 项全部通过，0 失败、0 错误、0 跳过，包含真实 MySQL 与 Redis 回归。先前同为 1 秒的 socket/语句/行锁预算造成一项类别断言竞争，已在行锁测试中隔离竞争预算并通过完整回归；生产默认值保持规格规定。
 
-Standards 初审无硬性违例、2 项可选建议，采用阶段枚举和合并异常分支后复核全部关闭；Spec 初审及复核均无发现。两个维度最终剩余发现均为 0，见 .scratch/visit-statistics/review-03.md。仅完成任务 03，查询与清理仍由后续任务负责。
+Standards 初审无硬性违例、2 项可选建议，采用阶段枚举和合并异常分支后复核全部关闭；Spec 初审及复核均无发现。两个维度最终剩余发现均为 0，见 [审查记录（Git 历史）](https://github.com/yjhaes/Link/blob/47192963d6b9783146e8d2885617c9cb5cbfc000/.scratch/visit-statistics/review-03.md)。仅完成任务 03，查询与清理仍由后续任务负责。

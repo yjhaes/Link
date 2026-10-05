@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: None (can start immediately)
 
-# 01: 创建并访问永久短链接
-
 ## What to build
 
 匿名创建者提交一个合法的原始 URL 后，获得可直接访问的完整短链接；访问者打开该短链接时获得原始 URL 的 302 跳转。这是从零建立项目骨架、数据库映射和两个公开接口的第一条完整路径。

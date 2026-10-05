@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: None (can start immediately)
 
-# 01: 让 4 至 8 位 Base62 短码可保存并跳转
-
 ## What to build
 
 访问者可以通过 4 至 8 位、区分大小写的 Base62 短码打开已保存的短链接，仍按映射状态得到原始 URL 的跳转或现有错误响应。这一任务先扩展持久化与读取路径，让当前 8 位小写随机短码继续可用，为后续切换创建机制做好准备。
@@ -21,5 +19,3 @@ Blocked by: None (can start immediately)
 - 跳转校验接受 4 至 8 位大小写字母和数字，创建生成器仍生成原有 8 位小写短码。
 - MockMvc 与真实 MySQL 全量测试通过：26 项，无失败；另有旧表迁移回归测试。
 - 代码提交：`1d0d091`、`14095dd`。
-
-## Comments

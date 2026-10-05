@@ -2,8 +2,6 @@ Status: resolved
 Type: task
 Blocked by: 01 — 创建并访问永久短链接
 
-# 04: 严格校验原始 URL 与参数错误
-
 ## What to build
 
 匿名创建者提交合法 URI 时，其目标地址按原文保存；提交不符合第一阶段边界的地址或错误 JSON 时，收到一致且可理解的参数错误。
@@ -15,8 +13,6 @@ Blocked by: 01 — 创建并访问永久短链接
 - [x] 非法 URL、缺少字段和格式错误的 JSON 返回 `400 INVALID_REQUEST`；错误正文包含稳定的 `code` 和可读 `message`，失败响应包含 `Cache-Control: no-store`。
 - [x] 校验只检查 URI 格式，不查询 DNS、不探测目标网站，也不在服务端跟随目标跳转。
 - [x] 通过 HTTP 测试覆盖有效目标、保留查询参数和片段、长度边界及主要错误类别；受影响测试通过。
-
-## Comments
 
 ## Answer
 

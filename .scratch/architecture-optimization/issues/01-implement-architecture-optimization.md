@@ -7,7 +7,7 @@ Type: task
 
 **Spec:** [短链接与异步访问统计架构优化规格](../spec.md)
 
-**Design:** [完整架构优化方案](../../../docs/architecture-optimization-plan.md)
+**Design:** [完整架构优化方案](../../../docs/历史与维护/architecture-optimization-plan.md)
 
 ## Acceptance criteria
 
@@ -49,7 +49,6 @@ Type: task
 
 - 2026-10-03：按用户调用 to-spec，从已讨论的完整架构方案发布规格与实施任务。用户确认使用现有 HTTP 行为、真实 Spring 启动/关闭以及已有缓存、发号、持久化、消息接缝验收。状态为 ready-for-agent；未开始生产实现。
 
-
 ## Answer
 
 2026-10-03：已完成单 Maven module 内的架构优化及全部行为兼容验收。
@@ -58,7 +57,6 @@ Type: task
 - MySqlVisitPersistence 仅实现保存确认；旧同步 record 和跳转 findOriginalUrl 移除，测试分别改为 persist 的结果/失败断言及 decide。CoreDataSourceConfiguration 接管原主池，统计池保持原 Bean、懒初始化、容量与超时。
 - 按 messaging/persistence/query/retention/collection/config 逐组搬迁实现和同包测试，HTTP 错误先迁 api.error，再迁 management/stats；74 个原类型各有唯一目标，新增两类后 76 个，无包循环或机械放宽辅助类型可见性。
 - 前端按输入、错误、结果、提交和复制职责整理；11 个函数体、事件 handler 和 CSS 声明保持。架构、运行、维护及测试导航已同步，现有 ADR 保留历史记录。
-- 原始完整基线 259 项通过；最终隔离 MySQL/Redis/RabbitMQ 与 Testcontainers 完整验收 261 项通过，失败/错误/跳过均 0。GPT-6.1 Sol / high 双轴审查完成：Spec 0 项；Standards 两项 P3 已修正并复核关闭，修正后相关 21 项回归通过。
 
 详细命令、失败执行原因、测试证据和范围限制见 [验证记录](../verification.md)、[全量类型与依赖核对](../structure.md)、[分轴审查报告](../code-review.md)。编译访问失败、遗留 class 重复 Bean 和一次遗漏测试端口的失败均有记录并重跑通过；没有降低验收标准或跳过设施测试。无 schema、缓存/消息协议、HTTP 或配置兼容破坏；仍为 best-effort，不提供新增性能或可靠性承诺。
 
