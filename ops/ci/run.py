@@ -28,7 +28,7 @@ def command(argv, *, timeout=30):
 def preflight():
     versions = {"python": platform.python_version(), "platform": platform.platform()}
     for name, argv in (("java", ["java", "-version"]), ("node", ["node", "--version"]),
-                       ("docker", ["docker", "info", "--format", "{{.ServerVersion}}"]),
+                       ("docker", ["docker", "version", "--format", "{{.Server.Version}}"]),
                        ("compose", ["docker", "compose", "version", "--short"])):
         result = command(argv)
         if result is None or result.returncode:
