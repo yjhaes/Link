@@ -16,4 +16,4 @@
 
 ## 最终交付
 
-01～12均resolved，父规格已关闭，完整交付位于codex/final-hardening-09-12。正式入口为 [README](../../README.md)、[验证证据](../../docs/测试与验证/verification.md)、[简历素材](../../docs/面试准备/portfolio.md)。临时工作树归档前，必要安全原始报告已保留主工作树target；公开JSON/截图随Git提交。
+01～12均resolved，父规格已关闭，完整交付位于codex/final-hardening-09-12。正式入口为 [README](../../README.md)、[验证证据](../../docs/测试与验证/verification.md)。临时工作树归档前，必要安全原始报告已保留主工作树target；公开JSON/截图随Git提交。

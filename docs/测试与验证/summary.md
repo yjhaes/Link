@@ -5,7 +5,7 @@
 - 源码提交：`af4876d872598c0de15151e0181182f3df9077d0`
 - 工作树干净：`False`
 - 环境：Windows-11-10.0.22621-SP0
-- JVM 数量与端口：见 `processes*.json`、[`benchmark-processes.jsonl`](benchmark-processes.jsonl) 和 [`capacity-processes.jsonl`](capacity-processes.jsonl)
+- JVM 数量与端口：原始记录位于 `processes*.json`、`benchmark-processes.jsonl` 和 `capacity-processes.jsonl`；这些文件未随仓库提供，本摘要不能替代原始记录。
 
 ## 负载样本
 

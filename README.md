@@ -4,7 +4,7 @@
 
 [快速开始](#第一次运行) · [文档导航](docs/README.md) · [贡献指南](CONTRIBUTING.md) · [安全反馈](SECURITY.md)
 
-面向 Java 后端实习展示的单应用短链接服务：匿名创建永久/限时短链接、302 跳转、内部启禁用，以及最近 30 个上海统计日的 PV、UV 和访问明细。
+基于 Java 和 Spring Boot 的单应用短链接服务：匿名创建永久/限时短链接、302 跳转、内部启禁用，以及最近 30 个上海统计日的 PV、UV 和访问明细。
 
 Java 17 · Spring Boot 3.5.16 · MyBatis-Plus 3.5.17 · MySQL 8.4.4 · Redis 7.4.2 · RabbitMQ 3.13.7 · springdoc OpenAPI。页面由同一 Spring Boot 应用提供，无独立前端构建。
 
@@ -79,7 +79,7 @@ Linux 使用 `sh ops/tests/run.sh unit`。
 
 ## 接下来读什么
 
-[文档导航](docs/README.md)区分运行演示、面试原理和故障排查。准备面试从[面试阅读导航](docs/面试准备/README.md)进入，先练项目介绍，再选择数据库、缓存、MQ、限流与并发专题；启动失败先查[常见启动问题](docs/入门与使用/local-secrets.md#常见启动问题)。Redis 恢复、积压观察和死信排查在对应故障发生时再阅读。
+[文档导航](docs/README.md)提供使用指南、架构原理、测试说明和故障排查入口。启动失败先查[常见启动问题](docs/入门与使用/local-secrets.md#常见启动问题)。Redis 恢复、积压观察和死信排查在对应故障发生时再阅读。
 
 ## 项目结构
 
