@@ -20,7 +20,7 @@
     <properties>
         <java.version>17</java.version>
         <test.reportsDirectory>${project.build.directory}/surefire-reports</test.reportsDirectory>
-        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <mybatis-plus.version>3.5.18.1</mybatis-plus.version>
     </properties>
 
     <dependencies>
