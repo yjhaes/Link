@@ -20,3 +20,10 @@ docs/阶段文档.md
 
 # Generated Python test/tool bytecode
 __pycache__/
+
+# Local attachments, disposable previews, and operating-system metadata
+/.codex-remote-attachments/
+/tmp/
+.DS_Store
+Thumbs.db
+*.log

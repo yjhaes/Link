@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ShortLink 服务链路图解：创建、缓存跳转、版本一致性、异步统计、查询与限流保护。">
+  <title>ShortLink · 服务链路图解</title>
+  <link rel="stylesheet" href="shortlink-flow.css">
+  <script src="shortlink-flow.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到链路内容</a>
+  <aside class="sidebar">
+    <a class="brand" href="#overview" aria-label="ShortLink 链路总览"><span class="brand-mark" aria-hidden="true">↗</span><span>ShortLink<small>服务链路图解</small></span></a>
+    <p class="nav-label">跟着一次请求，看清整个服务</p>
+    <nav id="navigation" aria-label="服务链路"></nav>
+    <div class="sidebar-note"><span class="status-dot"></span>基于当前仓库梳理<p>单 Spring Boot 应用<br>MySQL 为权威数据源</p></div>
+    <div class="stack"><span>Java 17</span><span>Spring Boot 3</span><span>MyBatis-Plus</span><span>MySQL</span><span>Redis</span><span>RabbitMQ</span><span>Spring AMQP</span></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><div class="breadcrumb">ShortLink <span>/</span> 架构与原理 <span>/</span> <strong id="crumb">链路总览</strong></div><div class="top-actions"><button id="source-button" class="text-button">阅读依据</button><button id="api-button" class="text-button">接口索引 ↗</button><button id="print-button" class="text-button">打印 / 保存 PDF</button></div></header>
+    <main id="main">
+      <section class="intro"><div><div class="section-kicker"><span class="mini-route" aria-hidden="true"></span>可交互的后端链路地图</div><h1 id="page-title">一次短链接访问，如何流经整个系统？</h1><p id="page-description">从短码创建到 302 跳转，再到异步入账。把正常路径、并发时序与失败边界放在同一张地图里。</p></div><div class="intro-note">阅读方式<span>选链路 → 选场景 → 逐步查看</span></div></section>
+      <div class="context-line"><span class="context-tag">实现梳理</span><span>代码与领域文档已核对；交互演示使用本地示例，不发送业务请求。</span></div>
+      <section class="flow-panel" aria-labelledby="flow-title">
+        <div class="panel-header"><div><h2 id="flow-title">服务全景</h2><p id="flow-subtitle">实线表示请求内处理，虚线表示异步交接。</p></div><div class="legend"><span><i class="legend-sync"></i>请求内</span><span><i class="legend-async"></i>后台异步</span><span><i class="legend-risk"></i>异常 / 拒绝</span></div></div>
+        <div id="scenario-toolbar" class="scenario-toolbar" hidden><label for="scenario-select">演示场景</label><select id="scenario-select"></select><span id="scenario-caption"></span></div>
+        <div id="diagram" class="diagram"></div>
+        <div id="playback" class="playback" hidden><div class="play-controls"><button id="previous" class="control-button" aria-label="上一步">←</button><button id="play" class="control-button">播放链路</button><button id="next" class="control-button" aria-label="下一步">→</button><button id="reset" class="text-button">重置</button></div><div class="step-position"><span id="step-count"></span><div class="step-track"><span id="step-progress"></span></div></div><span class="playback-hint">也可以直接点击节点</span></div>
+      </section>
+      <section id="inspector" class="inspector" aria-live="polite" aria-atomic="true"></section>
+      <section id="sandbox" class="sandbox" hidden aria-labelledby="sandbox-title"></section>
+      <section class="notes-section"><div class="notes-heading"><h2 id="notes-title">把关键设计串起来</h2><span>点击展开，查看机制与边界</span></div><div id="notes"></div></section>
+      <section class="boundary-strip"><div class="boundary-icon" aria-hidden="true">!</div><div><strong>理解保证范围，才能准确解释设计。</strong><p id="boundary-text"></p></div></section>
+      <footer><span>ShortLink 服务链路图解</span><span>所有容量、TTL 与重试参数均为当前默认起点，可配置项以实际配置为准。</span></footer>
+    </main>
+  </div>
+  <dialog id="reference-dialog"><div class="dialog-header"><h2 id="dialog-title"></h2><button id="close-dialog" class="control-button" aria-label="关闭弹窗">×</button></div><div id="dialog-content"></div></dialog>
+</body>
+</html>
